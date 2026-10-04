@@ -326,6 +326,14 @@ th {
   background: var(--color-primary-dark);
 }
 
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
 dialog {
   border: none;
   border-radius: 10px;

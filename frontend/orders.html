@@ -17,6 +17,7 @@
     <div id="orders">
       <p class="muted">Loading...</p>
     </div>
+    <div id="pagination" class="pagination"></div>
   </main>
 
   <script type="module">
@@ -35,15 +36,25 @@
         return;
       }
 
+      const PAGE_SIZE = 5;
       const container = document.getElementById("orders");
+      const paginationEl = document.getElementById("pagination");
+      let allOrders = [];
+      let currentPage = 1;
 
-      async function refresh() {
-        const { orders } = await apiRequest(config.apiUrl, "/orders", { token: session.idToken });
-        if (orders.length === 0) {
+      function renderPage() {
+        if (allOrders.length === 0) {
           container.innerHTML = `<p class="muted">No orders yet. <a href="/index.html">Browse the menu</a>.</p>`;
+          paginationEl.innerHTML = "";
           return;
         }
-        container.innerHTML = orders
+
+        const totalPages = Math.ceil(allOrders.length / PAGE_SIZE);
+        currentPage = Math.min(Math.max(currentPage, 1), totalPages);
+        const start = (currentPage - 1) * PAGE_SIZE;
+        const pageOrders = allOrders.slice(start, start + PAGE_SIZE);
+
+        container.innerHTML = pageOrders
           .map(
             (order) => `
           <div class="card order-card" data-order-id="${order.orderId}">
@@ -69,7 +80,7 @@
         container.querySelectorAll(".edit-order").forEach((btn) => {
           btn.addEventListener("click", async (e) => {
             const orderId = e.target.closest(".order-card").dataset.orderId;
-            const order = orders.find((o) => o.orderId === orderId);
+            const order = allOrders.find((o) => o.orderId === orderId);
             await apiRequest(config.apiUrl, `/orders/${orderId}`, {
               method: "PUT",
               token: session.idToken,
@@ -94,10 +105,30 @@
             window.location.href = "/index.html";
           });
         });
+
+        if (totalPages <= 1) {
+          paginationEl.innerHTML = "";
+          return;
+        }
+        paginationEl.innerHTML = `
+          <button type="button" class="secondary" id="prev-page" ${currentPage === 1 ? "disabled" : ""}>Previous</button>
+          <span class="muted">Page ${currentPage} of ${totalPages}</span>
+          <button type="button" class="secondary" id="next-page" ${currentPage === totalPages ? "disabled" : ""}>Next</button>
+        `;
+        document.getElementById("prev-page").addEventListener("click", () => {
+          currentPage -= 1;
+          renderPage();
+        });
+        document.getElementById("next-page").addEventListener("click", () => {
+          currentPage += 1;
+          renderPage();
+        });
       }
 
       try {
-        await refresh();
+        const { orders } = await apiRequest(config.apiUrl, "/orders", { token: session.idToken });
+        allOrders = orders;
+        renderPage();
       } catch (err) {
         container.innerHTML = `<p class="error">Couldn't load your orders: ${err.message}</p>`;
       }
