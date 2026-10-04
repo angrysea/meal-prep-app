@@ -47,6 +47,8 @@ def handler(event, context):
             return list_addons()
         if path == "/addons" and method == "POST":
             return create_addon(event)
+        if path.startswith("/addons/") and method == "PUT":
+            return update_addon(event, path_params["addOnId"])
         if path.startswith("/addons/") and method == "DELETE":
             return delete_addon(event, path_params["addOnId"])
         if path == "/orders" and method == "GET":
@@ -173,9 +175,27 @@ def create_addon(event):
         "addOnId": addon_id,
         "description": body["description"],
         "priceCents": int(body["priceCents"]),
+        "available": bool(body.get("available", True)),
     }
     table.put_item(Item=item)
     return _response(201, _addon_out(item))
+
+
+def update_addon(event, addon_id):
+    _require_admin(event)
+    body = _body(event)
+    existing = table.get_item(Key={"PK": "ADDON", "SK": addon_id}).get("Item")
+    if not existing:
+        return _response(404, {"message": "add-on not found"})
+
+    updated = {
+        **existing,
+        "description": body.get("description", existing["description"]),
+        "priceCents": int(body.get("priceCents", existing["priceCents"])),
+        "available": bool(body.get("available", existing.get("available", True))),
+    }
+    table.put_item(Item=updated)
+    return _response(200, _addon_out(updated))
 
 
 def delete_addon(event, addon_id):
@@ -189,6 +209,7 @@ def _addon_out(item):
         "addOnId": item["SK"],
         "description": item["description"],
         "priceCents": int(item["priceCents"]),
+        "available": bool(item.get("available", True)),
     }
 
 

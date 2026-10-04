@@ -61,7 +61,7 @@
       <h2>Current add-ons</h2>
       <table id="addons-table">
         <thead>
-          <tr><th>Description</th><th>Price</th><th></th></tr>
+          <tr><th>Description</th><th>Price</th><th>Available</th><th></th></tr>
         </thead>
         <tbody id="addons-body"></tbody>
       </table>
@@ -143,10 +143,27 @@
           <tr data-addon-id="${addOn.addOnId}">
             <td>${addOn.description}</td>
             <td>${formatPrice(addOn.priceCents)}</td>
-            <td><button class="secondary delete-addon">Delete</button></td>
+            <td>${addOn.available ? "Yes" : "No"}</td>
+            <td>
+              <button class="secondary toggle-addon-available">${addOn.available ? "Hide" : "Show"}</button>
+              <button class="secondary delete-addon">Delete</button>
+            </td>
           </tr>`
           )
           .join("");
+
+        body.querySelectorAll(".toggle-addon-available").forEach((btn) => {
+          btn.addEventListener("click", async (e) => {
+            const addOnId = e.target.closest("tr").dataset.addonId;
+            const addOn = addOns.find((a) => a.addOnId === addOnId);
+            await apiRequest(config.apiUrl, `/addons/${addOnId}`, {
+              method: "PUT",
+              token,
+              body: { available: !addOn.available },
+            });
+            refreshAddOns();
+          });
+        });
 
         body.querySelectorAll(".delete-addon").forEach((btn) => {
           btn.addEventListener("click", async (e) => {

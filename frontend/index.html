@@ -191,9 +191,10 @@
     }
 
     function renderAddOnChoices(meal, disabled) {
-      if (allAddOns.length === 0) return "";
+      const visibleAddOns = allAddOns.filter((a) => a.available);
+      if (visibleAddOns.length === 0) return "";
       return `<div class="option-groups">
-        ${allAddOns
+        ${visibleAddOns
           .map(
             (a) => `
           <label class="option-choice">

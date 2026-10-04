@@ -230,7 +230,7 @@ class MealPrepAppStack(Stack):
             authorizer=jwt_authorizer,
         )
         http_api.add_routes(
-            path="/addons/{addOnId}", methods=[apigwv2.HttpMethod.DELETE],
+            path="/addons/{addOnId}", methods=[apigwv2.HttpMethod.PUT, apigwv2.HttpMethod.DELETE],
             integration=integration, authorizer=jwt_authorizer,
         )
 

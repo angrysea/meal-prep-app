@@ -130,6 +130,63 @@ def test_admin_can_create_and_delete_addon(table):
     assert json.loads(list_resp["body"]) == {"addOns": []}
 
 
+def test_create_addon_defaults_to_available(table):
+    from backend.lambda_src import index
+
+    addon = _create_addon(index)
+    assert addon["available"] is True
+
+
+def test_update_addon_requires_admin(table):
+    from backend.lambda_src import index
+
+    addon = _create_addon(index)
+    resp = index.handler(
+        _event("PUT", f"/addons/{addon['addOnId']}", {"available": False},
+               path_params={"addOnId": addon["addOnId"]}, claims=CUSTOMER_CLAIMS),
+        None,
+    )
+    assert resp["statusCode"] == 403
+
+
+def test_admin_can_hide_and_show_addon(table):
+    from backend.lambda_src import index
+
+    addon = _create_addon(index)
+    resp = index.handler(
+        _event("PUT", f"/addons/{addon['addOnId']}", {"available": False},
+               path_params={"addOnId": addon["addOnId"]}, claims=ADMIN_CLAIMS),
+        None,
+    )
+    assert resp["statusCode"] == 200
+    updated = json.loads(resp["body"])
+    assert updated["available"] is False
+    # Hiding doesn't touch description/price.
+    assert updated["description"] == "Large"
+    assert updated["priceCents"] == 300
+
+    list_resp = index.handler(_event("GET", "/addons"), None)
+    assert json.loads(list_resp["body"])["addOns"][0]["available"] is False
+
+    resp = index.handler(
+        _event("PUT", f"/addons/{addon['addOnId']}", {"available": True},
+               path_params={"addOnId": addon["addOnId"]}, claims=ADMIN_CLAIMS),
+        None,
+    )
+    assert json.loads(resp["body"])["available"] is True
+
+
+def test_update_addon_fails_for_unknown_id(table):
+    from backend.lambda_src import index
+
+    resp = index.handler(
+        _event("PUT", "/addons/does-not-exist", {"available": False},
+               path_params={"addOnId": "does-not-exist"}, claims=ADMIN_CLAIMS),
+        None,
+    )
+    assert resp["statusCode"] == 404
+
+
 def test_list_meals_is_public(table):
     from backend.lambda_src import index
 
