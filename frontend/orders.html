@@ -50,9 +50,9 @@
             <ul>
               ${order.items
                 .map((i) => {
-                  const optionLabels = (i.selectedOptions || []).map((o) => o.optionLabel);
-                  const optionText = optionLabels.length ? ` <span class="muted">(${optionLabels.join(", ")})</span>` : "";
-                  return `<li>${i.quantity} x ${i.name}${optionText} - ${formatPrice(i.unitPriceCents * i.quantity)}</li>`;
+                  const addOnLabels = (i.selectedAddOns || []).map((a) => a.description);
+                  const addOnText = addOnLabels.length ? ` <span class="muted">(${addOnLabels.join(", ")})</span>` : "";
+                  return `<li>${i.quantity} x ${i.name}${addOnText} - ${formatPrice(i.unitPriceCents * i.quantity)}</li>`;
                 })
                 .join("")}
             </ul>

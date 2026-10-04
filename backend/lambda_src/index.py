@@ -33,6 +33,12 @@ def handler(event, context):
             return update_meal(event, path_params["mealId"])
         if path.startswith("/meals/") and method == "DELETE":
             return delete_meal(event, path_params["mealId"])
+        if path == "/addons" and method == "GET":
+            return list_addons()
+        if path == "/addons" and method == "POST":
+            return create_addon(event)
+        if path.startswith("/addons/") and method == "DELETE":
+            return delete_addon(event, path_params["addOnId"])
         if path == "/orders" and method == "GET":
             return list_orders(event)
         if path == "/orders" and method == "POST":
@@ -70,7 +76,6 @@ def create_meal(event):
         "priceCents": int(body["priceCents"]),
         "available": bool(body.get("available", True)),
         "macros": _parse_macros(body.get("macros")),
-        "optionGroups": _parse_option_groups(body.get("optionGroups")),
     }
     table.put_item(Item=item)
     return _response(201, _meal_out(item))
@@ -90,11 +95,6 @@ def update_meal(event, meal_id):
         "priceCents": int(body.get("priceCents", existing["priceCents"])),
         "available": bool(body.get("available", existing.get("available", True))),
         "macros": _parse_macros(body["macros"]) if "macros" in body else existing.get("macros", _parse_macros(None)),
-        "optionGroups": (
-            _parse_option_groups(body["optionGroups"])
-            if "optionGroups" in body
-            else existing.get("optionGroups", [])
-        ),
     }
     table.put_item(Item=updated)
     return _response(200, _meal_out(updated))
@@ -111,53 +111,6 @@ def _parse_macros(raw):
     return {field: int(raw.get(field, 0) or 0) for field in MACRO_FIELDS}
 
 
-def _parse_option_groups(raw):
-    """Validates and normalizes the admin-supplied option group definitions.
-
-    A group is e.g. {id, name, selectionType: "single"|"multi", required, options}
-    where each option is {id, label, priceDeltaCents}. This shape is entirely
-    admin-defined - there's no fixed notion of "size" or "add-on" baked in.
-    """
-    groups = raw or []
-    parsed = []
-    seen_group_ids = set()
-    for group in groups:
-        group_id = str(group["id"])
-        if group_id in seen_group_ids:
-            raise BadRequest(f"duplicate option group id: {group_id}")
-        seen_group_ids.add(group_id)
-
-        selection_type = group.get("selectionType", "single")
-        if selection_type not in ("single", "multi"):
-            raise BadRequest(f"invalid selectionType for group {group_id}: {selection_type}")
-
-        options = group.get("options") or []
-        if not options:
-            raise BadRequest(f"option group {group_id} must have at least one option")
-
-        seen_option_ids = set()
-        parsed_options = []
-        for option in options:
-            option_id = str(option["id"])
-            if option_id in seen_option_ids:
-                raise BadRequest(f"duplicate option id {option_id} in group {group_id}")
-            seen_option_ids.add(option_id)
-            parsed_options.append({
-                "id": option_id,
-                "label": option["label"],
-                "priceDeltaCents": int(option.get("priceDeltaCents", 0)),
-            })
-
-        parsed.append({
-            "id": group_id,
-            "name": group.get("name", group_id),
-            "selectionType": selection_type,
-            "required": bool(group.get("required", False)),
-            "options": parsed_options,
-        })
-    return parsed
-
-
 def _meal_out(item):
     return {
         "mealId": item["SK"],
@@ -166,7 +119,48 @@ def _meal_out(item):
         "priceCents": int(item["priceCents"]),
         "available": bool(item.get("available", True)),
         "macros": {field: int(item.get("macros", {}).get(field, 0)) for field in MACRO_FIELDS},
-        "optionGroups": [dict(g) for g in item.get("optionGroups", [])],
+    }
+
+
+# ---------- add-ons ----------
+# A single global list, e.g. "Large" (+$3.00), "Extra Protein" (+$1.50),
+# offered as independent optional checkboxes on every meal - not grouped or
+# mutually exclusive.
+
+def list_addons():
+    items = table.query(
+        KeyConditionExpression="PK = :pk",
+        ExpressionAttributeValues={":pk": "ADDON"},
+    ).get("Items", [])
+    return _response(200, {"addOns": [_addon_out(item) for item in items]})
+
+
+def create_addon(event):
+    _require_admin(event)
+    body = _body(event)
+    addon_id = uuid.uuid4().hex[:12]
+    item = {
+        "PK": "ADDON",
+        "SK": addon_id,
+        "addOnId": addon_id,
+        "description": body["description"],
+        "priceCents": int(body["priceCents"]),
+    }
+    table.put_item(Item=item)
+    return _response(201, _addon_out(item))
+
+
+def delete_addon(event, addon_id):
+    _require_admin(event)
+    table.delete_item(Key={"PK": "ADDON", "SK": addon_id})
+    return _response(204, None)
+
+
+def _addon_out(item):
+    return {
+        "addOnId": item["SK"],
+        "description": item["description"],
+        "priceCents": int(item["priceCents"]),
     }
 
 
@@ -189,7 +183,7 @@ def create_order(event):
     if not requested_items:
         return _response(400, {"message": "order must include at least one item"})
 
-    # Prices (and option selections) are recomputed from the current menu,
+    # Prices (and add-ons) are recomputed from the current menu/add-on list,
     # never trusted from the client.
     line_items = []
     total_cents = 0
@@ -200,18 +194,16 @@ def create_order(event):
         if not meal:
             return _response(400, {"message": f"unknown mealId: {meal_id}"})
 
-        resolved_options, options_total_cents = _resolve_selected_options(
-            meal, requested.get("selectedOptions") or []
-        )
+        resolved_addons, addons_total_cents = _resolve_addons(requested.get("selectedAddOnIds") or [])
 
-        unit_price_cents = int(meal["priceCents"]) + options_total_cents
+        unit_price_cents = int(meal["priceCents"]) + addons_total_cents
         total_cents += unit_price_cents * quantity
         line_items.append({
             "mealId": meal_id,
             "name": meal["name"],
             "unitPriceCents": unit_price_cents,
             "quantity": quantity,
-            "selectedOptions": resolved_options,
+            "selectedAddOns": resolved_addons,
         })
 
     order_id = uuid.uuid4().hex[:12]
@@ -231,47 +223,26 @@ def create_order(event):
     return _response(201, _order_out(item))
 
 
-def _resolve_selected_options(meal, requested_selections):
-    """Validates the client's {groupId, optionId} picks against the meal's
-    current option groups and returns (resolved selections with labels/prices
-    snapshotted, total price delta in cents). Raises BadRequest on anything
-    that doesn't match a currently-defined group/option, or breaks a group's
-    required/selectionType rules.
+def _resolve_addons(requested_addon_ids):
+    """Validates the client's add-on id picks against the current global
+    add-on list and returns (resolved add-ons with description/price
+    snapshotted, total price delta in cents). Raises BadRequest for any id
+    that doesn't currently exist.
     """
-    groups_by_id = {g["id"]: g for g in meal.get("optionGroups", [])}
-    selections_by_group = {}
-    for selection in requested_selections:
-        group_id = selection["groupId"]
-        option_id = selection["optionId"]
-        if group_id not in groups_by_id:
-            raise BadRequest(f"unknown option group: {group_id}")
-        selections_by_group.setdefault(group_id, []).append(option_id)
-
     resolved = []
-    total_delta_cents = 0
-    for group_id, group in groups_by_id.items():
-        chosen_option_ids = selections_by_group.get(group_id, [])
-
-        if group["required"] and not chosen_option_ids:
-            raise BadRequest(f"option group '{group['name']}' is required")
-        if group["selectionType"] == "single" and len(chosen_option_ids) > 1:
-            raise BadRequest(f"option group '{group['name']}' only allows one selection")
-
-        options_by_id = {o["id"]: o for o in group["options"]}
-        for option_id in chosen_option_ids:
-            option = options_by_id.get(option_id)
-            if not option:
-                raise BadRequest(f"unknown option '{option_id}' in group '{group['name']}'")
-            total_delta_cents += int(option["priceDeltaCents"])
-            resolved.append({
-                "groupId": group_id,
-                "groupName": group["name"],
-                "optionId": option_id,
-                "optionLabel": option["label"],
-                "priceDeltaCents": int(option["priceDeltaCents"]),
-            })
-
-    return resolved, total_delta_cents
+    total_cents = 0
+    for addon_id in requested_addon_ids:
+        addon = table.get_item(Key={"PK": "ADDON", "SK": addon_id}).get("Item")
+        if not addon:
+            raise BadRequest(f"unknown add-on: {addon_id}")
+        price_cents = int(addon["priceCents"])
+        total_cents += price_cents
+        resolved.append({
+            "addOnId": addon_id,
+            "description": addon["description"],
+            "priceCents": price_cents,
+        })
+    return resolved, total_cents
 
 
 def _order_out(item):

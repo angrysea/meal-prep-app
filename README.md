@@ -45,18 +45,17 @@ an admin-only page to add/hide/delete menu items.
 
 ## Menu data model
 
-Each meal has a flat `macros` object (`calories`, `proteinG`, `carbsG`, `fatG`)
-and an admin-defined, fully generic `optionGroups` list — there's no hardcoded
-notion of "size" or "add-on". A group is `{id, name, selectionType: "single" |
-"multi", required, options: [{id, label, priceDeltaCents}]}`; admins build
-these in the "Add a meal" form on `admin.html`. At order time, the client
-sends only `{groupId, optionId}` pairs — the Lambda resolves them against the
-meal's *current* option groups, validates required/single-vs-multi rules, and
-computes the price from `priceDeltaCents`, the same never-trust-the-client
-principle as the base price. Note: macros are per-meal, not per-option — if a
-"Large" selection should actually change calories (as it does on the flyer
-this was modeled from), that'd need a `macrosDelta` added to the option shape,
-analogous to `priceDeltaCents`; not implemented yet.
+Each meal has a flat `macros` object (`calories`, `proteinG`, `carbsG`,
+`fatG`). Add-ons (e.g. "Large" +$3.00, "Extra Protein" +$1.50) are a single
+**global** list — `{addOnId, description, priceCents}` — managed on
+`admin.html` and offered as independent, optional checkboxes on *every* meal;
+there's no per-meal configuration and no mutual exclusivity (picking "Large"
+doesn't prevent also picking something else). At order time, the client sends
+only `selectedAddOnIds: [id, ...]` — the Lambda resolves each id against the
+*current* global add-on list and sums `priceCents`, the same
+never-trust-the-client principle the base price already had. Note: macros are
+per-meal only, not affected by add-on selection — if "Large" should actually
+change the displayed calories, that'd need its own mechanism; not implemented.
 
 ## One-time setup
 

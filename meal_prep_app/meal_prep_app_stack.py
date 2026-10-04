@@ -149,6 +149,20 @@ class MealPrepAppStack(Stack):
             integration=integration, authorizer=jwt_authorizer,
         )
 
+        # Add-ons: a single global list (e.g. "Large", "Extra Protein") offered
+        # on every meal. Browsing is public; managing the list is admin-only.
+        http_api.add_routes(
+            path="/addons", methods=[apigwv2.HttpMethod.GET], integration=integration,
+        )
+        http_api.add_routes(
+            path="/addons", methods=[apigwv2.HttpMethod.POST], integration=integration,
+            authorizer=jwt_authorizer,
+        )
+        http_api.add_routes(
+            path="/addons/{addOnId}", methods=[apigwv2.HttpMethod.DELETE],
+            integration=integration, authorizer=jwt_authorizer,
+        )
+
         # Resolved resource values (API URL, Cognito IDs) aren't known until this
         # deploy runs, so they're written into config.json alongside the static
         # assets rather than hardcoded into the frontend source.

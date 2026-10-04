@@ -54,29 +54,7 @@ def _create_meal(index, name="Chicken Bowl", price_cents=1200):
     return json.loads(resp["body"])
 
 
-SIZE_GROUP = {
-    "id": "size",
-    "name": "Size",
-    "selectionType": "single",
-    "required": True,
-    "options": [
-        {"id": "regular", "label": "Regular", "priceDeltaCents": 0},
-        {"id": "large", "label": "Large", "priceDeltaCents": 300},
-    ],
-}
-ADDONS_GROUP = {
-    "id": "addons",
-    "name": "Add-ons",
-    "selectionType": "multi",
-    "required": False,
-    "options": [
-        {"id": "extra_protein", "label": "Extra Protein", "priceDeltaCents": 150},
-        {"id": "extra_rice", "label": "Extra Rice", "priceDeltaCents": 100},
-    ],
-}
-
-
-def test_create_meal_with_macros_and_option_groups(table):
+def test_create_meal_with_macros(table):
     from backend.lambda_src import index
 
     resp = index.handler(
@@ -86,7 +64,6 @@ def test_create_meal_with_macros_and_option_groups(table):
                 "name": "Chicken Teriyaki Bowl",
                 "priceCents": 1200,
                 "macros": {"calories": 540, "proteinG": 48, "carbsG": 52, "fatG": 14},
-                "optionGroups": [SIZE_GROUP, ADDONS_GROUP],
             },
             claims=ADMIN_CLAIMS,
         ),
@@ -95,15 +72,58 @@ def test_create_meal_with_macros_and_option_groups(table):
     assert resp["statusCode"] == 201
     meal = json.loads(resp["body"])
     assert meal["macros"] == {"calories": 540, "proteinG": 48, "carbsG": 52, "fatG": 14}
-    assert [g["id"] for g in meal["optionGroups"]] == ["size", "addons"]
 
 
-def test_create_meal_defaults_macros_and_option_groups_when_omitted(table):
+def test_create_meal_defaults_macros_when_omitted(table):
     from backend.lambda_src import index
 
     meal = _create_meal(index)
     assert meal["macros"] == {"calories": 0, "proteinG": 0, "carbsG": 0, "fatG": 0}
-    assert meal["optionGroups"] == []
+
+
+def _create_addon(index, description="Large", price_cents=300):
+    resp = index.handler(
+        _event("POST", "/addons", {"description": description, "priceCents": price_cents}, claims=ADMIN_CLAIMS),
+        None,
+    )
+    return json.loads(resp["body"])
+
+
+def test_list_addons_is_public(table):
+    from backend.lambda_src import index
+
+    resp = index.handler(_event("GET", "/addons"), None)
+    assert resp["statusCode"] == 200
+    assert json.loads(resp["body"]) == {"addOns": []}
+
+
+def test_create_addon_requires_admin(table):
+    from backend.lambda_src import index
+
+    resp = index.handler(
+        _event("POST", "/addons", {"description": "Large", "priceCents": 300}, claims=CUSTOMER_CLAIMS), None
+    )
+    assert resp["statusCode"] == 403
+
+
+def test_admin_can_create_and_delete_addon(table):
+    from backend.lambda_src import index
+
+    addon = _create_addon(index)
+    assert addon["description"] == "Large"
+    assert addon["priceCents"] == 300
+
+    list_resp = index.handler(_event("GET", "/addons"), None)
+    assert len(json.loads(list_resp["body"])["addOns"]) == 1
+
+    delete_resp = index.handler(
+        _event("DELETE", f"/addons/{addon['addOnId']}", path_params={"addOnId": addon["addOnId"]}, claims=ADMIN_CLAIMS),
+        None,
+    )
+    assert delete_resp["statusCode"] == 204
+
+    list_resp = index.handler(_event("GET", "/addons"), None)
+    assert json.loads(list_resp["body"]) == {"addOns": []}
 
 
 def test_list_meals_is_public(table):
@@ -174,29 +194,16 @@ def test_create_order_recomputes_total_from_current_menu(table):
     assert order["status"] == "placed"
 
 
-def _create_meal_with_options(index, price_cents=1200):
-    resp = index.handler(
-        _event(
-            "POST", "/meals",
-            {"name": "Chicken Teriyaki Bowl", "priceCents": price_cents, "optionGroups": [SIZE_GROUP, ADDONS_GROUP]},
-            claims=ADMIN_CLAIMS,
-        ),
-        None,
-    )
-    return json.loads(resp["body"])
-
-
-def test_create_order_adds_single_select_option_price(table):
+def test_create_order_adds_global_addon_price(table):
     from backend.lambda_src import index
 
-    meal = _create_meal_with_options(index, price_cents=1200)
+    meal = _create_meal(index, price_cents=1200)
+    large = _create_addon(index, description="Large", price_cents=300)
+
     resp = index.handler(
         _event(
             "POST", "/orders",
-            {"items": [{
-                "mealId": meal["mealId"], "quantity": 1,
-                "selectedOptions": [{"groupId": "size", "optionId": "large"}],
-            }]},
+            {"items": [{"mealId": meal["mealId"], "quantity": 1, "selectedAddOnIds": [large["addOnId"]]}]},
             claims=CUSTOMER_CLAIMS,
         ),
         None,
@@ -204,25 +211,24 @@ def test_create_order_adds_single_select_option_price(table):
     assert resp["statusCode"] == 201
     order = json.loads(resp["body"])
     assert order["totalCents"] == 1500  # 1200 base + 300 for Large
-    assert order["items"][0]["selectedOptions"] == [
-        {"groupId": "size", "groupName": "Size", "optionId": "large", "optionLabel": "Large", "priceDeltaCents": 300}
+    assert order["items"][0]["selectedAddOns"] == [
+        {"addOnId": large["addOnId"], "description": "Large", "priceCents": 300}
     ]
 
 
-def test_create_order_sums_multi_select_option_prices(table):
+def test_create_order_sums_multiple_addons(table):
     from backend.lambda_src import index
 
-    meal = _create_meal_with_options(index, price_cents=1200)
+    meal = _create_meal(index, price_cents=1200)
+    large = _create_addon(index, description="Large", price_cents=300)
+    extra_protein = _create_addon(index, description="Extra Protein", price_cents=150)
+
     resp = index.handler(
         _event(
             "POST", "/orders",
             {"items": [{
                 "mealId": meal["mealId"], "quantity": 2,
-                "selectedOptions": [
-                    {"groupId": "size", "optionId": "regular"},
-                    {"groupId": "addons", "optionId": "extra_protein"},
-                    {"groupId": "addons", "optionId": "extra_rice"},
-                ],
+                "selectedAddOnIds": [large["addOnId"], extra_protein["addOnId"]],
             }]},
             claims=CUSTOMER_CLAIMS,
         ),
@@ -230,72 +236,35 @@ def test_create_order_sums_multi_select_option_prices(table):
     )
     assert resp["statusCode"] == 201
     order = json.loads(resp["body"])
-    # unit price: 1200 + 0 (regular) + 150 + 100 = 1450, times quantity 2
-    assert order["totalCents"] == 2900
-    assert order["items"][0]["unitPriceCents"] == 1450
+    # unit price: 1200 + 300 + 150 = 1650, times quantity 2
+    assert order["totalCents"] == 3300
+    assert order["items"][0]["unitPriceCents"] == 1650
 
 
-def test_create_order_fails_when_required_option_group_missing(table):
+def test_create_order_with_no_addons_selected(table):
     from backend.lambda_src import index
 
-    meal = _create_meal_with_options(index)
+    meal = _create_meal(index, price_cents=1200)
+    _create_addon(index)  # exists but not selected - shouldn't affect price
+
     resp = index.handler(
         _event("POST", "/orders", {"items": [{"mealId": meal["mealId"], "quantity": 1}]}, claims=CUSTOMER_CLAIMS),
         None,
     )
-    assert resp["statusCode"] == 400
+    assert resp["statusCode"] == 201
+    order = json.loads(resp["body"])
+    assert order["totalCents"] == 1200
+    assert order["items"][0]["selectedAddOns"] == []
 
 
-def test_create_order_fails_for_unknown_option_group(table):
+def test_create_order_fails_for_unknown_addon(table):
     from backend.lambda_src import index
 
-    meal = _create_meal_with_options(index)
+    meal = _create_meal(index)
     resp = index.handler(
         _event(
             "POST", "/orders",
-            {"items": [{
-                "mealId": meal["mealId"], "quantity": 1,
-                "selectedOptions": [{"groupId": "nonexistent", "optionId": "x"}],
-            }]},
-            claims=CUSTOMER_CLAIMS,
-        ),
-        None,
-    )
-    assert resp["statusCode"] == 400
-
-
-def test_create_order_fails_for_unknown_option_in_known_group(table):
-    from backend.lambda_src import index
-
-    meal = _create_meal_with_options(index)
-    resp = index.handler(
-        _event(
-            "POST", "/orders",
-            {"items": [{
-                "mealId": meal["mealId"], "quantity": 1,
-                "selectedOptions": [{"groupId": "size", "optionId": "extra-large"}],
-            }]},
-            claims=CUSTOMER_CLAIMS,
-        ),
-        None,
-    )
-    assert resp["statusCode"] == 400
-
-
-def test_create_order_fails_for_multiple_selections_in_single_select_group(table):
-    from backend.lambda_src import index
-
-    meal = _create_meal_with_options(index)
-    resp = index.handler(
-        _event(
-            "POST", "/orders",
-            {"items": [{
-                "mealId": meal["mealId"], "quantity": 1,
-                "selectedOptions": [
-                    {"groupId": "size", "optionId": "regular"},
-                    {"groupId": "size", "optionId": "large"},
-                ],
-            }]},
+            {"items": [{"mealId": meal["mealId"], "quantity": 1, "selectedAddOnIds": ["does-not-exist"]}]},
             claims=CUSTOMER_CLAIMS,
         ),
         None,

@@ -17,7 +17,7 @@
     <div id="admin-guard"></div>
 
     <div id="admin-content" style="display:none;">
-      <section class="card form-narrow" style="max-width: 520px;">
+      <section class="card form-narrow">
         <h2>Add a meal</h2>
         <label for="new-name">Name</label>
         <input id="new-name" type="text" />
@@ -26,7 +26,7 @@
         <label for="new-price">Base price (USD)</label>
         <input id="new-price" type="number" step="0.01" min="0" />
 
-        <h3>Macros (per meal)</h3>
+        <h3>Macros</h3>
         <div style="display:flex; gap:0.5rem;">
           <div style="flex:1;">
             <label for="new-calories">Calories</label>
@@ -46,10 +46,6 @@
           </div>
         </div>
 
-        <h3>Option groups <span class="muted" style="font-weight:normal;">(size, substitutions, add-ons - optional)</span></h3>
-        <div id="option-groups-editor"></div>
-        <button type="button" class="secondary" id="add-group-button" style="margin-bottom:1rem;">+ Add option group</button>
-
         <p class="error" id="create-error" style="display:none;"></p>
         <button id="create-button">Add meal</button>
       </section>
@@ -60,6 +56,24 @@
           <tr><th>Name</th><th>Price</th><th>Available</th><th></th></tr>
         </thead>
         <tbody id="meals-body"></tbody>
+      </table>
+
+      <section class="card form-narrow">
+        <h2>Add-ons <span class="muted" style="font-weight:normal;">(offered on every meal)</span></h2>
+        <label for="addon-description">Description</label>
+        <input id="addon-description" type="text" placeholder="e.g. Large, Extra Protein" />
+        <label for="addon-price">Price (USD)</label>
+        <input id="addon-price" type="number" step="0.01" min="0" />
+        <p class="error" id="addon-error" style="display:none;"></p>
+        <button id="addon-create-button">Add add-on</button>
+      </section>
+
+      <h2>Current add-ons</h2>
+      <table id="addons-table">
+        <thead>
+          <tr><th>Description</th><th>Price</th><th></th></tr>
+        </thead>
+        <tbody id="addons-body"></tbody>
       </table>
     </div>
   </main>
@@ -86,106 +100,8 @@
       }
     });
 
-    function escapeAttr(value) {
-      return String(value ?? "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
-    }
-
-    function newId(prefix) {
-      return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-    }
-
-    // ---------- option groups editor (admin "add a meal" form) ----------
-
-    let draftGroups = [];
-
-    function renderOptionGroupsEditor() {
-      const container = document.getElementById("option-groups-editor");
-      container.innerHTML = draftGroups
-        .map(
-          (g, gi) => `
-        <div class="card og" data-gi="${gi}" style="padding:0.75rem; margin-bottom:0.75rem;">
-          <div style="display:flex; gap:0.5rem; align-items:center; margin-bottom:0.5rem;">
-            <input type="text" class="og-name" placeholder="Group name (e.g. Size)" value="${escapeAttr(g.name)}" style="flex:1; margin-bottom:0;" />
-            <select class="og-type">
-              <option value="single" ${g.selectionType === "single" ? "selected" : ""}>Pick one</option>
-              <option value="multi" ${g.selectionType === "multi" ? "selected" : ""}>Pick any</option>
-            </select>
-          </div>
-          <label style="font-weight:normal; display:flex; align-items:center; gap:0.4rem; margin-bottom:0.5rem;">
-            <input type="checkbox" class="og-required" style="width:auto; margin:0;" ${g.required ? "checked" : ""} /> Required
-          </label>
-          <div class="og-options">
-            ${g.options
-              .map(
-                (o, oi) => `
-              <div class="og-option" data-oi="${oi}" style="display:flex; gap:0.5rem; align-items:center;">
-                <input type="text" class="oo-label" placeholder="Option (e.g. Large)" value="${escapeAttr(o.label)}" style="flex:1;" />
-                <input type="number" class="oo-price" placeholder="+$ price" step="0.01" value="${(o.priceDeltaCents / 100).toFixed(2)}" style="width:100px;" />
-                <button type="button" class="secondary remove-option">&times;</button>
-              </div>`
-              )
-              .join("")}
-          </div>
-          <button type="button" class="secondary add-option">+ Add option</button>
-          <button type="button" class="secondary remove-group" style="float:right;">Remove group</button>
-        </div>`
-        )
-        .join("");
-
-      container.querySelectorAll(".og").forEach((groupEl) => {
-        const gi = Number(groupEl.dataset.gi);
-
-        groupEl.querySelector(".og-name").addEventListener("input", (e) => {
-          draftGroups[gi].name = e.target.value;
-        });
-        groupEl.querySelector(".og-type").addEventListener("change", (e) => {
-          draftGroups[gi].selectionType = e.target.value;
-        });
-        groupEl.querySelector(".og-required").addEventListener("change", (e) => {
-          draftGroups[gi].required = e.target.checked;
-        });
-        groupEl.querySelector(".remove-group").addEventListener("click", () => {
-          draftGroups.splice(gi, 1);
-          renderOptionGroupsEditor();
-        });
-        groupEl.querySelector(".add-option").addEventListener("click", () => {
-          draftGroups[gi].options.push({ id: newId("opt"), label: "", priceDeltaCents: 0 });
-          renderOptionGroupsEditor();
-        });
-
-        groupEl.querySelectorAll(".og-option").forEach((optEl) => {
-          const oi = Number(optEl.dataset.oi);
-          optEl.querySelector(".oo-label").addEventListener("input", (e) => {
-            draftGroups[gi].options[oi].label = e.target.value;
-          });
-          optEl.querySelector(".oo-price").addEventListener("input", (e) => {
-            draftGroups[gi].options[oi].priceDeltaCents = Math.round((parseFloat(e.target.value) || 0) * 100);
-          });
-          optEl.querySelector(".remove-option").addEventListener("click", () => {
-            draftGroups[gi].options.splice(oi, 1);
-            renderOptionGroupsEditor();
-          });
-        });
-      });
-    }
-
-    document.getElementById("add-group-button").addEventListener("click", () => {
-      draftGroups.push({
-        id: newId("group"),
-        name: "",
-        selectionType: "single",
-        required: false,
-        options: [{ id: newId("opt"), label: "", priceDeltaCents: 0 }],
-      });
-      renderOptionGroupsEditor();
-    });
-
-    renderOptionGroupsEditor();
-
-    // ---------- meal list + create ----------
-
     async function initAdmin(config, token) {
-      async function refresh() {
+      async function refreshMeals() {
         const { meals } = await apiRequest(config.apiUrl, "/meals");
         const body = document.getElementById("meals-body");
         body.innerHTML = meals
@@ -213,7 +129,7 @@
               token,
               body: { available: !meal.available },
             });
-            refresh();
+            refreshMeals();
           });
         });
 
@@ -222,7 +138,31 @@
             const mealId = e.target.closest("tr").dataset.mealId;
             if (!confirm("Delete this meal?")) return;
             await apiRequest(config.apiUrl, `/meals/${mealId}`, { method: "DELETE", token });
-            refresh();
+            refreshMeals();
+          });
+        });
+      }
+
+      async function refreshAddOns() {
+        const { addOns } = await apiRequest(config.apiUrl, "/addons");
+        const body = document.getElementById("addons-body");
+        body.innerHTML = addOns
+          .map(
+            (addOn) => `
+          <tr data-addon-id="${addOn.addOnId}">
+            <td>${addOn.description}</td>
+            <td>${formatPrice(addOn.priceCents)}</td>
+            <td><button class="secondary delete-addon">Delete</button></td>
+          </tr>`
+          )
+          .join("");
+
+        body.querySelectorAll(".delete-addon").forEach((btn) => {
+          btn.addEventListener("click", async (e) => {
+            const addOnId = e.target.closest("tr").dataset.addonId;
+            if (!confirm("Delete this add-on?")) return;
+            await apiRequest(config.apiUrl, `/addons/${addOnId}`, { method: "DELETE", token });
+            refreshAddOns();
           });
         });
       }
@@ -232,14 +172,6 @@
         errorEl.style.display = "none";
         try {
           const priceCents = Math.round(parseFloat(document.getElementById("new-price").value) * 100);
-
-          const optionGroups = draftGroups
-            .filter((g) => g.name.trim() && g.options.some((o) => o.label.trim()))
-            .map((g) => ({
-              ...g,
-              options: g.options.filter((o) => o.label.trim()),
-            }));
-
           await apiRequest(config.apiUrl, "/meals", {
             method: "POST",
             token,
@@ -253,10 +185,8 @@
                 carbsG: parseInt(document.getElementById("new-carbs").value, 10) || 0,
                 fatG: parseInt(document.getElementById("new-fat").value, 10) || 0,
               },
-              optionGroups,
             },
           });
-
           document.getElementById("new-name").value = "";
           document.getElementById("new-description").value = "";
           document.getElementById("new-price").value = "";
@@ -264,17 +194,37 @@
           document.getElementById("new-protein").value = "";
           document.getElementById("new-carbs").value = "";
           document.getElementById("new-fat").value = "";
-          draftGroups = [];
-          renderOptionGroupsEditor();
-
-          refresh();
+          refreshMeals();
         } catch (err) {
           errorEl.textContent = err.message;
           errorEl.style.display = "block";
         }
       });
 
-      refresh();
+      document.getElementById("addon-create-button").addEventListener("click", async () => {
+        const errorEl = document.getElementById("addon-error");
+        errorEl.style.display = "none";
+        try {
+          const priceCents = Math.round(parseFloat(document.getElementById("addon-price").value) * 100);
+          await apiRequest(config.apiUrl, "/addons", {
+            method: "POST",
+            token,
+            body: {
+              description: document.getElementById("addon-description").value,
+              priceCents,
+            },
+          });
+          document.getElementById("addon-description").value = "";
+          document.getElementById("addon-price").value = "";
+          refreshAddOns();
+        } catch (err) {
+          errorEl.textContent = err.message;
+          errorEl.style.display = "block";
+        }
+      });
+
+      refreshMeals();
+      refreshAddOns();
     }
   </script>
 </body>
