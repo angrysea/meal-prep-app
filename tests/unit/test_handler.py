@@ -306,6 +306,169 @@ def test_list_orders_is_scoped_to_the_caller(table):
     assert orders[0]["items"][0]["quantity"] == 1
 
 
+def _place_order(index, claims, quantity=1):
+    meal = _create_meal(index)
+    resp = index.handler(
+        _event("POST", "/orders", {"items": [{"mealId": meal["mealId"], "quantity": quantity}]}, claims=claims),
+        None,
+    )
+    return json.loads(resp["body"])
+
+
+def test_customer_can_cancel_a_placed_order(table):
+    from backend.lambda_src import index
+
+    order = _place_order(index, CUSTOMER_CLAIMS)
+    resp = index.handler(
+        _event("PUT", f"/orders/{order['orderId']}", {"status": "cancelled"},
+               path_params={"orderId": order["orderId"]}, claims=CUSTOMER_CLAIMS),
+        None,
+    )
+    assert resp["statusCode"] == 200
+    assert json.loads(resp["body"])["status"] == "cancelled"
+
+
+def test_customer_cannot_cancel_an_already_cancelled_order(table):
+    from backend.lambda_src import index
+
+    order = _place_order(index, CUSTOMER_CLAIMS)
+    index.handler(
+        _event("PUT", f"/orders/{order['orderId']}", {"status": "cancelled"},
+               path_params={"orderId": order["orderId"]}, claims=CUSTOMER_CLAIMS),
+        None,
+    )
+    resp = index.handler(
+        _event("PUT", f"/orders/{order['orderId']}", {"status": "cancelled"},
+               path_params={"orderId": order["orderId"]}, claims=CUSTOMER_CLAIMS),
+        None,
+    )
+    assert resp["statusCode"] == 400
+
+
+def test_customer_cannot_cancel_someone_elses_order(table):
+    from backend.lambda_src import index
+
+    order = _place_order(index, CUSTOMER_CLAIMS)
+    other_claims = {"sub": "user-2", "email": "other@example.com"}
+    resp = index.handler(
+        _event("PUT", f"/orders/{order['orderId']}", {"status": "cancelled"},
+               path_params={"orderId": order["orderId"]}, claims=other_claims),
+        None,
+    )
+    assert resp["statusCode"] == 400
+
+
+def test_admin_orders_requires_admin(table):
+    from backend.lambda_src import index
+
+    resp = index.handler(_event("GET", "/admin/orders", claims=CUSTOMER_CLAIMS), None)
+    assert resp["statusCode"] == 403
+
+
+def test_admin_can_list_placed_orders_across_customers(table):
+    from backend.lambda_src import index
+
+    order1 = _place_order(index, CUSTOMER_CLAIMS)
+    other_claims = {"sub": "user-2", "email": "other@example.com"}
+    order2 = _place_order(index, other_claims, quantity=2)
+
+    resp = index.handler(_event("GET", "/admin/orders", claims=ADMIN_CLAIMS), None)
+    assert resp["statusCode"] == 200
+    orders = json.loads(resp["body"])["orders"]
+    assert {o["orderId"] for o in orders} == {order1["orderId"], order2["orderId"]}
+    assert {o["customerSub"] for o in orders} == {"user-1", "user-2"}
+
+
+def test_admin_orders_list_excludes_non_placed_orders(table):
+    from backend.lambda_src import index
+
+    order = _place_order(index, CUSTOMER_CLAIMS)
+    index.handler(
+        _event("PUT", f"/orders/{order['orderId']}", {"status": "cancelled"},
+               path_params={"orderId": order["orderId"]}, claims=CUSTOMER_CLAIMS),
+        None,
+    )
+    resp = index.handler(_event("GET", "/admin/orders", claims=ADMIN_CLAIMS), None)
+    assert json.loads(resp["body"])["orders"] == []
+
+
+def test_update_order_status_requires_admin(table):
+    from backend.lambda_src import index
+
+    resp = index.handler(
+        _event("PUT", "/admin/orders/user-1/abc", {"status": "prepared"},
+               path_params={"sub": "user-1", "orderId": "abc"}, claims=CUSTOMER_CLAIMS),
+        None,
+    )
+    assert resp["statusCode"] == 403
+
+
+def test_admin_can_update_order_status(table):
+    from backend.lambda_src import index
+
+    order = _place_order(index, CUSTOMER_CLAIMS)
+    resp = index.handler(
+        _event("PUT", f"/admin/orders/user-1/{order['orderId']}", {"status": "prepared"},
+               path_params={"sub": "user-1", "orderId": order["orderId"]}, claims=ADMIN_CLAIMS),
+        None,
+    )
+    assert resp["statusCode"] == 200
+    body = json.loads(resp["body"])
+    assert body["status"] == "prepared"
+    assert body["customerSub"] == "user-1"
+
+    # No longer in the "placed" queue once moved along.
+    resp = index.handler(_event("GET", "/admin/orders", claims=ADMIN_CLAIMS), None)
+    assert json.loads(resp["body"])["orders"] == []
+
+
+def test_admin_update_order_status_rejects_invalid_status(table):
+    from backend.lambda_src import index
+
+    order = _place_order(index, CUSTOMER_CLAIMS)
+    resp = index.handler(
+        _event("PUT", f"/admin/orders/user-1/{order['orderId']}", {"status": "bogus"},
+               path_params={"sub": "user-1", "orderId": order["orderId"]}, claims=ADMIN_CLAIMS),
+        None,
+    )
+    assert resp["statusCode"] == 400
+
+
+def test_create_order_emails_admins(table, monkeypatch):
+    from backend.lambda_src import index
+
+    cognito, pool_id = _create_test_pool(index)
+    cognito.create_group(UserPoolId=pool_id, GroupName="Admins")
+    cognito.admin_create_user(
+        UserPoolId=pool_id, Username="admin@example.com",
+        UserAttributes=[{"Name": "email", "Value": "admin@example.com"}, {"Name": "email_verified", "Value": "true"}],
+        MessageAction="SUPPRESS",
+    )
+    cognito.admin_add_user_to_group(UserPoolId=pool_id, Username="admin@example.com", GroupName="Admins")
+
+    sent = {}
+    monkeypatch.setattr(index.ses, "send_email", lambda **kwargs: sent.update(kwargs) or {"MessageId": "test"})
+
+    _place_order(index, CUSTOMER_CLAIMS)
+
+    assert sent["Destination"]["ToAddresses"] == ["admin@example.com"]
+    assert "New order" in sent["Message"]["Subject"]["Data"]
+
+
+def test_create_order_does_not_fail_if_admin_notification_errors(table):
+    from backend.lambda_src import index
+
+    # No Cognito pool/group set up for this test - USER_POOL_ID is the
+    # module-level placeholder, so the admin lookup will fail. The order
+    # must still succeed.
+    resp = index.handler(
+        _event("POST", "/orders", {"items": [{"mealId": _create_meal(index)["mealId"], "quantity": 1}]},
+               claims=CUSTOMER_CLAIMS),
+        None,
+    )
+    assert resp["statusCode"] == 201
+
+
 def test_unknown_route_returns_404(table):
     from backend.lambda_src import index
 

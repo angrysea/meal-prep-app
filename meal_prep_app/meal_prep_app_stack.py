@@ -88,9 +88,12 @@ class MealPrepAppStack(Stack):
                 "TABLE_NAME": table_name,
                 "USER_POOL_ID": user_pool.user_pool_id,
                 "ADMINS_GROUP_NAME": ADMINS_GROUP_NAME,
-                # Placeholder - must be a verified SES sender identity before
-                # weekly reminder emails will actually send. See README.
-                "FROM_EMAIL": "orders@example.com",
+                # Must be a verified SES sender identity before any email
+                # (weekly reminders, new-order notifications) actually sends.
+                # Also the sole Admins-group member's address today, so
+                # verifying it covers SES sandbox's recipient-verification
+                # requirement too. See README.
+                "FROM_EMAIL": "gtxmeals@gmail.com",
                 # Empty by default (real Lambda uses the real AWS endpoint);
                 # local-env.json overrides this for `sam local` / testing.
                 "DYNAMODB_ENDPOINT_OVERRIDE": "",
@@ -111,9 +114,11 @@ class MealPrepAppStack(Stack):
         ))
 
         # Admin customer management: list every account, resolve a customer's
-        # sub from their login email, and remove an account on request.
+        # sub from their login email, remove an account on request, and look
+        # up admin emails to notify on new orders.
         api_fn.add_to_role_policy(iam.PolicyStatement(
-            actions=["cognito-idp:ListUsers", "cognito-idp:AdminGetUser", "cognito-idp:AdminDeleteUser"],
+            actions=["cognito-idp:ListUsers", "cognito-idp:ListUsersInGroup",
+                     "cognito-idp:AdminGetUser", "cognito-idp:AdminDeleteUser"],
             resources=[user_pool.user_pool_arn],
         ))
 
@@ -187,9 +192,25 @@ class MealPrepAppStack(Stack):
             integration=integration, authorizer=jwt_authorizer,
         )
 
-        # Orders: any signed-in customer, scoped to their own orders.
+        # Orders: any signed-in customer, scoped to their own orders. PUT is
+        # self-service cancel only (used by the "Edit" flow).
         http_api.add_routes(
             path="/orders", methods=[apigwv2.HttpMethod.GET, apigwv2.HttpMethod.POST],
+            integration=integration, authorizer=jwt_authorizer,
+        )
+        http_api.add_routes(
+            path="/orders/{orderId}", methods=[apigwv2.HttpMethod.PUT],
+            integration=integration, authorizer=jwt_authorizer,
+        )
+
+        # Admin order queue: list orders by status (defaults to "placed") across
+        # every customer, and update an individual order's status.
+        http_api.add_routes(
+            path="/admin/orders", methods=[apigwv2.HttpMethod.GET],
+            integration=integration, authorizer=jwt_authorizer,
+        )
+        http_api.add_routes(
+            path="/admin/orders/{sub}/{orderId}", methods=[apigwv2.HttpMethod.PUT],
             integration=integration, authorizer=jwt_authorizer,
         )
 

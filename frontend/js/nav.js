@@ -11,6 +11,7 @@ export function renderNav(targetId = "nav", { adminNav = false } = {}) {
   if (adminNav) {
     // Admin section has its own nav - no customer-facing "My Orders"/"My Account".
     links.push(`<a href="/admin.html">Admin</a>`);
+    links.push(`<a href="/admin-orders.html">Orders</a>`);
     links.push(`<a href="/customers.html">Customers</a>`);
     if (session) links.push(`<a href="#" id="nav-logout">Log out</a>`);
   } else if (session) {

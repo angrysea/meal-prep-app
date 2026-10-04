@@ -16,6 +16,7 @@
     <h1>This Week's Menu</h1>
     <p class="muted">Pick your meals, then check out below.</p>
     <p class="muted" id="login-prompt" style="display:none;"></p>
+    <p class="muted" id="edit-notice" style="display:none;">Editing your previous order - update it below and place it again.</p>
 
     <div id="meals" class="meal-grid">
       <p class="muted">Loading menu...</p>
@@ -66,6 +67,7 @@
 
     const cart = {}; // selectionsKey -> { meal, selectedAddOnIds, quantity }
     let allAddOns = [];
+    let loadedMeals = [];
 
     function renderCart() {
       const section = document.getElementById("cart-section");
@@ -139,6 +141,39 @@
       renderCart();
     }
 
+    function setCartItem(meal, selectedAddOnIds, quantity) {
+      const key = selectionsKey(meal.mealId, selectedAddOnIds);
+      cart[key] = { meal, selectedAddOnIds, quantity };
+      renderCart();
+    }
+
+    function applyEditCart() {
+      const raw = sessionStorage.getItem("editOrderCart");
+      if (!raw) return;
+      sessionStorage.removeItem("editOrderCart");
+
+      let data;
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        return;
+      }
+
+      (data.items || []).forEach((item) => {
+        const meal = loadedMeals.find((m) => m.mealId === item.mealId);
+        if (!meal) return; // no longer on the menu - nothing to re-add
+        setCartItem(meal, item.selectedAddOnIds || [], item.quantity || 1);
+      });
+
+      const delivery = data.delivery || {};
+      if (delivery.name) document.getElementById("delivery-name").value = delivery.name;
+      if (delivery.email) document.getElementById("delivery-email").value = delivery.email;
+      if (delivery.phone) document.getElementById("delivery-phone").value = delivery.phone;
+      if (delivery.address) document.getElementById("delivery-address").value = delivery.address;
+
+      document.getElementById("edit-notice").style.display = "block";
+    }
+
     function cancelOrder() {
       Object.keys(cart).forEach((key) => delete cart[key]);
       document.getElementById("checkout-error").style.display = "none";
@@ -186,6 +221,7 @@
         allAddOns = addOns;
 
         const available = meals.filter((m) => m.available);
+        loadedMeals = available;
         if (available.length === 0) {
           container.innerHTML = `<p class="muted">No meals on the menu right now - check back soon.</p>`;
           return;
@@ -279,8 +315,8 @@
 
     loadConfig().then(async (config) => {
       const session = await getValidSession({ region: config.region, clientId: config.userPoolClientId });
-      loadMenu(config, !!session);
-      prefillFromProfile(config, session);
+      await Promise.all([loadMenu(config, !!session), prefillFromProfile(config, session)]);
+      applyEditCart();
       document.getElementById("checkout-button").addEventListener("click", () => placeOrder(config));
       document.getElementById("cancel-order-button").addEventListener("click", cancelOrder);
     });

@@ -26,6 +26,7 @@ cognito_idp = boto3.client("cognito-idp")
 
 MACRO_FIELDS = ("calories", "proteinG", "carbsG", "fatG")
 CONTACT_METHODS = ("email", "text")
+ORDER_STATUSES = ("placed", "cancelled", "prepared", "delivered")
 
 
 def handler(event, context):
@@ -52,6 +53,12 @@ def handler(event, context):
             return list_orders(event)
         if path == "/orders" and method == "POST":
             return create_order(event)
+        if path.startswith("/orders/") and method == "PUT":
+            return cancel_order(event, path_params["orderId"])
+        if path == "/admin/orders" and method == "GET":
+            return list_admin_orders(event)
+        if path.startswith("/admin/orders/") and method == "PUT":
+            return update_order_status(event, path_params["sub"], path_params["orderId"])
         if path == "/profile" and method == "GET":
             return get_profile(event)
         if path == "/profile" and method == "PUT":
@@ -461,7 +468,122 @@ def create_order(event):
         "status": "placed",  # stub checkout - no real payment is taken
     }
     table.put_item(Item=item)
+    _notify_admins_of_order(item)
     return _response(201, _order_out(item))
+
+
+def cancel_order(event, order_id):
+    """Self-service cancel, used by the "Edit" button on a placed order: the
+    customer's page cancels the order then sends them back to the menu with
+    the same items reloaded into the cart, rather than mutating a placed order
+    in place.
+    """
+    user_id = _user_id(event)
+    item = _find_order(user_id, order_id)
+    if not item:
+        raise BadRequest(f"no such order: {order_id}")
+    if item.get("status", "placed") != "placed":
+        raise BadRequest("only orders in placed status can be cancelled")
+    item["status"] = "cancelled"
+    table.put_item(Item=item)
+    return _response(200, _order_out(item))
+
+
+def list_admin_orders(event):
+    _require_admin(event)
+    status = (event.get("queryStringParameters") or {}).get("status", "placed")
+    if status not in ORDER_STATUSES:
+        raise BadRequest(f"status must be one of {ORDER_STATUSES}")
+
+    items = []
+    scan_kwargs = {
+        "FilterExpression": "begins_with(SK, :sk) AND #s = :status",
+        "ExpressionAttributeNames": {"#s": "status"},
+        "ExpressionAttributeValues": {":sk": "ORDER#", ":status": status},
+    }
+    while True:
+        page = table.scan(**scan_kwargs)
+        items.extend(page.get("Items", []))
+        last_key = page.get("LastEvaluatedKey")
+        if not last_key:
+            break
+        scan_kwargs["ExclusiveStartKey"] = last_key
+
+    orders = [{**_order_out(item), "customerSub": item["PK"].split("#", 1)[1]} for item in items]
+    orders.sort(key=lambda o: o["createdAt"])
+    return _response(200, {"orders": orders})
+
+
+def update_order_status(event, sub, order_id):
+    _require_admin(event)
+    body = _body(event)
+    status = body.get("status")
+    if status not in ORDER_STATUSES:
+        raise BadRequest(f"status must be one of {ORDER_STATUSES}")
+    item = _find_order(sub, order_id)
+    if not item:
+        raise BadRequest(f"no such order: {order_id}")
+    item["status"] = status
+    table.put_item(Item=item)
+    return _response(200, {**_order_out(item), "customerSub": sub})
+
+
+def _find_order(user_id, order_id):
+    items = table.query(
+        KeyConditionExpression="PK = :pk AND begins_with(SK, :sk)",
+        ExpressionAttributeValues={":pk": f"USER#{user_id}", ":sk": "ORDER#"},
+    ).get("Items", [])
+    for item in items:
+        if item["orderId"] == order_id:
+            return item
+    return None
+
+
+def _admin_emails():
+    emails = []
+    kwargs = {"UserPoolId": USER_POOL_ID, "GroupName": ADMINS_GROUP_NAME}
+    while True:
+        page = cognito_idp.list_users_in_group(**kwargs)
+        for user in page.get("Users", []):
+            attrs = {a["Name"]: a["Value"] for a in user.get("Attributes", [])}
+            if attrs.get("email"):
+                emails.append(attrs["email"])
+        token = page.get("NextToken")
+        if not token:
+            break
+        kwargs["NextToken"] = token
+    return emails
+
+
+def _notify_admins_of_order(order):
+    """Best-effort - a notification failure (unverified sender, no admins
+    found, SES outage) should never block the order itself from going through.
+    """
+    try:
+        admin_emails = _admin_emails()
+        if not admin_emails:
+            return
+
+        lines = [f"New order from {order.get('deliveryName') or order.get('deliveryEmail')}:", ""]
+        for line_item in order["items"]:
+            addon_text = ", ".join(a["description"] for a in line_item["selectedAddOns"])
+            suffix = f" ({addon_text})" if addon_text else ""
+            lines.append(f"- {line_item['quantity']} x {line_item['name']}{suffix}")
+        lines.append("")
+        lines.append(f"Total: ${order['totalCents'] / 100:.2f}")
+        lines.append(f"Deliver to: {order.get('deliveryAddress', '')}")
+        lines.append(f"Contact: {order.get('deliveryEmail', '')} {order.get('deliveryPhone', '')}".strip())
+
+        ses.send_email(
+            Source=FROM_EMAIL,
+            Destination={"ToAddresses": admin_emails},
+            Message={
+                "Subject": {"Data": f"New order #{order['orderId']}"},
+                "Body": {"Text": {"Data": "\n".join(lines)}},
+            },
+        )
+    except Exception:  # noqa: BLE001 - notification failures must not fail the order
+        pass
 
 
 def _resolve_addons(requested_addon_ids):

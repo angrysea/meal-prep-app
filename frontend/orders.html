@@ -36,7 +36,8 @@
       }
 
       const container = document.getElementById("orders");
-      try {
+
+      async function refresh() {
         const { orders } = await apiRequest(config.apiUrl, "/orders", { token: session.idToken });
         if (orders.length === 0) {
           container.innerHTML = `<p class="muted">No orders yet. <a href="/index.html">Browse the menu</a>.</p>`;
@@ -45,7 +46,7 @@
         container.innerHTML = orders
           .map(
             (order) => `
-          <div class="card order-card">
+          <div class="card order-card" data-order-id="${order.orderId}">
             <p><strong>${new Date(order.createdAt).toLocaleString()}</strong>
               &nbsp;<span class="status">${order.status}</span></p>
             <ul>
@@ -60,9 +61,43 @@
             <p>Total: <strong>${formatPrice(order.totalCents)}</strong></p>
             <p class="muted">${order.deliveryName} - ${order.deliveryAddress}</p>
             <p class="muted">${order.deliveryEmail}${order.deliveryPhone ? ` - ${order.deliveryPhone}` : ""}</p>
+            ${order.status === "placed" ? `<button class="secondary edit-order">Edit</button>` : ""}
           </div>`
           )
           .join("");
+
+        container.querySelectorAll(".edit-order").forEach((btn) => {
+          btn.addEventListener("click", async (e) => {
+            const orderId = e.target.closest(".order-card").dataset.orderId;
+            const order = orders.find((o) => o.orderId === orderId);
+            await apiRequest(config.apiUrl, `/orders/${orderId}`, {
+              method: "PUT",
+              token: session.idToken,
+              body: { status: "cancelled" },
+            });
+            sessionStorage.setItem(
+              "editOrderCart",
+              JSON.stringify({
+                items: order.items.map((i) => ({
+                  mealId: i.mealId,
+                  quantity: i.quantity,
+                  selectedAddOnIds: (i.selectedAddOns || []).map((a) => a.addOnId),
+                })),
+                delivery: {
+                  name: order.deliveryName,
+                  email: order.deliveryEmail,
+                  phone: order.deliveryPhone,
+                  address: order.deliveryAddress,
+                },
+              })
+            );
+            window.location.href = "/index.html";
+          });
+        });
+      }
+
+      try {
+        await refresh();
       } catch (err) {
         container.innerHTML = `<p class="error">Couldn't load your orders: ${err.message}</p>`;
       }
