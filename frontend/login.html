@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Log in - Meal Prep Co.</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <header id="nav"></header>
+
+  <main>
+    <div class="tabs">
+      <button id="tab-login" class="active">Log in</button>
+      <button id="tab-signup">Sign up</button>
+    </div>
+
+    <section id="login-panel" class="card form-narrow">
+      <h2>Log in</h2>
+      <label for="login-email">Email</label>
+      <input id="login-email" type="email" />
+      <label for="login-password">Password</label>
+      <input id="login-password" type="password" />
+      <p class="error" id="login-error" style="display:none;"></p>
+      <button id="login-button">Log in</button>
+    </section>
+
+    <section id="signup-panel" class="card form-narrow" style="display:none;">
+      <h2>Sign up</h2>
+      <div id="signup-form">
+        <label for="signup-name">Name</label>
+        <input id="signup-name" type="text" />
+        <label for="signup-email">Email</label>
+        <input id="signup-email" type="email" />
+        <label for="signup-password">Password</label>
+        <input id="signup-password" type="password" placeholder="At least 8 characters" />
+        <p class="error" id="signup-error" style="display:none;"></p>
+        <button id="signup-button">Sign up</button>
+      </div>
+
+      <div id="confirm-form" style="display:none;">
+        <p class="muted">We emailed a confirmation code to your address.</p>
+        <label for="confirm-code">Confirmation code</label>
+        <input id="confirm-code" type="text" />
+        <p class="error" id="confirm-error" style="display:none;"></p>
+        <button id="confirm-button">Confirm</button>
+        <button class="secondary" id="resend-button">Resend code</button>
+      </div>
+    </section>
+  </main>
+
+  <script type="module">
+    import { loadConfig } from "/js/config.js";
+    import { signUp, confirmSignUp, resendConfirmationCode, signIn } from "/js/cognito.js";
+    import { renderNav } from "/js/nav.js";
+
+    renderNav();
+
+    function showTab(tab) {
+      document.getElementById("login-panel").style.display = tab === "login" ? "block" : "none";
+      document.getElementById("signup-panel").style.display = tab === "signup" ? "block" : "none";
+      document.getElementById("tab-login").classList.toggle("active", tab === "login");
+      document.getElementById("tab-signup").classList.toggle("active", tab === "signup");
+    }
+    document.getElementById("tab-login").addEventListener("click", () => showTab("login"));
+    document.getElementById("tab-signup").addEventListener("click", () => showTab("signup"));
+
+    function showError(id, message) {
+      const el = document.getElementById(id);
+      el.textContent = message;
+      el.style.display = "block";
+    }
+    function hideError(id) {
+      document.getElementById(id).style.display = "none";
+    }
+
+    let pendingEmail = null;
+
+    loadConfig().then((config) => {
+      document.getElementById("login-button").addEventListener("click", async () => {
+        hideError("login-error");
+        try {
+          await signIn({
+            region: config.region,
+            clientId: config.userPoolClientId,
+            email: document.getElementById("login-email").value,
+            password: document.getElementById("login-password").value,
+          });
+          window.location.href = "/index.html";
+        } catch (err) {
+          showError("login-error", err.message);
+        }
+      });
+
+      document.getElementById("signup-button").addEventListener("click", async () => {
+        hideError("signup-error");
+        const email = document.getElementById("signup-email").value;
+        try {
+          await signUp({
+            region: config.region,
+            clientId: config.userPoolClientId,
+            email,
+            password: document.getElementById("signup-password").value,
+            name: document.getElementById("signup-name").value,
+          });
+          pendingEmail = email;
+          document.getElementById("signup-form").style.display = "none";
+          document.getElementById("confirm-form").style.display = "block";
+        } catch (err) {
+          showError("signup-error", err.message);
+        }
+      });
+
+      document.getElementById("confirm-button").addEventListener("click", async () => {
+        hideError("confirm-error");
+        try {
+          await confirmSignUp({
+            region: config.region,
+            clientId: config.userPoolClientId,
+            email: pendingEmail,
+            code: document.getElementById("confirm-code").value,
+          });
+          showTab("login");
+          document.getElementById("login-email").value = pendingEmail;
+        } catch (err) {
+          showError("confirm-error", err.message);
+        }
+      });
+
+      document.getElementById("resend-button").addEventListener("click", async () => {
+        hideError("confirm-error");
+        try {
+          await resendConfirmationCode({
+            region: config.region,
+            clientId: config.userPoolClientId,
+            email: pendingEmail,
+          });
+        } catch (err) {
+          showError("confirm-error", err.message);
+        }
+      });
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Admin - Meal Prep Co.</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <header id="nav"></header>
+
+  <main>
+    <h1>Manage menu</h1>
+    <div id="admin-guard"></div>
+
+    <div id="admin-content" style="display:none;">
+      <section class="card form-narrow">
+        <h2>Add a meal</h2>
+        <label for="new-name">Name</label>
+        <input id="new-name" type="text" />
+        <label for="new-description">Description</label>
+        <input id="new-description" type="text" />
+        <label for="new-price">Price (USD)</label>
+        <input id="new-price" type="number" step="0.01" min="0" />
+        <p class="error" id="create-error" style="display:none;"></p>
+        <button id="create-button">Add meal</button>
+      </section>
+
+      <h2>Current menu</h2>
+      <table id="meals-table">
+        <thead>
+          <tr><th>Name</th><th>Price</th><th>Available</th><th></th></tr>
+        </thead>
+        <tbody id="meals-body"></tbody>
+      </table>
+    </div>
+  </main>
+
+  <script type="module">
+    import { loadConfig } from "/js/config.js";
+    import { apiRequest, formatPrice } from "/js/api.js";
+    import { getSession, isAdmin } from "/js/cognito.js";
+    import { renderNav } from "/js/nav.js";
+
+    renderNav();
+
+    const session = getSession();
+    const guard = document.getElementById("admin-guard");
+
+    if (!session) {
+      guard.innerHTML = `<p class="error">You need to <a href="/login.html">log in</a> as an admin to view this page.</p>`;
+    } else if (!isAdmin(session)) {
+      guard.innerHTML = `<p class="error">Your account doesn't have admin access.</p>`;
+    } else {
+      document.getElementById("admin-content").style.display = "block";
+      loadConfig().then((config) => initAdmin(config, session.idToken));
+    }
+
+    async function initAdmin(config, token) {
+      async function refresh() {
+        const { meals } = await apiRequest(config.apiUrl, "/meals");
+        const body = document.getElementById("meals-body");
+        body.innerHTML = meals
+          .map(
+            (meal) => `
+          <tr data-meal-id="${meal.mealId}">
+            <td>${meal.name}</td>
+            <td>${formatPrice(meal.priceCents)}</td>
+            <td>${meal.available ? "Yes" : "No"}</td>
+            <td>
+              <button class="secondary toggle-available">${meal.available ? "Hide" : "Show"}</button>
+              <button class="secondary delete-meal">Delete</button>
+            </td>
+          </tr>`
+          )
+          .join("");
+
+        body.querySelectorAll(".toggle-available").forEach((btn) => {
+          btn.addEventListener("click", async (e) => {
+            const row = e.target.closest("tr");
+            const mealId = row.dataset.mealId;
+            const meal = meals.find((m) => m.mealId === mealId);
+            await apiRequest(config.apiUrl, `/meals/${mealId}`, {
+              method: "PUT",
+              token,
+              body: { available: !meal.available },
+            });
+            refresh();
+          });
+        });
+
+        body.querySelectorAll(".delete-meal").forEach((btn) => {
+          btn.addEventListener("click", async (e) => {
+            const mealId = e.target.closest("tr").dataset.mealId;
+            if (!confirm("Delete this meal?")) return;
+            await apiRequest(config.apiUrl, `/meals/${mealId}`, { method: "DELETE", token });
+            refresh();
+          });
+        });
+      }
+
+      document.getElementById("create-button").addEventListener("click", async () => {
+        const errorEl = document.getElementById("create-error");
+        errorEl.style.display = "none";
+        try {
+          const priceCents = Math.round(parseFloat(document.getElementById("new-price").value) * 100);
+          await apiRequest(config.apiUrl, "/meals", {
+            method: "POST",
+            token,
+            body: {
+              name: document.getElementById("new-name").value,
+              description: document.getElementById("new-description").value,
+              priceCents,
+            },
+          });
+          document.getElementById("new-name").value = "";
+          document.getElementById("new-description").value = "";
+          document.getElementById("new-price").value = "";
+          refresh();
+        } catch (err) {
+          errorEl.textContent = err.message;
+          errorEl.style.display = "block";
+        }
+      });
+
+      refresh();
+    }
+  </script>
+</body>
+</html>

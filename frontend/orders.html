@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>My Orders - Meal Prep Co.</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <header id="nav"></header>
+
+  <main>
+    <h1>My orders</h1>
+    <div id="orders">
+      <p class="muted">Loading...</p>
+    </div>
+  </main>
+
+  <script type="module">
+    import { loadConfig } from "/js/config.js";
+    import { apiRequest, formatPrice } from "/js/api.js";
+    import { getSession } from "/js/cognito.js";
+    import { renderNav } from "/js/nav.js";
+
+    renderNav();
+
+    const session = getSession();
+    if (!session) {
+      window.location.href = "/login.html";
+    }
+
+    loadConfig().then(async (config) => {
+      const container = document.getElementById("orders");
+      try {
+        const { orders } = await apiRequest(config.apiUrl, "/orders", { token: session.idToken });
+        if (orders.length === 0) {
+          container.innerHTML = `<p class="muted">No orders yet. <a href="/index.html">Browse the menu</a>.</p>`;
+          return;
+        }
+        container.innerHTML = orders
+          .map(
+            (order) => `
+          <div class="card order-card">
+            <p><strong>${new Date(order.createdAt).toLocaleString()}</strong>
+              &nbsp;<span class="status">${order.status}</span></p>
+            <ul>
+              ${order.items.map((i) => `<li>${i.quantity} x ${i.name} - ${formatPrice(i.unitPriceCents * i.quantity)}</li>`).join("")}
+            </ul>
+            <p>Total: <strong>${formatPrice(order.totalCents)}</strong></p>
+            <p class="muted">${order.deliveryName} - ${order.deliveryAddress}</p>
+          </div>`
+          )
+          .join("");
+      } catch (err) {
+        container.innerHTML = `<p class="error">Couldn't load your orders: ${err.message}</p>`;
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Meal Prep Co.</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <header id="nav"></header>
+
+  <main>
+    <h1>This week's menu</h1>
+    <p class="muted">Pick your meals, then check out below.</p>
+
+    <div id="meals" class="meal-grid">
+      <p class="muted">Loading menu...</p>
+    </div>
+
+    <section class="card" id="cart-section" style="display:none;">
+      <h2>Your order</h2>
+      <div id="cart-lines"></div>
+      <p><strong>Total: <span id="cart-total">$0.00</span></strong></p>
+
+      <div id="checkout-form">
+        <label for="delivery-name">Name</label>
+        <input id="delivery-name" type="text" placeholder="Your name" />
+
+        <label for="delivery-address">Delivery address</label>
+        <input id="delivery-address" type="text" placeholder="123 Main St" />
+
+        <p class="error" id="checkout-error" style="display:none;"></p>
+        <button id="checkout-button">Place order</button>
+        <p class="muted" id="checkout-note">
+          This is a demo checkout - no payment is actually charged.
+        </p>
+      </div>
+    </section>
+  </main>
+
+  <script type="module">
+    import { loadConfig } from "/js/config.js";
+    import { apiRequest, formatPrice } from "/js/api.js";
+    import { getSession } from "/js/cognito.js";
+    import { renderNav } from "/js/nav.js";
+
+    renderNav();
+
+    const cart = {}; // mealId -> { meal, quantity }
+
+    function renderCart() {
+      const section = document.getElementById("cart-section");
+      const lines = document.getElementById("cart-lines");
+      const entries = Object.values(cart);
+
+      if (entries.length === 0) {
+        section.style.display = "none";
+        return;
+      }
+      section.style.display = "block";
+
+      let total = 0;
+      lines.innerHTML = entries
+        .map(({ meal, quantity }) => {
+          total += meal.priceCents * quantity;
+          return `<div class="cart-line"><span>${quantity} x ${meal.name}</span><span>${formatPrice(meal.priceCents * quantity)}</span></div>`;
+        })
+        .join("");
+      document.getElementById("cart-total").textContent = formatPrice(total);
+    }
+
+    function addToCart(meal) {
+      if (!cart[meal.mealId]) {
+        cart[meal.mealId] = { meal, quantity: 0 };
+      }
+      cart[meal.mealId].quantity += 1;
+      renderCart();
+    }
+
+    async function loadMeals(config) {
+      const container = document.getElementById("meals");
+      try {
+        const { meals } = await apiRequest(config.apiUrl, "/meals");
+        const available = meals.filter((m) => m.available);
+        if (available.length === 0) {
+          container.innerHTML = `<p class="muted">No meals on the menu right now - check back soon.</p>`;
+          return;
+        }
+        container.innerHTML = available
+          .map(
+            (meal) => `
+          <div class="card meal-card">
+            <h3>${meal.name}</h3>
+            <p class="description">${meal.description || ""}</p>
+            <p class="price">${formatPrice(meal.priceCents)}</p>
+            <button data-meal-id="${meal.mealId}">Add to order</button>
+          </div>`
+          )
+          .join("");
+
+        container.querySelectorAll("button[data-meal-id]").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const meal = available.find((m) => m.mealId === btn.dataset.mealId);
+            addToCart(meal);
+          });
+        });
+      } catch (err) {
+        container.innerHTML = `<p class="error">Couldn't load the menu: ${err.message}</p>`;
+      }
+    }
+
+    async function placeOrder(config) {
+      const errorEl = document.getElementById("checkout-error");
+      errorEl.style.display = "none";
+
+      const session = getSession();
+      if (!session) {
+        window.location.href = "/login.html";
+        return;
+      }
+
+      const items = Object.values(cart).map(({ meal, quantity }) => ({
+        mealId: meal.mealId,
+        quantity,
+      }));
+
+      try {
+        await apiRequest(config.apiUrl, "/orders", {
+          method: "POST",
+          token: session.idToken,
+          body: {
+            items,
+            deliveryName: document.getElementById("delivery-name").value,
+            deliveryAddress: document.getElementById("delivery-address").value,
+          },
+        });
+        window.location.href = "/orders.html";
+      } catch (err) {
+        errorEl.textContent = err.message;
+        errorEl.style.display = "block";
+      }
+    }
+
+    loadConfig().then((config) => {
+      loadMeals(config);
+      document.getElementById("checkout-button").addEventListener("click", () => placeOrder(config));
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+services:
+  dynamodb-local:
+    image: amazon/dynamodb-local:latest
+    ports:
+      - "8000:8000"
+    # In-memory, not persisted: data resets on `docker compose down`/restart,
+    # which is fine for local dev and avoids volume permission issues with
+    # the image's non-root user. Re-run `make dynamodb-table` after a restart.
+    command: "-jar DynamoDBLocal.jar -inMemory -sharedDb"
