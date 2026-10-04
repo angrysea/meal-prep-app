@@ -9,6 +9,7 @@ from aws_cdk import (
     aws_apigatewayv2_integrations as apigwv2_integrations,
     aws_apigatewayv2_authorizers as apigwv2_authorizers,
     aws_cognito as cognito,
+    aws_iam as iam,
     aws_s3 as s3,
     aws_cloudfront as cloudfront,
     aws_cloudfront_origins as origins,
@@ -86,12 +87,27 @@ class MealPrepAppStack(Stack):
             environment={
                 "TABLE_NAME": table_name,
                 "ADMINS_GROUP_NAME": ADMINS_GROUP_NAME,
+                # Placeholder - must be a verified SES sender identity before
+                # weekly reminder emails will actually send. See README.
+                "FROM_EMAIL": "orders@example.com",
                 # Empty by default (real Lambda uses the real AWS endpoint);
                 # local-env.json overrides this for `sam local` / testing.
                 "DYNAMODB_ENDPOINT_OVERRIDE": "",
             },
         )
         table.grant_read_write_data(api_fn)
+
+        # Weekly reminders: SES for email, SNS for text. Neither service
+        # supports per-resource scoping for sending, so these are account-wide
+        # grants, standard practice for this kind of send permission.
+        api_fn.add_to_role_policy(iam.PolicyStatement(
+            actions=["ses:SendEmail", "ses:SendRawEmail"],
+            resources=["*"],
+        ))
+        api_fn.add_to_role_policy(iam.PolicyStatement(
+            actions=["sns:Publish"],
+            resources=["*"],
+        ))
 
         # ---------- S3 + CloudFront (static site) ----------
         # Built before the API so its domain is available for the API's CORS config.
@@ -126,6 +142,10 @@ class MealPrepAppStack(Stack):
                 ],
             ),
         )
+
+        # Reminder messages link back to the site; the domain isn't known
+        # until the distribution above is created.
+        api_fn.add_environment("SITE_URL", f"https://{distribution.distribution_domain_name}")
 
         # ---------- API Gateway (HTTP API) ----------
         http_api = apigwv2.HttpApi(
@@ -182,6 +202,13 @@ class MealPrepAppStack(Stack):
         )
         http_api.add_routes(
             path="/addons/{addOnId}", methods=[apigwv2.HttpMethod.DELETE],
+            integration=integration, authorizer=jwt_authorizer,
+        )
+
+        # Weekly reminders: admin-triggered broadcast (checked in the Lambda
+        # via the Admins group, same as the other admin-only routes).
+        http_api.add_routes(
+            path="/reminders/send", methods=[apigwv2.HttpMethod.POST],
             integration=integration, authorizer=jwt_authorizer,
         )
 

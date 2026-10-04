@@ -29,6 +29,13 @@
       <label for="account-address">Delivery address</label>
       <input id="account-address" type="text" />
 
+      <h3>Notifications</h3>
+      <label class="option-choice"><input type="radio" name="preferred-contact" id="contact-email" value="email" checked /> Email me</label>
+      <label class="option-choice"><input type="radio" name="preferred-contact" id="contact-text" value="text" /> Text me</label>
+      <label class="option-choice" style="margin-top:0.5rem;">
+        <input type="checkbox" id="account-unsubscribed" /> Unsubscribe from weekly reminders
+      </label>
+
       <p class="error" id="account-error" style="display:none;"></p>
       <p class="muted" id="account-saved" style="display:none;">Saved.</p>
       <button id="account-save-button">Save</button>
@@ -59,6 +66,8 @@
         fields.forEach((field) => {
           document.getElementById(`account-${field}`).value = profile[field] || "";
         });
+        document.getElementById(profile.preferredContact === "text" ? "contact-text" : "contact-email").checked = true;
+        document.getElementById("account-unsubscribed").checked = !!profile.unsubscribed;
       } catch (err) {
         errorEl.textContent = `Couldn't load your account: ${err.message}`;
         errorEl.style.display = "block";
@@ -72,6 +81,8 @@
           fields.forEach((field) => {
             body[field] = document.getElementById(`account-${field}`).value;
           });
+          body.preferredContact = document.getElementById("contact-text").checked ? "text" : "email";
+          body.unsubscribed = document.getElementById("account-unsubscribed").checked;
           await apiRequest(config.apiUrl, "/profile", { method: "PUT", token: session.idToken, body });
           savedEl.style.display = "block";
         } catch (err) {

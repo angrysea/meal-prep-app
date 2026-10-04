@@ -4,11 +4,13 @@ Serverless stack on AWS: S3 + CloudFront (static site), API Gateway (HTTP API) +
 Lambda (Python 3.12) for the backend, DynamoDB for data, Cognito for customer
 accounts. Infrastructure is defined with the AWS CDK (Python).
 
-**Features:** browse the menu (public) · sign up / log in · a saved account
-profile (name/email/phone/address) so checkout doesn't ask twice · place an
-order (stub checkout — no real payment is taken) · view your own order
-history · an admin-only page to add/hide/delete menu items and manage a
-global add-on list.
+**Features:** browse the menu (public) · sign up / log in / forgot password ·
+a saved account profile (name/email/phone/address, preferred contact
+method, notification opt-out) so checkout doesn't ask twice · place an order
+(stub checkout — no real payment is taken) · view your own order history ·
+an admin page (at the clean `/admin` URL, not linked from the customer nav)
+to add/hide/delete menu items, manage a global add-on list, and send a
+weekly reminder email/text to subscribed customers.
 
 ```
 .
@@ -40,6 +42,19 @@ global add-on list.
   ```
   They must log out and back in afterward — group membership is baked into the
   ID token at sign-in time, not checked live.
+- `scripts/create_admin_user.py` does the same thing in one step — creates
+  the Cognito user if needed, sets a permanent password, and adds them to
+  the Admins group. Looks up the User Pool ID from the stack automatically:
+  ```bash
+  python scripts/create_admin_user.py --email you@example.com --password 'SomeStrongPass1' \
+    --profile gtx-meal-prep --region us-east-2
+  ```
+  There's no separate admin credential store — admin identity is just a
+  Cognito user like any customer, distinguished only by group membership.
+  A literal username/password of `admin`/`admin` isn't possible: the pool
+  requires an email-format username and an 8+ character password with a
+  digit (and changing those would mean recreating the pool, destroying
+  every existing account).
 - `GET /meals` is public; every other route requires a valid Cognito ID token
   (`Authorization: <idToken>` header, no `Bearer ` prefix); `/meals` write
   routes additionally require Admins-group membership, checked in the Lambda.
@@ -59,6 +74,29 @@ only `selectedAddOnIds: [id, ...]` — the Lambda resolves each id against the
 never-trust-the-client principle the base price already had. Note: macros are
 per-meal only, not affected by add-on selection — if "Large" should actually
 change the displayed calories, that'd need its own mechanism; not implemented.
+
+## Weekly reminders
+
+The "Send weekly reminders" button on `/admin` emails or texts every
+customer who hasn't unsubscribed, using their saved `preferredContact`
+(`email` via SES, `text` via SNS). This **will not actually deliver
+anything yet** without one-time setup in the AWS console:
+
+1. **Verify a sender identity in SES** (Console → SES → Verified identities →
+   Create identity — a single email is enough to start). Then update
+   `FROM_EMAIL` in `meal_prep_app_stack.py` (currently the placeholder
+   `orders@example.com`) to that address and redeploy.
+2. New accounts start in the **SES sandbox**, which only allows sending to
+   *verified* recipient addresses — fine for testing with your own inbox,
+   but you'll need to request production access (Console → SES → Account
+   dashboard) before real customers can receive these emails.
+3. SNS text messages don't need sender verification, but a brand-new
+   account's default SMS spend limit is very low (check Console → SNS →
+   Text messaging (SMS) → Text messaging preferences).
+
+The endpoint (`POST /reminders/send`) resolves failures per-recipient, so
+one bad address/number doesn't block everyone else — check the `failed`
+count and `errors` in the response if something looks off.
 
 ## One-time setup
 

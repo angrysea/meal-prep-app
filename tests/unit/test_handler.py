@@ -322,7 +322,10 @@ def test_get_profile_defaults_to_empty_with_email_from_claims(table):
     resp = index.handler(_event("GET", "/profile", claims=CUSTOMER_CLAIMS), None)
     assert resp["statusCode"] == 200
     profile = json.loads(resp["body"])
-    assert profile == {"name": "", "email": "customer@example.com", "phone": "", "address": ""}
+    assert profile == {
+        "name": "", "email": "customer@example.com", "phone": "", "address": "",
+        "preferredContact": "email", "unsubscribed": False,
+    }
 
 
 def test_update_and_get_profile_roundtrip(table):
@@ -331,7 +334,10 @@ def test_update_and_get_profile_roundtrip(table):
     update_resp = index.handler(
         _event(
             "PUT", "/profile",
-            {"name": "Ada Lovelace", "email": "ada@example.com", "phone": "555-1234", "address": "123 Main St"},
+            {
+                "name": "Ada Lovelace", "email": "ada@example.com", "phone": "555-1234", "address": "123 Main St",
+                "preferredContact": "text", "unsubscribed": True,
+            },
             claims=CUSTOMER_CLAIMS,
         ),
         None,
@@ -342,8 +348,18 @@ def test_update_and_get_profile_roundtrip(table):
     get_resp = index.handler(_event("GET", "/profile", claims=CUSTOMER_CLAIMS), None)
     profile = json.loads(get_resp["body"])
     assert profile == {
-        "name": "Ada Lovelace", "email": "ada@example.com", "phone": "555-1234", "address": "123 Main St"
+        "name": "Ada Lovelace", "email": "ada@example.com", "phone": "555-1234", "address": "123 Main St",
+        "preferredContact": "text", "unsubscribed": True,
     }
+
+
+def test_update_profile_rejects_invalid_preferred_contact(table):
+    from backend.lambda_src import index
+
+    resp = index.handler(
+        _event("PUT", "/profile", {"preferredContact": "carrier-pigeon"}, claims=CUSTOMER_CLAIMS), None
+    )
+    assert resp["statusCode"] == 400
 
 
 def test_profile_is_scoped_to_the_caller(table):
@@ -378,3 +394,51 @@ def test_create_order_stores_delivery_contact_details(table):
     order = json.loads(resp["body"])
     assert order["deliveryEmail"] == "ada@example.com"
     assert order["deliveryPhone"] == "555-1234"
+
+
+def _save_profile(index, claims, **fields):
+    body = {"preferredContact": "email", "unsubscribed": False}
+    body.update(fields)
+    index.handler(_event("PUT", "/profile", body, claims=claims), None)
+
+
+def test_reminders_requires_admin(table):
+    from backend.lambda_src import index
+
+    resp = index.handler(_event("POST", "/reminders/send", claims=CUSTOMER_CLAIMS), None)
+    assert resp["statusCode"] == 403
+
+
+def test_reminders_sends_by_preference_and_skips_unsubscribed(table):
+    import boto3
+    from backend.lambda_src import index
+
+    # moto's SES mock enforces the same verified-sender rule real SES does.
+    boto3.client("ses", region_name="us-east-1").verify_email_identity(EmailAddress=index.FROM_EMAIL)
+
+    _save_profile(index, {"sub": "u1", "email": "u1@example.com"}, email="u1@example.com", preferredContact="email")
+    _save_profile(index, {"sub": "u2", "email": "u2@example.com"}, phone="+15551234567", preferredContact="text")
+    _save_profile(index, {"sub": "u3", "email": "u3@example.com"}, email="u3@example.com", unsubscribed=True)
+
+    resp = index.handler(_event("POST", "/reminders/send", claims=ADMIN_CLAIMS), None)
+    assert resp["statusCode"] == 200
+    result = json.loads(resp["body"])
+    assert result["sentEmail"] == 1
+    assert result["sentText"] == 1
+    assert result["skippedUnsubscribed"] == 1
+    assert result["failed"] == 0
+
+
+def test_reminders_counts_failure_when_contact_detail_missing(table):
+    import boto3
+    from backend.lambda_src import index
+
+    boto3.client("ses", region_name="us-east-1").verify_email_identity(EmailAddress=index.FROM_EMAIL)
+
+    # preferredContact=text but no phone on file
+    _save_profile(index, {"sub": "u1", "email": "u1@example.com"}, preferredContact="text")
+
+    resp = index.handler(_event("POST", "/reminders/send", claims=ADMIN_CLAIMS), None)
+    result = json.loads(resp["body"])
+    assert result["failed"] == 1
+    assert result["sentText"] == 0

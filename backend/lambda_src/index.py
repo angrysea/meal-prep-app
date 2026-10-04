@@ -9,14 +9,21 @@ import boto3
 
 TABLE_NAME = os.environ["TABLE_NAME"]
 ADMINS_GROUP_NAME = os.environ.get("ADMINS_GROUP_NAME", "Admins")
+# Must be verified in SES before weekly reminder emails will actually send -
+# see README. Placeholder until the real sender address is configured.
+FROM_EMAIL = os.environ.get("FROM_EMAIL", "orders@example.com")
+SITE_URL = os.environ.get("SITE_URL", "")
 
 # DYNAMODB_ENDPOINT_OVERRIDE lets this run against DynamoDB Local
 # (docker-compose) instead of real AWS when testing outside of SAM.
 _endpoint = os.environ.get("DYNAMODB_ENDPOINT_OVERRIDE")
 _dynamodb = boto3.resource("dynamodb", endpoint_url=_endpoint) if _endpoint else boto3.resource("dynamodb")
 table = _dynamodb.Table(TABLE_NAME)
+ses = boto3.client("ses")
+sns = boto3.client("sns")
 
 MACRO_FIELDS = ("calories", "proteinG", "carbsG", "fatG")
+CONTACT_METHODS = ("email", "text")
 
 
 def handler(event, context):
@@ -47,6 +54,8 @@ def handler(event, context):
             return get_profile(event)
         if path == "/profile" and method == "PUT":
             return update_profile(event)
+        if path == "/reminders/send" and method == "POST":
+            return send_weekly_reminders(event)
     except AuthError as e:
         return _response(e.status_code, {"message": str(e)})
     except BadRequest as e:
@@ -170,9 +179,10 @@ def _addon_out(item):
 
 # ---------- customer profile ----------
 # Saved contact details (name/email/phone/address) so returning customers
-# don't have to retype them at checkout every time.
+# don't have to retype them at checkout every time, plus notification
+# preferences used by the weekly-reminder feature below.
 
-PROFILE_FIELDS = ("name", "email", "phone", "address")
+PROFILE_TEXT_FIELDS = ("name", "email", "phone", "address")
 
 
 def get_profile(event):
@@ -184,10 +194,16 @@ def get_profile(event):
 def update_profile(event):
     claims = _claims(event)
     body = _body(event)
+    preferred_contact = body.get("preferredContact", "email")
+    if preferred_contact not in CONTACT_METHODS:
+        raise BadRequest(f"preferredContact must be one of {CONTACT_METHODS}")
+
     item = {
         "PK": f"USER#{claims['sub']}",
         "SK": "PROFILE",
-        **{field: body.get(field, "") for field in PROFILE_FIELDS},
+        **{field: body.get(field, "") for field in PROFILE_TEXT_FIELDS},
+        "preferredContact": preferred_contact,
+        "unsubscribed": bool(body.get("unsubscribed", False)),
     }
     table.put_item(Item=item)
     return _response(200, _profile_out(item, claims))
@@ -202,7 +218,94 @@ def _profile_out(item, claims):
         "email": item.get("email") or claims.get("email", ""),
         "phone": item.get("phone", ""),
         "address": item.get("address", ""),
+        "preferredContact": item.get("preferredContact", "email"),
+        "unsubscribed": bool(item.get("unsubscribed", False)),
     }
+
+
+# ---------- weekly reminders ----------
+# Admin-triggered broadcast to every customer who hasn't unsubscribed, via
+# whichever channel (email/text) they prefer. Runs as a single on-demand
+# Lambda invocation - no schedule is set up, admin clicks the button.
+
+REMINDER_SUBJECT = "This week's menu is up at GTX Meals!"
+
+
+def _reminder_message():
+    base = (
+        "This week's menu is up at GTX Meals! Order by Friday 2PM for Sunday "
+        "prep, Monday pickup at the gym."
+    )
+    if SITE_URL:
+        return f"{base} Order now: {SITE_URL}"
+    return base
+
+
+def send_weekly_reminders(event):
+    _require_admin(event)
+    message = _reminder_message()
+
+    sent_email = sent_text = skipped_unsubscribed = failed = 0
+    errors = []
+
+    for profile in _scan_all_profiles():
+        if profile.get("unsubscribed"):
+            skipped_unsubscribed += 1
+            continue
+
+        channel = profile.get("preferredContact", "email")
+        try:
+            if channel == "text":
+                phone = profile.get("phone")
+                if not phone:
+                    raise ValueError("no phone number on file")
+                sns.publish(PhoneNumber=phone, Message=message)
+                sent_text += 1
+            else:
+                email = profile.get("email")
+                if not email:
+                    raise ValueError("no email on file")
+                ses.send_email(
+                    Source=FROM_EMAIL,
+                    Destination={"ToAddresses": [email]},
+                    Message={
+                        "Subject": {"Data": REMINDER_SUBJECT},
+                        "Body": {"Text": {"Data": message}},
+                    },
+                )
+                sent_email += 1
+        except Exception as e:  # noqa: BLE001 - one bad recipient shouldn't abort the batch
+            failed += 1
+            errors.append(f"{profile.get('PK')}: {e}")
+
+    return _response(200, {
+        "sentEmail": sent_email,
+        "sentText": sent_text,
+        "skippedUnsubscribed": skipped_unsubscribed,
+        "failed": failed,
+        "errors": errors[:10],  # cap so one noisy failure mode doesn't blow up the response
+    })
+
+
+def _scan_all_profiles():
+    """Every customer's PROFILE item. A full-table Scan with a filter is the
+    simplest option at this scale (one admin click, infrequent); a GSI would
+    be the next step if the customer list grows large enough for Scan's
+    read cost to matter.
+    """
+    profiles = []
+    scan_kwargs = {
+        "FilterExpression": "begins_with(PK, :userPrefix) AND SK = :sk",
+        "ExpressionAttributeValues": {":userPrefix": "USER#", ":sk": "PROFILE"},
+    }
+    while True:
+        page = table.scan(**scan_kwargs)
+        profiles.extend(page.get("Items", []))
+        last_key = page.get("LastEvaluatedKey")
+        if not last_key:
+            break
+        scan_kwargs["ExclusiveStartKey"] = last_key
+    return profiles
 
 
 # ---------- orders ----------

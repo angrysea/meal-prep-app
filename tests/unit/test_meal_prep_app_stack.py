@@ -70,3 +70,4 @@ def test_api_routes_have_expected_authorization():
     assert routes_by_key["DELETE /addons/{addOnId}"]["AuthorizationType"] == "JWT"
     assert routes_by_key["GET /profile"]["AuthorizationType"] == "JWT"
     assert routes_by_key["PUT /profile"]["AuthorizationType"] == "JWT"
+    assert routes_by_key["POST /reminders/send"]["AuthorizationType"] == "JWT"
