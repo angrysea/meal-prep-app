@@ -42,7 +42,7 @@
   <script type="module">
     import { loadConfig } from "/js/config.js";
     import { apiRequest, formatPrice } from "/js/api.js";
-    import { getSession } from "/js/cognito.js";
+    import { getValidSession } from "/js/cognito.js";
     import { renderNav } from "/js/nav.js";
 
     renderNav();
@@ -114,7 +114,7 @@
       const errorEl = document.getElementById("checkout-error");
       errorEl.style.display = "none";
 
-      const session = getSession();
+      const session = await getValidSession({ region: config.region, clientId: config.userPoolClientId });
       if (!session) {
         window.location.href = "/login.html";
         return;

@@ -3,6 +3,9 @@
 // designed for exactly this kind of unsigned browser call.
 
 const SESSION_KEY = "mealprep.session";
+// Refresh slightly before actual expiry so a request started right before the
+// deadline doesn't race an id token that expires mid-flight.
+const REFRESH_SKEW_MS = 60_000;
 
 async function cognitoRequest(region, action, body) {
   const res = await fetch(`https://cognito-idp.${region}.amazonaws.com/`, {
@@ -72,25 +75,55 @@ export async function signIn({ region, clientId, email, password }) {
   return data.AuthenticationResult;
 }
 
+function loadRawSession() {
+  const raw = localStorage.getItem(SESSION_KEY);
+  return raw ? JSON.parse(raw) : null;
+}
+
 function saveSession(result) {
+  const existing = loadRawSession();
   localStorage.setItem(
     SESSION_KEY,
     JSON.stringify({
       idToken: result.IdToken,
+      // REFRESH_TOKEN_AUTH doesn't issue a new refresh token by default -
+      // the original one stays valid, so keep it if this response omits one.
+      refreshToken: result.RefreshToken || (existing && existing.refreshToken) || null,
       expiresAt: Date.now() + result.ExpiresIn * 1000,
     })
   );
 }
 
+// Synchronous, cache-only read - may return an already-expired session.
+// Fine for quick UI checks (e.g. nav rendering); use getValidSession() before
+// anything that actually calls the API with the token.
 export function getSession() {
-  const raw = localStorage.getItem(SESSION_KEY);
-  if (!raw) return null;
-  const session = JSON.parse(raw);
-  if (Date.now() >= session.expiresAt) {
-    localStorage.removeItem(SESSION_KEY);
+  return loadRawSession();
+}
+
+// Returns a session with a live id token, transparently using the refresh
+// token to renew it if it's expired (or about to). Returns null, and signs
+// out, if there's no session or the refresh token itself is no longer valid.
+export async function getValidSession({ region, clientId }) {
+  const session = loadRawSession();
+  if (!session) return null;
+  if (Date.now() < session.expiresAt - REFRESH_SKEW_MS) return session;
+  if (!session.refreshToken) {
+    signOut();
     return null;
   }
-  return session;
+  try {
+    const data = await cognitoRequest(region, "InitiateAuth", {
+      AuthFlow: "REFRESH_TOKEN_AUTH",
+      ClientId: clientId,
+      AuthParameters: { REFRESH_TOKEN: session.refreshToken },
+    });
+    saveSession(data.AuthenticationResult);
+    return loadRawSession();
+  } catch (err) {
+    signOut();
+    return null;
+  }
 }
 
 export function signOut() {

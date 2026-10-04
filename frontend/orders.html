@@ -20,17 +20,18 @@
   <script type="module">
     import { loadConfig } from "/js/config.js";
     import { apiRequest, formatPrice } from "/js/api.js";
-    import { getSession } from "/js/cognito.js";
+    import { getValidSession } from "/js/cognito.js";
     import { renderNav } from "/js/nav.js";
 
     renderNav();
 
-    const session = getSession();
-    if (!session) {
-      window.location.href = "/login.html";
-    }
-
     loadConfig().then(async (config) => {
+      const session = await getValidSession({ region: config.region, clientId: config.userPoolClientId });
+      if (!session) {
+        window.location.href = "/login.html";
+        return;
+      }
+
       const container = document.getElementById("orders");
       try {
         const { orders } = await apiRequest(config.apiUrl, "/orders", { token: session.idToken });

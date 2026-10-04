@@ -40,22 +40,24 @@
   <script type="module">
     import { loadConfig } from "/js/config.js";
     import { apiRequest, formatPrice } from "/js/api.js";
-    import { getSession, isAdmin } from "/js/cognito.js";
+    import { getValidSession, isAdmin } from "/js/cognito.js";
     import { renderNav } from "/js/nav.js";
 
     renderNav();
 
-    const session = getSession();
-    const guard = document.getElementById("admin-guard");
+    loadConfig().then(async (config) => {
+      const session = await getValidSession({ region: config.region, clientId: config.userPoolClientId });
+      const guard = document.getElementById("admin-guard");
 
-    if (!session) {
-      guard.innerHTML = `<p class="error">You need to <a href="/login.html">log in</a> as an admin to view this page.</p>`;
-    } else if (!isAdmin(session)) {
-      guard.innerHTML = `<p class="error">Your account doesn't have admin access.</p>`;
-    } else {
-      document.getElementById("admin-content").style.display = "block";
-      loadConfig().then((config) => initAdmin(config, session.idToken));
-    }
+      if (!session) {
+        guard.innerHTML = `<p class="error">You need to <a href="/login.html">log in</a> as an admin to view this page.</p>`;
+      } else if (!isAdmin(session)) {
+        guard.innerHTML = `<p class="error">Your account doesn't have admin access.</p>`;
+      } else {
+        document.getElementById("admin-content").style.display = "block";
+        initAdmin(config, session.idToken);
+      }
+    });
 
     async function initAdmin(config, token) {
       async function refresh() {
