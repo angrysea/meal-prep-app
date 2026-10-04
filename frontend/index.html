@@ -15,6 +15,7 @@
   <main>
     <h1>This Week's Menu</h1>
     <p class="muted">Pick your meals, then check out below.</p>
+    <p class="muted" id="login-prompt" style="display:none;"></p>
 
     <div id="meals" class="meal-grid">
       <p class="muted">Loading menu...</p>
@@ -110,14 +111,14 @@
       return parts.length ? `<p class="macros muted">${parts.join(" &middot; ")}</p>` : "";
     }
 
-    function renderAddOnChoices(meal) {
+    function renderAddOnChoices(meal, disabled) {
       if (allAddOns.length === 0) return "";
       return `<div class="option-groups">
         ${allAddOns
           .map(
             (a) => `
           <label class="option-choice">
-            <input type="checkbox" class="addon-choice" data-addon-id="${a.addOnId}" />
+            <input type="checkbox" class="addon-choice" data-addon-id="${a.addOnId}" ${disabled ? "disabled" : ""} />
             ${a.description} (+${formatPrice(a.priceCents)})
           </label>`
           )
@@ -125,8 +126,14 @@
       </div>`;
     }
 
-    async function loadMenu(config) {
+    async function loadMenu(config, loggedIn) {
       const container = document.getElementById("meals");
+      const loginPrompt = document.getElementById("login-prompt");
+      loginPrompt.style.display = loggedIn ? "none" : "block";
+      loginPrompt.innerHTML = loggedIn
+        ? ""
+        : `<a href="${loginUrlWithReturnTo()}">Log in or sign up</a> to pick meals and place an order.`;
+
       try {
         const [{ meals }, { addOns }] = await Promise.all([
           apiRequest(config.apiUrl, "/meals"),
@@ -147,11 +154,13 @@
             <p class="description">${meal.description || ""}</p>
             ${renderMacros(meal.macros)}
             <p class="price">${formatPrice(meal.priceCents)}</p>
-            ${renderAddOnChoices(meal)}
-            <button class="add-to-order" data-meal-id="${meal.mealId}">Add to order</button>
+            ${renderAddOnChoices(meal, !loggedIn)}
+            <button class="add-to-order" data-meal-id="${meal.mealId}" ${loggedIn ? "" : "disabled"}>Add to order</button>
           </div>`
           )
           .join("");
+
+        if (!loggedIn) return; // static for anonymous visitors - nothing left to wire up
 
         container.querySelectorAll("button.add-to-order").forEach((btn) => {
           btn.addEventListener("click", () => {
@@ -167,8 +176,7 @@
       }
     }
 
-    async function prefillFromProfile(config) {
-      const session = await getValidSession({ region: config.region, clientId: config.userPoolClientId });
+    async function prefillFromProfile(config, session) {
       if (!session) return;
       try {
         const profile = await apiRequest(config.apiUrl, "/profile", { token: session.idToken });
@@ -225,9 +233,10 @@
       }
     }
 
-    loadConfig().then((config) => {
-      loadMenu(config);
-      prefillFromProfile(config);
+    loadConfig().then(async (config) => {
+      const session = await getValidSession({ region: config.region, clientId: config.userPoolClientId });
+      loadMenu(config, !!session);
+      prefillFromProfile(config, session);
       document.getElementById("checkout-button").addEventListener("click", () => placeOrder(config));
     });
   </script>

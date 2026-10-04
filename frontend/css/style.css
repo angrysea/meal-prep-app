@@ -193,6 +193,15 @@ button:hover {
   background: var(--color-primary-dark);
 }
 
+button:disabled, input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+button:disabled:hover {
+  background: var(--color-primary);
+}
+
 button.secondary {
   background: transparent;
   color: var(--color-primary-dark);
