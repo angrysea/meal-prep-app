@@ -1,12 +1,16 @@
+/* Palette and fonts extracted from the GTX Meals weekly flyer. */
 :root {
-  --color-bg: #faf7f2;
-  --color-text: #2b2420;
-  --color-primary: #c0572b;
-  --color-primary-dark: #9c4621;
-  --color-border: #e4ddd3;
+  --color-bg: #f3f1f1;
+  --color-text: #111111;
+  --color-primary: #d20d0d;
+  --color-primary-dark: #aa0e0c;
+  --color-black: #111111;
+  --color-border: #e0dcdc;
   --color-card: #ffffff;
-  --color-error: #b3261e;
-  --color-muted: #7a7067;
+  --color-error: #aa0e0c;
+  --color-muted: #666666;
+  --font-display: "Anton", -apple-system, sans-serif;
+  --font-script: "Permanent Marker", cursive;
 }
 
 * {
@@ -21,21 +25,42 @@ body {
 }
 
 header#nav {
-  background: var(--color-card);
-  border-bottom: 1px solid var(--color-border);
+  background: var(--color-black);
+  border-bottom: 3px solid var(--color-primary);
 }
 
 header#nav nav {
   max-width: 960px;
   margin: 0 auto;
-  padding: 1rem 1.5rem;
+  padding: 0.6rem 1.5rem;
   display: flex;
   gap: 1.5rem;
   align-items: center;
 }
 
+header#nav nav .brand {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-right: auto;
+  text-decoration: none;
+}
+
+header#nav nav .brand img {
+  height: 44px;
+  width: auto;
+  display: block;
+}
+
+header#nav nav .brand span {
+  font-family: var(--font-display);
+  color: #ffffff;
+  font-size: 1.1rem;
+  letter-spacing: 0.03em;
+}
+
 header#nav nav a {
-  color: var(--color-text);
+  color: #ffffff;
   text-decoration: none;
   font-weight: 500;
 }
@@ -50,14 +75,34 @@ main {
   padding: 2rem 1.5rem 4rem;
 }
 
+main a {
+  color: var(--color-primary-dark);
+}
+
+main a:hover {
+  color: var(--color-primary);
+}
+
 h1 {
   margin-top: 0;
+  font-family: var(--font-script);
+  color: var(--color-primary);
+  font-weight: normal;
+  font-size: 2.4rem;
+  letter-spacing: 0.01em;
+}
+
+h2 {
+  font-family: var(--font-display);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  font-size: 1.3rem;
 }
 
 .card {
   background: var(--color-card);
   border: 1px solid var(--color-border);
-  border-radius: 12px;
+  border-radius: 10px;
   padding: 1.25rem;
   margin-bottom: 1rem;
 }
@@ -68,13 +113,21 @@ h1 {
   gap: 1rem;
 }
 
+.meal-card {
+  border-top: 4px solid var(--color-primary);
+}
+
 .meal-card h3 {
   margin: 0 0 0.25rem;
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  font-size: 1.1rem;
 }
 
 .meal-card .price {
   color: var(--color-primary-dark);
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .meal-card .description {
@@ -87,9 +140,12 @@ button, input[type="submit"] {
   background: var(--color-primary);
   color: white;
   border: none;
-  border-radius: 8px;
+  border-radius: 6px;
   padding: 0.6rem 1.1rem;
   font-size: 0.95rem;
+  font-family: var(--font-display);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
   cursor: pointer;
 }
 
@@ -110,6 +166,7 @@ input, textarea {
   border-radius: 8px;
   font-size: 0.95rem;
   margin-bottom: 0.75rem;
+  font-family: inherit;
 }
 
 label {
@@ -139,12 +196,14 @@ label {
 
 .order-card .status {
   display: inline-block;
-  background: #eef4ea;
-  color: #356b2f;
+  background: var(--color-black);
+  color: #ffffff;
   border-radius: 999px;
-  padding: 0.1rem 0.6rem;
-  font-size: 0.8rem;
-  font-weight: 600;
+  padding: 0.1rem 0.7rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 
 table {
@@ -156,6 +215,14 @@ th, td {
   text-align: left;
   padding: 0.5rem;
   border-bottom: 1px solid var(--color-border);
+}
+
+th {
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--color-muted);
 }
 
 .tabs {

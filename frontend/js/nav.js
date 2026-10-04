@@ -5,6 +5,7 @@ export function renderNav(targetId = "nav") {
   if (!el) return;
 
   const session = getSession();
+  const brand = `<a class="brand" href="/index.html"><img src="/assets/logo.png" alt="GTX Meals" /><span>GTX MEALS</span></a>`;
   const links = [`<a href="/index.html">Menu</a>`];
 
   if (session) {
@@ -15,7 +16,7 @@ export function renderNav(targetId = "nav") {
     links.push(`<a href="/login.html">Log in / Sign up</a>`);
   }
 
-  el.innerHTML = `<nav>${links.join("")}</nav>`;
+  el.innerHTML = `<nav>${brand}${links.join("")}</nav>`;
 
   const logout = document.getElementById("nav-logout");
   if (logout) {
