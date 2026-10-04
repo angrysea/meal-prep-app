@@ -26,14 +26,7 @@
         <option value="cancelled">Cancelled</option>
       </select>
 
-      <div class="scroll-table">
-        <table id="orders-table" class="customers-table">
-          <thead>
-            <tr><th>Date</th><th>Customer</th><th>Items</th><th>Total</th><th>Status</th></tr>
-          </thead>
-          <tbody id="orders-body"></tbody>
-        </table>
-      </div>
+      <div class="scroll-list" id="orders-list"></div>
     </div>
   </main>
 
@@ -66,46 +59,48 @@
       const filterSelect = document.getElementById("status-filter");
 
       async function refresh() {
-        const body = document.getElementById("orders-body");
+        const list = document.getElementById("orders-list");
         const filter = filterSelect.value;
         const { orders } = await apiRequest(config.apiUrl, `/admin/orders?status=${encodeURIComponent(filter)}`, { token });
 
         if (orders.length === 0) {
-          body.innerHTML = `<tr><td colspan="5" class="muted">${
+          list.innerHTML = `<p class="muted">${
             filter === "all" ? "No orders yet." : `No orders in ${filter} status right now.`
-          }</td></tr>`;
+          }</p>`;
           return;
         }
 
-        body.innerHTML = orders
+        list.innerHTML = orders
           .map((order) => {
-            const itemsText = order.items
-              .map((i) => {
-                const addOnLabels = (i.selectedAddOns || []).map((a) => a.description);
-                const addOnText = addOnLabels.length ? ` (${addOnLabels.join(", ")})` : "";
-                return `${i.quantity} x ${i.name}${addOnText}`;
-              })
-              .join(", ");
-
+            const createdAt = new Date(order.createdAt).toLocaleString();
             return `
-          <tr data-order-id="${order.orderId}" data-customer-sub="${order.customerSub}">
-            <td>${new Date(order.createdAt).toLocaleString()}</td>
-            <td>${order.deliveryName}<br /><span class="muted">${order.deliveryEmail}</span></td>
-            <td>${itemsText}</td>
-            <td>${formatPrice(order.totalCents)}</td>
-            <td>
-              <select class="status-select" name="status-${order.orderId}" aria-label="Status for order placed ${new Date(order.createdAt).toLocaleString()}">
+          <div class="card order-card" data-order-id="${order.orderId}" data-customer-sub="${order.customerSub}">
+            <p>
+              <strong>${createdAt}</strong>
+              &nbsp;<select class="status-select" name="status-${order.orderId}" aria-label="Status for order placed ${createdAt}">
                 ${STATUSES.map((s) => `<option value="${s}" ${s === order.status ? "selected" : ""}>${s}</option>`).join("")}
               </select>
-            </td>
-          </tr>`;
+            </p>
+            <p class="muted">${order.deliveryName} - ${order.deliveryAddress}</p>
+            <p class="muted">${order.deliveryEmail}${order.deliveryPhone ? ` - ${order.deliveryPhone}` : ""}</p>
+            <p>Total: <strong>${formatPrice(order.totalCents)}</strong></p>
+            <ul>
+              ${order.items
+                .map((i) => {
+                  const addOnLabels = (i.selectedAddOns || []).map((a) => a.description);
+                  const addOnText = addOnLabels.length ? ` <span class="muted">(${addOnLabels.join(", ")})</span>` : "";
+                  return `<li>${i.quantity} x ${i.name}${addOnText} - ${formatPrice(i.unitPriceCents * i.quantity)}</li>`;
+                })
+                .join("")}
+            </ul>
+          </div>`;
           })
           .join("");
 
-        body.querySelectorAll(".status-select").forEach((select) => {
+        list.querySelectorAll(".status-select").forEach((select) => {
           select.addEventListener("change", async (e) => {
-            const row = e.target.closest("tr");
-            const { orderId, customerSub } = row.dataset;
+            const card = e.target.closest(".order-card");
+            const { orderId, customerSub } = card.dataset;
             await apiRequest(config.apiUrl, `/admin/orders/${customerSub}/${orderId}`, {
               method: "PUT",
               token,

@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Prep List - GTX Meals</title>
+  <link rel="icon" href="data:," />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Permanent+Marker&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <header id="nav"></header>
+
+  <main>
+    <h1>Meals to prepare</h1>
+    <p class="muted">Total quantity needed across every order still in placed status, by meal.</p>
+    <div id="admin-guard"></div>
+
+    <div id="admin-content" style="display:none;">
+      <table id="prep-table">
+        <thead>
+          <tr><th>Meal</th><th>Add-ons</th><th>Quantity</th></tr>
+        </thead>
+        <tbody id="prep-body"></tbody>
+      </table>
+    </div>
+  </main>
+
+  <script type="module">
+    import { loadConfig } from "/js/config.js";
+    import { apiRequest } from "/js/api.js";
+    import { getValidSession, isAdmin } from "/js/cognito.js";
+    import { renderNav } from "/js/nav.js";
+    import { loginUrlWithReturnTo } from "/js/redirect.js";
+
+    renderNav("nav", { adminNav: true });
+
+    loadConfig().then(async (config) => {
+      const session = await getValidSession({ region: config.region, clientId: config.userPoolClientId });
+      const guard = document.getElementById("admin-guard");
+
+      if (!session) {
+        guard.innerHTML = `<p class="error">You need to <a href="${loginUrlWithReturnTo()}">log in</a> as an admin to view this page.</p>`;
+      } else if (!isAdmin(session)) {
+        guard.innerHTML = `<p class="error">Your account doesn't have admin access.</p>`;
+      } else {
+        document.getElementById("admin-content").style.display = "block";
+        initPrepList(config, session.idToken);
+      }
+    });
+
+    // Tallies quantity per meal + add-on combo across every placed order, so
+    // the kitchen can see "make 6 Chicken Teriyaki Bowls (2 with Large)"
+    // instead of flipping through each order individually.
+    function aggregateByMeal(orders) {
+      const totals = new Map();
+      orders.forEach((order) => {
+        order.items.forEach((item) => {
+          const addOnLabels = (item.selectedAddOns || []).map((a) => a.description).sort();
+          const key = `${item.name}|${addOnLabels.join(",")}`;
+          if (!totals.has(key)) {
+            totals.set(key, { name: item.name, addOnLabels, quantity: 0 });
+          }
+          totals.get(key).quantity += item.quantity;
+        });
+      });
+      return [...totals.values()].sort((a, b) => {
+        const byName = a.name.localeCompare(b.name);
+        if (byName !== 0) return byName;
+        return a.addOnLabels.join(",").localeCompare(b.addOnLabels.join(","));
+      });
+    }
+
+    async function initPrepList(config, token) {
+      const body = document.getElementById("prep-body");
+      const { orders } = await apiRequest(config.apiUrl, "/admin/orders?status=placed", { token });
+
+      if (orders.length === 0) {
+        body.innerHTML = `<tr><td colspan="3" class="muted">No placed orders right now.</td></tr>`;
+        return;
+      }
+
+      const rows = aggregateByMeal(orders);
+      body.innerHTML = rows
+        .map(
+          (row) => `
+        <tr>
+          <td>${row.name}</td>
+          <td>${row.addOnLabels.length ? row.addOnLabels.join(", ") : "-"}</td>
+          <td>${row.quantity}</td>
+        </tr>`
+        )
+        .join("");
+    }
+  </script>
+</body>
+</html>

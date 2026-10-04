@@ -298,22 +298,17 @@ th {
   color: var(--color-muted);
 }
 
-.scroll-table {
-  max-height: 900px; /* roughly 20 rows before it scrolls */
+.scroll-list {
+  max-height: 80vh;
   overflow-y: auto;
   border: 1px solid var(--color-border);
   border-radius: 10px;
+  padding: 0.75rem;
   margin-top: 1rem;
 }
 
-.scroll-table table {
+.scroll-list .order-card:last-child {
   margin-bottom: 0;
-}
-
-.scroll-table th {
-  position: sticky;
-  top: 0;
-  background: var(--color-bg);
 }
 
 .tabs {
