@@ -24,13 +24,14 @@
     import { apiRequest, formatPrice } from "/js/api.js";
     import { getValidSession } from "/js/cognito.js";
     import { renderNav } from "/js/nav.js";
+    import { loginUrlWithReturnTo } from "/js/redirect.js";
 
     renderNav();
 
     loadConfig().then(async (config) => {
       const session = await getValidSession({ region: config.region, clientId: config.userPoolClientId });
       if (!session) {
-        window.location.href = "/login.html";
+        window.location.href = loginUrlWithReturnTo();
         return;
       }
 

@@ -94,6 +94,7 @@
     import { apiRequest, formatPrice } from "/js/api.js";
     import { getValidSession, isAdmin } from "/js/cognito.js";
     import { renderNav } from "/js/nav.js";
+    import { loginUrlWithReturnTo } from "/js/redirect.js";
 
     renderNav();
 
@@ -102,7 +103,7 @@
       const guard = document.getElementById("admin-guard");
 
       if (!session) {
-        guard.innerHTML = `<p class="error">You need to <a href="/login.html">log in</a> as an admin to view this page.</p>`;
+        guard.innerHTML = `<p class="error">You need to <a href="${loginUrlWithReturnTo()}">log in</a> as an admin to view this page.</p>`;
       } else if (!isAdmin(session)) {
         guard.innerHTML = `<p class="error">Your account doesn't have admin access.</p>`;
       } else {

@@ -81,6 +81,7 @@
       forgotPassword, confirmForgotPassword,
     } from "/js/cognito.js";
     import { renderNav } from "/js/nav.js";
+    import { getSafeRedirectTarget } from "/js/redirect.js";
 
     renderNav();
 
@@ -119,7 +120,7 @@
             email: document.getElementById("login-email").value,
             password: document.getElementById("login-password").value,
           });
-          window.location.href = "/index.html";
+          window.location.href = getSafeRedirectTarget();
         } catch (err) {
           showError("login-error", err.message);
         }
