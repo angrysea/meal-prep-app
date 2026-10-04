@@ -513,15 +513,21 @@ def cancel_order(event, order_id):
 def list_admin_orders(event):
     _require_admin(event)
     status = (event.get("queryStringParameters") or {}).get("status", "placed")
-    if status not in ORDER_STATUSES:
-        raise BadRequest(f"status must be one of {ORDER_STATUSES}")
+    if status != "all" and status not in ORDER_STATUSES:
+        raise BadRequest(f"status must be \"all\" or one of {ORDER_STATUSES}")
 
     items = []
-    scan_kwargs = {
-        "FilterExpression": "begins_with(SK, :sk) AND #s = :status",
-        "ExpressionAttributeNames": {"#s": "status"},
-        "ExpressionAttributeValues": {":sk": "ORDER#", ":status": status},
-    }
+    if status == "all":
+        scan_kwargs = {
+            "FilterExpression": "begins_with(SK, :sk)",
+            "ExpressionAttributeValues": {":sk": "ORDER#"},
+        }
+    else:
+        scan_kwargs = {
+            "FilterExpression": "begins_with(SK, :sk) AND #s = :status",
+            "ExpressionAttributeNames": {"#s": "status"},
+            "ExpressionAttributeValues": {":sk": "ORDER#", ":status": status},
+        }
     while True:
         page = table.scan(**scan_kwargs)
         items.extend(page.get("Items", []))

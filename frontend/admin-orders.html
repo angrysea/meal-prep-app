@@ -13,12 +13,27 @@
   <header id="nav"></header>
 
   <main>
-    <h1>Placed orders</h1>
-    <p class="muted">Orders waiting to be prepared. Update the status as each one moves along.</p>
+    <h1>Orders</h1>
     <div id="admin-guard"></div>
 
     <div id="admin-content" style="display:none;">
-      <div id="orders-list"></div>
+      <label for="status-filter">Show</label>
+      <select id="status-filter" style="max-width:220px;">
+        <option value="all">All</option>
+        <option value="placed">Placed</option>
+        <option value="prepared" selected>Prepared</option>
+        <option value="delivered">Delivered</option>
+        <option value="cancelled">Cancelled</option>
+      </select>
+
+      <div class="scroll-table">
+        <table id="orders-table" class="customers-table">
+          <thead>
+            <tr><th>Date</th><th>Customer</th><th>Items</th><th>Total</th><th>Status</th></tr>
+          </thead>
+          <tbody id="orders-body"></tbody>
+        </table>
+      </div>
     </div>
   </main>
 
@@ -48,44 +63,49 @@
     });
 
     function initOrders(config, token) {
+      const filterSelect = document.getElementById("status-filter");
+
       async function refresh() {
-        const list = document.getElementById("orders-list");
-        const { orders } = await apiRequest(config.apiUrl, "/admin/orders", { token });
+        const body = document.getElementById("orders-body");
+        const filter = filterSelect.value;
+        const { orders } = await apiRequest(config.apiUrl, `/admin/orders?status=${encodeURIComponent(filter)}`, { token });
 
         if (orders.length === 0) {
-          list.innerHTML = `<p class="muted">No orders in placed status right now.</p>`;
+          body.innerHTML = `<tr><td colspan="5" class="muted">${
+            filter === "all" ? "No orders yet." : `No orders in ${filter} status right now.`
+          }</td></tr>`;
           return;
         }
 
-        list.innerHTML = orders
-          .map(
-            (order) => `
-          <div class="card order-card" data-order-id="${order.orderId}" data-customer-sub="${order.customerSub}">
-            <p><strong>${new Date(order.createdAt).toLocaleString()}</strong></p>
-            <ul>
-              ${order.items
-                .map((i) => {
-                  const addOnLabels = (i.selectedAddOns || []).map((a) => a.description);
-                  const addOnText = addOnLabels.length ? ` <span class="muted">(${addOnLabels.join(", ")})</span>` : "";
-                  return `<li>${i.quantity} x ${i.name}${addOnText} - ${formatPrice(i.unitPriceCents * i.quantity)}</li>`;
-                })
-                .join("")}
-            </ul>
-            <p>Total: <strong>${formatPrice(order.totalCents)}</strong></p>
-            <p class="muted">${order.deliveryName} - ${order.deliveryAddress}</p>
-            <p class="muted">${order.deliveryEmail}${order.deliveryPhone ? ` - ${order.deliveryPhone}` : ""}</p>
-            <label for="status-${order.orderId}">Status</label>
-            <select class="status-select" id="status-${order.orderId}">
-              ${STATUSES.map((s) => `<option value="${s}" ${s === order.status ? "selected" : ""}>${s}</option>`).join("")}
-            </select>
-          </div>`
-          )
+        body.innerHTML = orders
+          .map((order) => {
+            const itemsText = order.items
+              .map((i) => {
+                const addOnLabels = (i.selectedAddOns || []).map((a) => a.description);
+                const addOnText = addOnLabels.length ? ` (${addOnLabels.join(", ")})` : "";
+                return `${i.quantity} x ${i.name}${addOnText}`;
+              })
+              .join(", ");
+
+            return `
+          <tr data-order-id="${order.orderId}" data-customer-sub="${order.customerSub}">
+            <td>${new Date(order.createdAt).toLocaleString()}</td>
+            <td>${order.deliveryName}<br /><span class="muted">${order.deliveryEmail}</span></td>
+            <td>${itemsText}</td>
+            <td>${formatPrice(order.totalCents)}</td>
+            <td>
+              <select class="status-select" name="status-${order.orderId}" aria-label="Status for order placed ${new Date(order.createdAt).toLocaleString()}">
+                ${STATUSES.map((s) => `<option value="${s}" ${s === order.status ? "selected" : ""}>${s}</option>`).join("")}
+              </select>
+            </td>
+          </tr>`;
+          })
           .join("");
 
-        list.querySelectorAll(".status-select").forEach((select) => {
+        body.querySelectorAll(".status-select").forEach((select) => {
           select.addEventListener("change", async (e) => {
-            const card = e.target.closest(".order-card");
-            const { orderId, customerSub } = card.dataset;
+            const row = e.target.closest("tr");
+            const { orderId, customerSub } = row.dataset;
             await apiRequest(config.apiUrl, `/admin/orders/${customerSub}/${orderId}`, {
               method: "PUT",
               token,
@@ -96,6 +116,7 @@
         });
       }
 
+      filterSelect.addEventListener("change", refresh);
       refresh();
     }
   </script>

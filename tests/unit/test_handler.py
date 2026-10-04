@@ -33,7 +33,7 @@ def table():
         yield
 
 
-def _event(method, path, body=None, path_params=None, claims=None):
+def _event(method, path, body=None, path_params=None, claims=None, query=None):
     event = {
         "requestContext": {"http": {"method": method}},
         "rawPath": path,
@@ -43,6 +43,8 @@ def _event(method, path, body=None, path_params=None, claims=None):
         event["pathParameters"] = path_params
     if claims is not None:
         event["requestContext"]["authorizer"] = {"jwt": {"claims": claims}}
+    if query:
+        event["queryStringParameters"] = query
     return event
 
 
@@ -447,6 +449,30 @@ def test_admin_orders_list_excludes_non_placed_orders(table):
     )
     resp = index.handler(_event("GET", "/admin/orders", claims=ADMIN_CLAIMS), None)
     assert json.loads(resp["body"])["orders"] == []
+
+
+def test_admin_orders_status_all_returns_every_status(table):
+    from backend.lambda_src import index
+
+    placed = _place_order(index, CUSTOMER_CLAIMS)
+    cancelled = _place_order(index, CUSTOMER_CLAIMS)
+    index.handler(
+        _event("PUT", f"/orders/{cancelled['orderId']}", {"status": "cancelled"},
+               path_params={"orderId": cancelled["orderId"]}, claims=CUSTOMER_CLAIMS),
+        None,
+    )
+
+    resp = index.handler(_event("GET", "/admin/orders", claims=ADMIN_CLAIMS, query={"status": "all"}), None)
+    assert resp["statusCode"] == 200
+    orders = json.loads(resp["body"])["orders"]
+    assert {o["orderId"] for o in orders} == {placed["orderId"], cancelled["orderId"]}
+
+
+def test_admin_orders_rejects_invalid_status_filter(table):
+    from backend.lambda_src import index
+
+    resp = index.handler(_event("GET", "/admin/orders", claims=ADMIN_CLAIMS, query={"status": "bogus"}), None)
+    assert resp["statusCode"] == 400
 
 
 def test_update_order_status_requires_admin(table):
