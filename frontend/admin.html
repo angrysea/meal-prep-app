@@ -17,14 +17,39 @@
     <div id="admin-guard"></div>
 
     <div id="admin-content" style="display:none;">
-      <section class="card form-narrow">
+      <section class="card form-narrow" style="max-width: 520px;">
         <h2>Add a meal</h2>
         <label for="new-name">Name</label>
         <input id="new-name" type="text" />
         <label for="new-description">Description</label>
         <input id="new-description" type="text" />
-        <label for="new-price">Price (USD)</label>
+        <label for="new-price">Base price (USD)</label>
         <input id="new-price" type="number" step="0.01" min="0" />
+
+        <h3>Macros (per meal)</h3>
+        <div style="display:flex; gap:0.5rem;">
+          <div style="flex:1;">
+            <label for="new-calories">Calories</label>
+            <input id="new-calories" type="number" min="0" />
+          </div>
+          <div style="flex:1;">
+            <label for="new-protein">Protein (g)</label>
+            <input id="new-protein" type="number" min="0" />
+          </div>
+          <div style="flex:1;">
+            <label for="new-carbs">Carbs (g)</label>
+            <input id="new-carbs" type="number" min="0" />
+          </div>
+          <div style="flex:1;">
+            <label for="new-fat">Fat (g)</label>
+            <input id="new-fat" type="number" min="0" />
+          </div>
+        </div>
+
+        <h3>Option groups <span class="muted" style="font-weight:normal;">(size, substitutions, add-ons - optional)</span></h3>
+        <div id="option-groups-editor"></div>
+        <button type="button" class="secondary" id="add-group-button" style="margin-bottom:1rem;">+ Add option group</button>
+
         <p class="error" id="create-error" style="display:none;"></p>
         <button id="create-button">Add meal</button>
       </section>
@@ -60,6 +85,104 @@
         initAdmin(config, session.idToken);
       }
     });
+
+    function escapeAttr(value) {
+      return String(value ?? "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+    }
+
+    function newId(prefix) {
+      return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    }
+
+    // ---------- option groups editor (admin "add a meal" form) ----------
+
+    let draftGroups = [];
+
+    function renderOptionGroupsEditor() {
+      const container = document.getElementById("option-groups-editor");
+      container.innerHTML = draftGroups
+        .map(
+          (g, gi) => `
+        <div class="card og" data-gi="${gi}" style="padding:0.75rem; margin-bottom:0.75rem;">
+          <div style="display:flex; gap:0.5rem; align-items:center; margin-bottom:0.5rem;">
+            <input type="text" class="og-name" placeholder="Group name (e.g. Size)" value="${escapeAttr(g.name)}" style="flex:1; margin-bottom:0;" />
+            <select class="og-type">
+              <option value="single" ${g.selectionType === "single" ? "selected" : ""}>Pick one</option>
+              <option value="multi" ${g.selectionType === "multi" ? "selected" : ""}>Pick any</option>
+            </select>
+          </div>
+          <label style="font-weight:normal; display:flex; align-items:center; gap:0.4rem; margin-bottom:0.5rem;">
+            <input type="checkbox" class="og-required" style="width:auto; margin:0;" ${g.required ? "checked" : ""} /> Required
+          </label>
+          <div class="og-options">
+            ${g.options
+              .map(
+                (o, oi) => `
+              <div class="og-option" data-oi="${oi}" style="display:flex; gap:0.5rem; align-items:center;">
+                <input type="text" class="oo-label" placeholder="Option (e.g. Large)" value="${escapeAttr(o.label)}" style="flex:1;" />
+                <input type="number" class="oo-price" placeholder="+$ price" step="0.01" value="${(o.priceDeltaCents / 100).toFixed(2)}" style="width:100px;" />
+                <button type="button" class="secondary remove-option">&times;</button>
+              </div>`
+              )
+              .join("")}
+          </div>
+          <button type="button" class="secondary add-option">+ Add option</button>
+          <button type="button" class="secondary remove-group" style="float:right;">Remove group</button>
+        </div>`
+        )
+        .join("");
+
+      container.querySelectorAll(".og").forEach((groupEl) => {
+        const gi = Number(groupEl.dataset.gi);
+
+        groupEl.querySelector(".og-name").addEventListener("input", (e) => {
+          draftGroups[gi].name = e.target.value;
+        });
+        groupEl.querySelector(".og-type").addEventListener("change", (e) => {
+          draftGroups[gi].selectionType = e.target.value;
+        });
+        groupEl.querySelector(".og-required").addEventListener("change", (e) => {
+          draftGroups[gi].required = e.target.checked;
+        });
+        groupEl.querySelector(".remove-group").addEventListener("click", () => {
+          draftGroups.splice(gi, 1);
+          renderOptionGroupsEditor();
+        });
+        groupEl.querySelector(".add-option").addEventListener("click", () => {
+          draftGroups[gi].options.push({ id: newId("opt"), label: "", priceDeltaCents: 0 });
+          renderOptionGroupsEditor();
+        });
+
+        groupEl.querySelectorAll(".og-option").forEach((optEl) => {
+          const oi = Number(optEl.dataset.oi);
+          optEl.querySelector(".oo-label").addEventListener("input", (e) => {
+            draftGroups[gi].options[oi].label = e.target.value;
+          });
+          optEl.querySelector(".oo-price").addEventListener("input", (e) => {
+            draftGroups[gi].options[oi].priceDeltaCents = Math.round((parseFloat(e.target.value) || 0) * 100);
+          });
+          optEl.querySelector(".remove-option").addEventListener("click", () => {
+            draftGroups[gi].options.splice(oi, 1);
+            renderOptionGroupsEditor();
+          });
+        });
+      });
+    }
+
+    document.getElementById("add-group-button").addEventListener("click", () => {
+      draftGroups.push({
+        id: newId("group"),
+        name: "",
+        selectionType: "single",
+        required: false,
+        options: [{ id: newId("opt"), label: "", priceDeltaCents: 0 }],
+      });
+      renderOptionGroupsEditor();
+    });
+
+    renderOptionGroupsEditor();
+
+    // ---------- meal list + create ----------
 
     async function initAdmin(config, token) {
       async function refresh() {
@@ -109,6 +232,14 @@
         errorEl.style.display = "none";
         try {
           const priceCents = Math.round(parseFloat(document.getElementById("new-price").value) * 100);
+
+          const optionGroups = draftGroups
+            .filter((g) => g.name.trim() && g.options.some((o) => o.label.trim()))
+            .map((g) => ({
+              ...g,
+              options: g.options.filter((o) => o.label.trim()),
+            }));
+
           await apiRequest(config.apiUrl, "/meals", {
             method: "POST",
             token,
@@ -116,11 +247,26 @@
               name: document.getElementById("new-name").value,
               description: document.getElementById("new-description").value,
               priceCents,
+              macros: {
+                calories: parseInt(document.getElementById("new-calories").value, 10) || 0,
+                proteinG: parseInt(document.getElementById("new-protein").value, 10) || 0,
+                carbsG: parseInt(document.getElementById("new-carbs").value, 10) || 0,
+                fatG: parseInt(document.getElementById("new-fat").value, 10) || 0,
+              },
+              optionGroups,
             },
           });
+
           document.getElementById("new-name").value = "";
           document.getElementById("new-description").value = "";
           document.getElementById("new-price").value = "";
+          document.getElementById("new-calories").value = "";
+          document.getElementById("new-protein").value = "";
+          document.getElementById("new-carbs").value = "";
+          document.getElementById("new-fat").value = "";
+          draftGroups = [];
+          renderOptionGroupsEditor();
+
           refresh();
         } catch (err) {
           errorEl.textContent = err.message;

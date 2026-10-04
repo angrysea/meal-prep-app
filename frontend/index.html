@@ -46,10 +46,11 @@
     import { apiRequest, formatPrice } from "/js/api.js";
     import { getValidSession } from "/js/cognito.js";
     import { renderNav } from "/js/nav.js";
+    import { computeUnitPriceCents, describeSelections, selectionsKey } from "/js/pricing.js";
 
     renderNav();
 
-    const cart = {}; // mealId -> { meal, quantity }
+    const cart = {}; // selectionsKey -> { meal, selectedOptions, quantity }
 
     function renderCart() {
       const section = document.getElementById("cart-section");
@@ -64,20 +65,76 @@
 
       let total = 0;
       lines.innerHTML = entries
-        .map(({ meal, quantity }) => {
-          total += meal.priceCents * quantity;
-          return `<div class="cart-line"><span>${quantity} x ${meal.name}</span><span>${formatPrice(meal.priceCents * quantity)}</span></div>`;
+        .map(({ meal, selectedOptions, quantity }) => {
+          const unitPrice = computeUnitPriceCents(meal, selectedOptions);
+          total += unitPrice * quantity;
+          const optionLabels = describeSelections(meal, selectedOptions);
+          const optionText = optionLabels.length ? `<div class="muted" style="font-size:0.85rem;">${optionLabels.join(", ")}</div>` : "";
+          return `<div class="cart-line-wrap">
+            <div class="cart-line"><span>${quantity} x ${meal.name}</span><span>${formatPrice(unitPrice * quantity)}</span></div>
+            ${optionText}
+          </div>`;
         })
         .join("");
       document.getElementById("cart-total").textContent = formatPrice(total);
     }
 
-    function addToCart(meal) {
-      if (!cart[meal.mealId]) {
-        cart[meal.mealId] = { meal, quantity: 0 };
+    function addToCart(meal, selectedOptions) {
+      const key = selectionsKey(meal.mealId, selectedOptions);
+      if (!cart[key]) {
+        cart[key] = { meal, selectedOptions, quantity: 0 };
       }
-      cart[meal.mealId].quantity += 1;
+      cart[key].quantity += 1;
       renderCart();
+    }
+
+    function renderMacros(macros) {
+      if (!macros) return "";
+      const parts = [];
+      if (macros.calories) parts.push(`${macros.calories} cal`);
+      if (macros.proteinG) parts.push(`${macros.proteinG}g protein`);
+      if (macros.carbsG) parts.push(`${macros.carbsG}g carbs`);
+      if (macros.fatG) parts.push(`${macros.fatG}g fat`);
+      return parts.length ? `<p class="macros muted">${parts.join(" &middot; ")}</p>` : "";
+    }
+
+    function renderOptionGroups(meal) {
+      const groups = meal.optionGroups || [];
+      if (groups.length === 0) return "";
+      return `<div class="option-groups">${groups
+        .map(
+          (g) => `
+        <div class="option-group" data-group-id="${g.id}">
+          <strong>${g.name}${g.required ? " *" : ""}</strong>
+          ${g.options
+            .map(
+              (o) => `
+            <label class="option-choice">
+              <input type="${g.selectionType === "single" ? "radio" : "checkbox"}" name="${g.id}-${meal.mealId}" value="${o.id}" />
+              ${o.label}${o.priceDeltaCents ? ` (+${formatPrice(o.priceDeltaCents)})` : ""}
+            </label>`
+            )
+            .join("")}
+        </div>`
+        )
+        .join("")}</div>`;
+    }
+
+    function readSelectedOptions(cardEl, meal) {
+      const selections = [];
+      cardEl.querySelectorAll(".option-group").forEach((groupEl) => {
+        const groupId = groupEl.dataset.groupId;
+        groupEl.querySelectorAll("input:checked").forEach((input) => {
+          selections.push({ groupId, optionId: input.value });
+        });
+      });
+      return selections;
+    }
+
+    function validateRequiredGroups(meal, selections) {
+      const selectedGroupIds = new Set(selections.map((s) => s.groupId));
+      const missing = (meal.optionGroups || []).filter((g) => g.required && !selectedGroupIds.has(g.id));
+      return missing;
     }
 
     async function loadMeals(config) {
@@ -92,19 +149,32 @@
         container.innerHTML = available
           .map(
             (meal) => `
-          <div class="card meal-card">
+          <div class="card meal-card" data-meal-id="${meal.mealId}">
             <h3>${meal.name}</h3>
             <p class="description">${meal.description || ""}</p>
+            ${renderMacros(meal.macros)}
             <p class="price">${formatPrice(meal.priceCents)}</p>
-            <button data-meal-id="${meal.mealId}">Add to order</button>
+            ${renderOptionGroups(meal)}
+            <p class="error option-error" style="display:none;"></p>
+            <button class="add-to-order" data-meal-id="${meal.mealId}">Add to order</button>
           </div>`
           )
           .join("");
 
-        container.querySelectorAll("button[data-meal-id]").forEach((btn) => {
+        container.querySelectorAll("button.add-to-order").forEach((btn) => {
           btn.addEventListener("click", () => {
+            const cardEl = btn.closest(".meal-card");
             const meal = available.find((m) => m.mealId === btn.dataset.mealId);
-            addToCart(meal);
+            const selections = readSelectedOptions(cardEl, meal);
+            const missing = validateRequiredGroups(meal, selections);
+            const errorEl = cardEl.querySelector(".option-error");
+            if (missing.length > 0) {
+              errorEl.textContent = `Please choose a ${missing[0].name.toLowerCase()}.`;
+              errorEl.style.display = "block";
+              return;
+            }
+            errorEl.style.display = "none";
+            addToCart(meal, selections);
           });
         });
       } catch (err) {
@@ -122,9 +192,10 @@
         return;
       }
 
-      const items = Object.values(cart).map(({ meal, quantity }) => ({
+      const items = Object.values(cart).map(({ meal, selectedOptions, quantity }) => ({
         mealId: meal.mealId,
         quantity,
+        selectedOptions,
       }));
 
       try {

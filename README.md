@@ -43,6 +43,21 @@ an admin-only page to add/hide/delete menu items.
 - Order totals are always recomputed server-side from the current menu —
   client-submitted prices are ignored.
 
+## Menu data model
+
+Each meal has a flat `macros` object (`calories`, `proteinG`, `carbsG`, `fatG`)
+and an admin-defined, fully generic `optionGroups` list — there's no hardcoded
+notion of "size" or "add-on". A group is `{id, name, selectionType: "single" |
+"multi", required, options: [{id, label, priceDeltaCents}]}`; admins build
+these in the "Add a meal" form on `admin.html`. At order time, the client
+sends only `{groupId, optionId}` pairs — the Lambda resolves them against the
+meal's *current* option groups, validates required/single-vs-multi rules, and
+computes the price from `priceDeltaCents`, the same never-trust-the-client
+principle as the base price. Note: macros are per-meal, not per-option — if a
+"Large" selection should actually change calories (as it does on the flyer
+this was modeled from), that'd need a `macrosDelta` added to the option shape,
+analogous to `priceDeltaCents`; not implemented yet.
+
 ## One-time setup
 
 ```bash

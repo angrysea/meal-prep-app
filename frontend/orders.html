@@ -48,7 +48,13 @@
             <p><strong>${new Date(order.createdAt).toLocaleString()}</strong>
               &nbsp;<span class="status">${order.status}</span></p>
             <ul>
-              ${order.items.map((i) => `<li>${i.quantity} x ${i.name} - ${formatPrice(i.unitPriceCents * i.quantity)}</li>`).join("")}
+              ${order.items
+                .map((i) => {
+                  const optionLabels = (i.selectedOptions || []).map((o) => o.optionLabel);
+                  const optionText = optionLabels.length ? ` <span class="muted">(${optionLabels.join(", ")})</span>` : "";
+                  return `<li>${i.quantity} x ${i.name}${optionText} - ${formatPrice(i.unitPriceCents * i.quantity)}</li>`;
+                })
+                .join("")}
             </ul>
             <p>Total: <strong>${formatPrice(order.totalCents)}</strong></p>
             <p class="muted">${order.deliveryName} - ${order.deliveryAddress}</p>
