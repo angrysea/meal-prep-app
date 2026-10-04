@@ -22,7 +22,6 @@
     </div>
 
     <section class="card" id="cart-section" style="display:none;">
-      <h2>Your order</h2>
       <div id="cart-lines"></div>
       <p><strong>Total: <span id="cart-total">$0.00</span></strong></p>
 
@@ -44,9 +43,12 @@
         </p>
 
         <p class="error" id="checkout-error" style="display:none;"></p>
-        <button id="checkout-button">Place order</button>
+        <div style="display:flex; gap:0.5rem;">
+          <button id="checkout-button">Place order</button>
+          <button type="button" class="secondary" id="cancel-order-button">Cancel</button>
+        </div>
         <p class="muted" id="checkout-note">
-          This is a demo checkout - no payment is actually charged.
+          This is not a checkout - please arrange payment before or at pickup.
         </p>
       </div>
     </section>
@@ -68,7 +70,7 @@
     function renderCart() {
       const section = document.getElementById("cart-section");
       const lines = document.getElementById("cart-lines");
-      const entries = Object.values(cart);
+      const entries = Object.entries(cart);
 
       if (entries.length === 0) {
         section.style.display = "none";
@@ -78,18 +80,54 @@
 
       let total = 0;
       lines.innerHTML = entries
-        .map(({ meal, selectedAddOnIds, quantity }) => {
+        .map(([key, { meal, selectedAddOnIds, quantity }]) => {
           const unitPrice = computeUnitPriceCents(meal, allAddOns, selectedAddOnIds);
           total += unitPrice * quantity;
           const addOnLabels = describeAddOns(allAddOns, selectedAddOnIds);
           const addOnText = addOnLabels.length ? `<div class="muted" style="font-size:0.85rem;">${addOnLabels.join(", ")}</div>` : "";
-          return `<div class="cart-line-wrap">
-            <div class="cart-line"><span>${quantity} x ${meal.name}</span><span>${formatPrice(unitPrice * quantity)}</span></div>
+          return `<div class="cart-line-wrap" data-cart-key="${key}">
+            <div class="cart-line">
+              <span>${meal.name}</span>
+              <div class="qty-control">
+                <button type="button" class="secondary qty-minus">-</button>
+                <input type="number" class="qty-input" name="qty-${key}" aria-label="Quantity for ${meal.name}" min="1" value="${quantity}" />
+                <button type="button" class="secondary qty-plus">+</button>
+              </div>
+              <span>${formatPrice(unitPrice * quantity)}</span>
+            </div>
             ${addOnText}
           </div>`;
         })
         .join("");
       document.getElementById("cart-total").textContent = formatPrice(total);
+
+      lines.querySelectorAll(".qty-minus").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const key = btn.closest(".cart-line-wrap").dataset.cartKey;
+          setQuantity(key, cart[key].quantity - 1);
+        });
+      });
+      lines.querySelectorAll(".qty-plus").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const key = btn.closest(".cart-line-wrap").dataset.cartKey;
+          setQuantity(key, cart[key].quantity + 1);
+        });
+      });
+      lines.querySelectorAll(".qty-input").forEach((input) => {
+        input.addEventListener("change", () => {
+          const key = input.closest(".cart-line-wrap").dataset.cartKey;
+          setQuantity(key, parseInt(input.value, 10) || 0);
+        });
+      });
+    }
+
+    function setQuantity(key, quantity) {
+      if (quantity <= 0) {
+        delete cart[key];
+      } else {
+        cart[key].quantity = quantity;
+      }
+      renderCart();
     }
 
     function addToCart(meal, selectedAddOnIds) {
@@ -98,6 +136,12 @@
         cart[key] = { meal, selectedAddOnIds, quantity: 0 };
       }
       cart[key].quantity += 1;
+      renderCart();
+    }
+
+    function cancelOrder() {
+      Object.keys(cart).forEach((key) => delete cart[key]);
+      document.getElementById("checkout-error").style.display = "none";
       renderCart();
     }
 
@@ -238,6 +282,7 @@
       loadMenu(config, !!session);
       prefillFromProfile(config, session);
       document.getElementById("checkout-button").addEventListener("click", () => placeOrder(config));
+      document.getElementById("cancel-order-button").addEventListener("click", cancelOrder);
     });
   </script>
 </body>
