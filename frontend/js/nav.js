@@ -1,4 +1,4 @@
-import { getSession, isAdmin, signOut } from "./cognito.js";
+import { getSession, signOut } from "./cognito.js";
 
 export function renderNav(targetId = "nav") {
   const el = document.getElementById(targetId);
@@ -11,7 +11,6 @@ export function renderNav(targetId = "nav") {
   if (session) {
     links.push(`<a href="/orders.html">My Orders</a>`);
     links.push(`<a href="/account.html">My Account</a>`);
-    if (isAdmin(session)) links.push(`<a href="/admin.html">Admin</a>`);
     links.push(`<a href="#" id="nav-logout">Log out</a>`);
   } else {
     links.push(`<a href="/login.html">Log in / Sign up</a>`);

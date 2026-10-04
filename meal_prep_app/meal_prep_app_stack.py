@@ -102,12 +102,28 @@ class MealPrepAppStack(Stack):
             block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
         )
 
+        # Lets pages be linked with clean paths (e.g. /admin) instead of the
+        # real S3 key (/admin.html) - rewrites at the edge, no file renaming.
+        clean_urls_function = cloudfront.Function(
+            self, "CleanUrlsFunction",
+            code=cloudfront.FunctionCode.from_file(
+                file_path="meal_prep_app/cloudfront_functions/clean_urls.js"
+            ),
+            comment="Appends .html to extensionless paths",
+        )
+
         distribution = cloudfront.Distribution(
             self, "SiteDistribution",
             default_root_object="index.html",
             default_behavior=cloudfront.BehaviorOptions(
                 origin=origins.S3BucketOrigin.with_origin_access_control(site_bucket),
                 viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+                function_associations=[
+                    cloudfront.FunctionAssociation(
+                        function=clean_urls_function,
+                        event_type=cloudfront.FunctionEventType.VIEWER_REQUEST,
+                    )
+                ],
             ),
         )
 

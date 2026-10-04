@@ -33,6 +33,7 @@ def test_site_bucket_and_cloudfront_created():
 
     template.resource_count_is("AWS::S3::Bucket", 1)
     template.resource_count_is("AWS::CloudFront::Distribution", 1)
+    template.resource_count_is("AWS::CloudFront::Function", 1)
 
 
 def test_cognito_user_pool_and_admins_group_created():
