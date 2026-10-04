@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>My Account - GTX Meals</title>
+  <link rel="icon" href="data:," />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Permanent+Marker&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <header id="nav"></header>
+
+  <main>
+    <h1>My account</h1>
+    <p class="muted">Saved here, so you don't have to retype it at checkout every time.</p>
+
+    <section class="card form-narrow">
+      <label for="account-name">Name</label>
+      <input id="account-name" type="text" />
+
+      <label for="account-email">Email</label>
+      <input id="account-email" type="email" />
+
+      <label for="account-phone">Phone</label>
+      <input id="account-phone" type="tel" />
+
+      <label for="account-address">Delivery address</label>
+      <input id="account-address" type="text" />
+
+      <p class="error" id="account-error" style="display:none;"></p>
+      <p class="muted" id="account-saved" style="display:none;">Saved.</p>
+      <button id="account-save-button">Save</button>
+    </section>
+  </main>
+
+  <script type="module">
+    import { loadConfig } from "/js/config.js";
+    import { apiRequest } from "/js/api.js";
+    import { getValidSession } from "/js/cognito.js";
+    import { renderNav } from "/js/nav.js";
+
+    renderNav();
+
+    loadConfig().then(async (config) => {
+      const session = await getValidSession({ region: config.region, clientId: config.userPoolClientId });
+      if (!session) {
+        window.location.href = "/login.html";
+        return;
+      }
+
+      const fields = ["name", "email", "phone", "address"];
+      const errorEl = document.getElementById("account-error");
+      const savedEl = document.getElementById("account-saved");
+
+      try {
+        const profile = await apiRequest(config.apiUrl, "/profile", { token: session.idToken });
+        fields.forEach((field) => {
+          document.getElementById(`account-${field}`).value = profile[field] || "";
+        });
+      } catch (err) {
+        errorEl.textContent = `Couldn't load your account: ${err.message}`;
+        errorEl.style.display = "block";
+      }
+
+      document.getElementById("account-save-button").addEventListener("click", async () => {
+        errorEl.style.display = "none";
+        savedEl.style.display = "none";
+        try {
+          const body = {};
+          fields.forEach((field) => {
+            body[field] = document.getElementById(`account-${field}`).value;
+          });
+          await apiRequest(config.apiUrl, "/profile", { method: "PUT", token: session.idToken, body });
+          savedEl.style.display = "block";
+        } catch (err) {
+          errorEl.textContent = err.message;
+          errorEl.style.display = "block";
+        }
+      });
+    });
+  </script>
+</body>
+</html>

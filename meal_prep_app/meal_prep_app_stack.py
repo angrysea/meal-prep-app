@@ -149,6 +149,12 @@ class MealPrepAppStack(Stack):
             integration=integration, authorizer=jwt_authorizer,
         )
 
+        # Profile: saved contact details, scoped to the caller.
+        http_api.add_routes(
+            path="/profile", methods=[apigwv2.HttpMethod.GET, apigwv2.HttpMethod.PUT],
+            integration=integration, authorizer=jwt_authorizer,
+        )
+
         # Add-ons: a single global list (e.g. "Large", "Extra Protein") offered
         # on every meal. Browsing is public; managing the list is admin-only.
         http_api.add_routes(

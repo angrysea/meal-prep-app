@@ -43,6 +43,10 @@ def handler(event, context):
             return list_orders(event)
         if path == "/orders" and method == "POST":
             return create_order(event)
+        if path == "/profile" and method == "GET":
+            return get_profile(event)
+        if path == "/profile" and method == "PUT":
+            return update_profile(event)
     except AuthError as e:
         return _response(e.status_code, {"message": str(e)})
     except BadRequest as e:
@@ -164,6 +168,43 @@ def _addon_out(item):
     }
 
 
+# ---------- customer profile ----------
+# Saved contact details (name/email/phone/address) so returning customers
+# don't have to retype them at checkout every time.
+
+PROFILE_FIELDS = ("name", "email", "phone", "address")
+
+
+def get_profile(event):
+    claims = _claims(event)
+    item = table.get_item(Key={"PK": f"USER#{claims['sub']}", "SK": "PROFILE"}).get("Item")
+    return _response(200, _profile_out(item, claims))
+
+
+def update_profile(event):
+    claims = _claims(event)
+    body = _body(event)
+    item = {
+        "PK": f"USER#{claims['sub']}",
+        "SK": "PROFILE",
+        **{field: body.get(field, "") for field in PROFILE_FIELDS},
+    }
+    table.put_item(Item=item)
+    return _response(200, _profile_out(item, claims))
+
+
+def _profile_out(item, claims):
+    item = item or {}
+    return {
+        "name": item.get("name", ""),
+        # Falls back to the Cognito login email until the customer saves a
+        # profile of their own (e.g. the first time they open the account page).
+        "email": item.get("email") or claims.get("email", ""),
+        "phone": item.get("phone", ""),
+        "address": item.get("address", ""),
+    }
+
+
 # ---------- orders ----------
 
 def list_orders(event):
@@ -216,6 +257,8 @@ def create_order(event):
         "items": line_items,
         "totalCents": total_cents,
         "deliveryName": body.get("deliveryName", ""),
+        "deliveryEmail": body.get("deliveryEmail", ""),
+        "deliveryPhone": body.get("deliveryPhone", ""),
         "deliveryAddress": body.get("deliveryAddress", ""),
         "status": "placed",  # stub checkout - no real payment is taken
     }
@@ -252,6 +295,8 @@ def _order_out(item):
         "items": [dict(i) for i in item["items"]],
         "totalCents": int(item["totalCents"]),
         "deliveryName": item.get("deliveryName", ""),
+        "deliveryEmail": item.get("deliveryEmail", ""),
+        "deliveryPhone": item.get("deliveryPhone", ""),
         "deliveryAddress": item.get("deliveryAddress", ""),
         "status": item.get("status", "placed"),
     }

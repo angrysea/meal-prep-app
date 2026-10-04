@@ -58,6 +58,7 @@
             </ul>
             <p>Total: <strong>${formatPrice(order.totalCents)}</strong></p>
             <p class="muted">${order.deliveryName} - ${order.deliveryAddress}</p>
+            <p class="muted">${order.deliveryEmail}${order.deliveryPhone ? ` - ${order.deliveryPhone}` : ""}</p>
           </div>`
           )
           .join("");

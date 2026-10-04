@@ -29,8 +29,18 @@
         <label for="delivery-name">Name</label>
         <input id="delivery-name" type="text" placeholder="Your name" />
 
+        <label for="delivery-email">Email</label>
+        <input id="delivery-email" type="email" placeholder="you@example.com" />
+
+        <label for="delivery-phone">Phone</label>
+        <input id="delivery-phone" type="tel" placeholder="555-123-4567" />
+
         <label for="delivery-address">Delivery address</label>
         <input id="delivery-address" type="text" placeholder="123 Main St" />
+
+        <p class="muted" id="profile-hint" style="display:none;">
+          Using your saved details - <a href="/account.html">edit account</a>.
+        </p>
 
         <p class="error" id="checkout-error" style="display:none;"></p>
         <button id="checkout-button">Place order</button>
@@ -156,6 +166,23 @@
       }
     }
 
+    async function prefillFromProfile(config) {
+      const session = await getValidSession({ region: config.region, clientId: config.userPoolClientId });
+      if (!session) return;
+      try {
+        const profile = await apiRequest(config.apiUrl, "/profile", { token: session.idToken });
+        document.getElementById("delivery-name").value = profile.name || "";
+        document.getElementById("delivery-email").value = profile.email || "";
+        document.getElementById("delivery-phone").value = profile.phone || "";
+        document.getElementById("delivery-address").value = profile.address || "";
+        if (profile.name || profile.address) {
+          document.getElementById("profile-hint").style.display = "block";
+        }
+      } catch (err) {
+        // Non-fatal - checkout still works, just without prefilled fields.
+      }
+    }
+
     async function placeOrder(config) {
       const errorEl = document.getElementById("checkout-error");
       errorEl.style.display = "none";
@@ -172,16 +199,24 @@
         selectedAddOnIds,
       }));
 
+      const deliveryName = document.getElementById("delivery-name").value;
+      const deliveryEmail = document.getElementById("delivery-email").value;
+      const deliveryPhone = document.getElementById("delivery-phone").value;
+      const deliveryAddress = document.getElementById("delivery-address").value;
+
       try {
         await apiRequest(config.apiUrl, "/orders", {
           method: "POST",
           token: session.idToken,
-          body: {
-            items,
-            deliveryName: document.getElementById("delivery-name").value,
-            deliveryAddress: document.getElementById("delivery-address").value,
-          },
+          body: { items, deliveryName, deliveryEmail, deliveryPhone, deliveryAddress },
         });
+        // Keep the saved profile in sync so next time's checkout is prefilled
+        // even if they changed something this time.
+        apiRequest(config.apiUrl, "/profile", {
+          method: "PUT",
+          token: session.idToken,
+          body: { name: deliveryName, email: deliveryEmail, phone: deliveryPhone, address: deliveryAddress },
+        }).catch(() => {});
         window.location.href = "/orders.html";
       } catch (err) {
         errorEl.textContent = err.message;
@@ -191,6 +226,7 @@
 
     loadConfig().then((config) => {
       loadMenu(config);
+      prefillFromProfile(config);
       document.getElementById("checkout-button").addEventListener("click", () => placeOrder(config));
     });
   </script>

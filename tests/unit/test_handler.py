@@ -307,3 +307,74 @@ def test_unknown_route_returns_404(table):
 
     resp = index.handler(_event("DELETE", "/nope"), None)
     assert resp["statusCode"] == 404
+
+
+def test_profile_requires_auth(table):
+    from backend.lambda_src import index
+
+    resp = index.handler(_event("GET", "/profile"), None)
+    assert resp["statusCode"] == 401
+
+
+def test_get_profile_defaults_to_empty_with_email_from_claims(table):
+    from backend.lambda_src import index
+
+    resp = index.handler(_event("GET", "/profile", claims=CUSTOMER_CLAIMS), None)
+    assert resp["statusCode"] == 200
+    profile = json.loads(resp["body"])
+    assert profile == {"name": "", "email": "customer@example.com", "phone": "", "address": ""}
+
+
+def test_update_and_get_profile_roundtrip(table):
+    from backend.lambda_src import index
+
+    update_resp = index.handler(
+        _event(
+            "PUT", "/profile",
+            {"name": "Ada Lovelace", "email": "ada@example.com", "phone": "555-1234", "address": "123 Main St"},
+            claims=CUSTOMER_CLAIMS,
+        ),
+        None,
+    )
+    assert update_resp["statusCode"] == 200
+    assert json.loads(update_resp["body"])["name"] == "Ada Lovelace"
+
+    get_resp = index.handler(_event("GET", "/profile", claims=CUSTOMER_CLAIMS), None)
+    profile = json.loads(get_resp["body"])
+    assert profile == {
+        "name": "Ada Lovelace", "email": "ada@example.com", "phone": "555-1234", "address": "123 Main St"
+    }
+
+
+def test_profile_is_scoped_to_the_caller(table):
+    from backend.lambda_src import index
+
+    index.handler(
+        _event("PUT", "/profile", {"name": "Ada Lovelace"}, claims=CUSTOMER_CLAIMS), None
+    )
+    other_claims = {"sub": "user-2", "email": "other@example.com"}
+    resp = index.handler(_event("GET", "/profile", claims=other_claims), None)
+    assert json.loads(resp["body"])["name"] == ""
+
+
+def test_create_order_stores_delivery_contact_details(table):
+    from backend.lambda_src import index
+
+    meal = _create_meal(index)
+    resp = index.handler(
+        _event(
+            "POST", "/orders",
+            {
+                "items": [{"mealId": meal["mealId"], "quantity": 1}],
+                "deliveryName": "Ada Lovelace",
+                "deliveryEmail": "ada@example.com",
+                "deliveryPhone": "555-1234",
+                "deliveryAddress": "123 Main St",
+            },
+            claims=CUSTOMER_CLAIMS,
+        ),
+        None,
+    )
+    order = json.loads(resp["body"])
+    assert order["deliveryEmail"] == "ada@example.com"
+    assert order["deliveryPhone"] == "555-1234"

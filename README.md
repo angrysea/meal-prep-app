@@ -4,21 +4,24 @@ Serverless stack on AWS: S3 + CloudFront (static site), API Gateway (HTTP API) +
 Lambda (Python 3.12) for the backend, DynamoDB for data, Cognito for customer
 accounts. Infrastructure is defined with the AWS CDK (Python).
 
-**Features:** browse the menu (public) · sign up / log in · place an order
-(stub checkout — no real payment is taken) · view your own order history ·
-an admin-only page to add/hide/delete menu items.
+**Features:** browse the menu (public) · sign up / log in · a saved account
+profile (name/email/phone/address) so checkout doesn't ask twice · place an
+order (stub checkout — no real payment is taken) · view your own order
+history · an admin-only page to add/hide/delete menu items and manage a
+global add-on list.
 
 ```
 .
 ├── app.py                        CDK app entrypoint
 ├── meal_prep_app/
 │   └── meal_prep_app_stack.py    All infra: DynamoDB, Cognito, Lambda, HTTP API, S3, CloudFront
-├── backend/lambda_src/index.py   Lambda handler: menu, orders, admin routes + authz
+├── backend/lambda_src/index.py   Lambda handler: menu, add-ons, orders, profile, admin routes + authz
 ├── frontend/                     Static site (plain HTML/CSS/JS, no build step)
-│   ├── index.html                 Menu + cart + checkout
-│   ├── login.html                 Sign up / confirm / log in
+│   ├── index.html                 Menu + cart + checkout (prefilled from saved profile)
+│   ├── login.html                 Sign up / confirm / log in / reset password
+│   ├── account.html                Saved contact details (name/email/phone/address)
 │   ├── orders.html                 Order history (requires login)
-│   ├── admin.html                  Manage menu (requires Admins group)
+│   ├── admin.html                  Manage menu + add-ons (requires Admins group)
 │   └── js/cognito.js               Calls Cognito's public API directly via fetch — no SDK/build step
 ├── tests/unit/                   CDK assertion tests + Lambda handler tests (pytest + moto)
 ├── docker-compose.yml            DynamoDB Local for offline testing
