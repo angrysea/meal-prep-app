@@ -46,6 +46,22 @@ export async function resendConfirmationCode({ region, clientId, email }) {
   });
 }
 
+export async function forgotPassword({ region, clientId, email }) {
+  return cognitoRequest(region, "ForgotPassword", {
+    ClientId: clientId,
+    Username: email,
+  });
+}
+
+export async function confirmForgotPassword({ region, clientId, email, code, newPassword }) {
+  return cognitoRequest(region, "ConfirmForgotPassword", {
+    ClientId: clientId,
+    Username: email,
+    ConfirmationCode: code,
+    Password: newPassword,
+  });
+}
+
 export async function signIn({ region, clientId, email, password }) {
   const data = await cognitoRequest(region, "InitiateAuth", {
     AuthFlow: "USER_PASSWORD_AUTH",

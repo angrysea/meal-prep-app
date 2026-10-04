@@ -24,6 +24,28 @@
       <input id="login-password" type="password" />
       <p class="error" id="login-error" style="display:none;"></p>
       <button id="login-button">Log in</button>
+      <p><a href="#" id="forgot-password-link">Forgot password?</a></p>
+    </section>
+
+    <section id="reset-panel" class="card form-narrow" style="display:none;">
+      <h2>Reset password</h2>
+      <div id="reset-request-form">
+        <label for="reset-email">Email</label>
+        <input id="reset-email" type="email" />
+        <p class="error" id="reset-request-error" style="display:none;"></p>
+        <button id="reset-request-button">Send reset code</button>
+      </div>
+
+      <div id="reset-confirm-form" style="display:none;">
+        <p class="muted">We emailed a reset code to your address.</p>
+        <label for="reset-code">Reset code</label>
+        <input id="reset-code" type="text" />
+        <label for="reset-new-password">New password</label>
+        <input id="reset-new-password" type="password" placeholder="At least 8 characters" />
+        <p class="error" id="reset-confirm-error" style="display:none;"></p>
+        <button id="reset-confirm-button">Set new password</button>
+        <button class="secondary" id="reset-resend-button">Resend code</button>
+      </div>
     </section>
 
     <section id="signup-panel" class="card form-narrow" style="display:none;">
@@ -52,7 +74,10 @@
 
   <script type="module">
     import { loadConfig } from "/js/config.js";
-    import { signUp, confirmSignUp, resendConfirmationCode, signIn } from "/js/cognito.js";
+    import {
+      signUp, confirmSignUp, resendConfirmationCode, signIn,
+      forgotPassword, confirmForgotPassword,
+    } from "/js/cognito.js";
     import { renderNav } from "/js/nav.js";
 
     renderNav();
@@ -60,11 +85,16 @@
     function showTab(tab) {
       document.getElementById("login-panel").style.display = tab === "login" ? "block" : "none";
       document.getElementById("signup-panel").style.display = tab === "signup" ? "block" : "none";
+      document.getElementById("reset-panel").style.display = tab === "reset" ? "block" : "none";
       document.getElementById("tab-login").classList.toggle("active", tab === "login");
       document.getElementById("tab-signup").classList.toggle("active", tab === "signup");
     }
     document.getElementById("tab-login").addEventListener("click", () => showTab("login"));
     document.getElementById("tab-signup").addEventListener("click", () => showTab("signup"));
+    document.getElementById("forgot-password-link").addEventListener("click", (e) => {
+      e.preventDefault();
+      showTab("reset");
+    });
 
     function showError(id, message) {
       const el = document.getElementById(id);
@@ -138,6 +168,54 @@
           });
         } catch (err) {
           showError("confirm-error", err.message);
+        }
+      });
+
+      let pendingResetEmail = null;
+
+      document.getElementById("reset-request-button").addEventListener("click", async () => {
+        hideError("reset-request-error");
+        const email = document.getElementById("reset-email").value;
+        try {
+          await forgotPassword({ region: config.region, clientId: config.userPoolClientId, email });
+          pendingResetEmail = email;
+          document.getElementById("reset-request-form").style.display = "none";
+          document.getElementById("reset-confirm-form").style.display = "block";
+        } catch (err) {
+          showError("reset-request-error", err.message);
+        }
+      });
+
+      document.getElementById("reset-confirm-button").addEventListener("click", async () => {
+        hideError("reset-confirm-error");
+        try {
+          await confirmForgotPassword({
+            region: config.region,
+            clientId: config.userPoolClientId,
+            email: pendingResetEmail,
+            code: document.getElementById("reset-code").value,
+            newPassword: document.getElementById("reset-new-password").value,
+          });
+          showTab("login");
+          document.getElementById("login-email").value = pendingResetEmail;
+          document.getElementById("login-password").value = "";
+          // Reset the form back to its initial state in case the user comes back later.
+          document.getElementById("reset-request-form").style.display = "block";
+          document.getElementById("reset-confirm-form").style.display = "none";
+          document.getElementById("reset-email").value = "";
+          document.getElementById("reset-code").value = "";
+          document.getElementById("reset-new-password").value = "";
+        } catch (err) {
+          showError("reset-confirm-error", err.message);
+        }
+      });
+
+      document.getElementById("reset-resend-button").addEventListener("click", async () => {
+        hideError("reset-confirm-error");
+        try {
+          await forgotPassword({ region: config.region, clientId: config.userPoolClientId, email: pendingResetEmail });
+        } catch (err) {
+          showError("reset-confirm-error", err.message);
         }
       });
     });
