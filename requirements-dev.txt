@@ -1,4 +1,9 @@
 pytest==8.4.2
 moto[dynamodb]==5.0.17
-boto3==1.35.0
+boto3==1.43.108
+# [crt] is required for this account's "new AWS experience" login_session
+# credential provider (used by scripts/create_admin_user.py and any other
+# boto3 script run against the gtx-meal-prep profile) - plain botocore can't
+# resolve it and fails with "Unable to locate credentials".
+botocore[crt]==1.43.108
 

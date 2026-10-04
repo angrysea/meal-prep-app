@@ -49,6 +49,12 @@ weekly reminder email/text to subscribed customers.
   python scripts/create_admin_user.py --email you@example.com --password 'SomeStrongPass1' \
     --profile gtx-meal-prep --region us-east-2
   ```
+  Requires `botocore[crt]` (already in `requirements-dev.txt`): this account's
+  `aws login` stores credentials under a `login_session` key in
+  `~/.aws/config`, a newer credential provider that plain `botocore` can't
+  resolve at all — any direct boto3 script (not just this one) will fail
+  with `Unable to locate credentials` without it, even though `aws` CLI
+  commands against the same profile work fine.
   There's no separate admin credential store — admin identity is just a
   Cognito user like any customer, distinguished only by group membership.
   A literal username/password of `admin`/`admin` isn't possible: the pool
