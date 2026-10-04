@@ -86,6 +86,7 @@ class MealPrepAppStack(Stack):
             memory_size=256,
             environment={
                 "TABLE_NAME": table_name,
+                "USER_POOL_ID": user_pool.user_pool_id,
                 "ADMINS_GROUP_NAME": ADMINS_GROUP_NAME,
                 # Placeholder - must be a verified SES sender identity before
                 # weekly reminder emails will actually send. See README.
@@ -107,6 +108,13 @@ class MealPrepAppStack(Stack):
         api_fn.add_to_role_policy(iam.PolicyStatement(
             actions=["sns:Publish"],
             resources=["*"],
+        ))
+
+        # Admin customer management: list every account, resolve a customer's
+        # sub from their login email, and remove an account on request.
+        api_fn.add_to_role_policy(iam.PolicyStatement(
+            actions=["cognito-idp:ListUsers", "cognito-idp:AdminGetUser", "cognito-idp:AdminDeleteUser"],
+            resources=[user_pool.user_pool_arn],
         ))
 
         # ---------- S3 + CloudFront (static site) ----------
@@ -209,6 +217,16 @@ class MealPrepAppStack(Stack):
         # via the Admins group, same as the other admin-only routes).
         http_api.add_routes(
             path="/reminders/send", methods=[apigwv2.HttpMethod.POST],
+            integration=integration, authorizer=jwt_authorizer,
+        )
+
+        # Customer accounts: admin-only (checked in the Lambda).
+        http_api.add_routes(
+            path="/customers", methods=[apigwv2.HttpMethod.GET],
+            integration=integration, authorizer=jwt_authorizer,
+        )
+        http_api.add_routes(
+            path="/customers/{username}", methods=[apigwv2.HttpMethod.PUT, apigwv2.HttpMethod.DELETE],
             integration=integration, authorizer=jwt_authorizer,
         )
 

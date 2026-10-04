@@ -1,5 +1,5 @@
 pytest==8.4.2
-moto[dynamodb]==5.0.17
+moto[dynamodb,cognitoidp]==5.0.17
 boto3==1.43.108
 # [crt] is required for this account's "new AWS experience" login_session
 # credential provider (used by scripts/create_admin_user.py and any other

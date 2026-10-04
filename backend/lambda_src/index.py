@@ -8,6 +8,7 @@ from decimal import Decimal
 import boto3
 
 TABLE_NAME = os.environ["TABLE_NAME"]
+USER_POOL_ID = os.environ["USER_POOL_ID"]
 ADMINS_GROUP_NAME = os.environ.get("ADMINS_GROUP_NAME", "Admins")
 # Must be verified in SES before weekly reminder emails will actually send -
 # see README. Placeholder until the real sender address is configured.
@@ -21,6 +22,7 @@ _dynamodb = boto3.resource("dynamodb", endpoint_url=_endpoint) if _endpoint else
 table = _dynamodb.Table(TABLE_NAME)
 ses = boto3.client("ses")
 sns = boto3.client("sns")
+cognito_idp = boto3.client("cognito-idp")
 
 MACRO_FIELDS = ("calories", "proteinG", "carbsG", "fatG")
 CONTACT_METHODS = ("email", "text")
@@ -56,6 +58,12 @@ def handler(event, context):
             return update_profile(event)
         if path == "/reminders/send" and method == "POST":
             return send_weekly_reminders(event)
+        if path == "/customers" and method == "GET":
+            return list_customers(event)
+        if path.startswith("/customers/") and method == "PUT":
+            return update_customer(event, path_params["username"])
+        if path.startswith("/customers/") and method == "DELETE":
+            return delete_customer(event, path_params["username"])
     except AuthError as e:
         return _response(e.status_code, {"message": str(e)})
     except BadRequest as e:
@@ -220,6 +228,93 @@ def _profile_out(item, claims):
         "address": item.get("address", ""),
         "preferredContact": item.get("preferredContact", "email"),
         "unsubscribed": bool(item.get("unsubscribed", False)),
+    }
+
+
+# ---------- customer accounts (admin) ----------
+# The authoritative list of "accounts" is Cognito, not DynamoDB - a customer
+# who signed up but never saved a profile or placed an order wouldn't appear
+# in a DynamoDB-only scan. This lists every Cognito user and merges in their
+# profile row (if any) for the contact fields. Admin-only - exposes every
+# customer's contact info.
+
+def list_customers(event):
+    _require_admin(event)
+    customers = []
+    kwargs = {"UserPoolId": USER_POOL_ID}
+    while True:
+        page = cognito_idp.list_users(**kwargs)
+        customers.extend(_customer_out(user) for user in page.get("Users", []))
+        token = page.get("PaginationToken")
+        if not token:
+            break
+        kwargs["PaginationToken"] = token
+    return _response(200, {"customers": customers})
+
+
+def update_customer(event, username):
+    _require_admin(event)
+    sub = _resolve_sub(username)
+    body = _body(event)
+    preferred_contact = body.get("preferredContact", "email")
+    if preferred_contact not in CONTACT_METHODS:
+        raise BadRequest(f"preferredContact must be one of {CONTACT_METHODS}")
+
+    item = {
+        "PK": f"USER#{sub}",
+        "SK": "PROFILE",
+        **{field: body.get(field, "") for field in PROFILE_TEXT_FIELDS},
+        "preferredContact": preferred_contact,
+        "unsubscribed": bool(body.get("unsubscribed", False)),
+    }
+    table.put_item(Item=item)
+    return _response(200, {
+        "username": username,
+        "name": item["name"],
+        "email": item["email"],
+        "phone": item["phone"],
+        "address": item["address"],
+        "preferredContact": item["preferredContact"],
+        "unsubscribed": item["unsubscribed"],
+    })
+
+
+def delete_customer(event, username):
+    """Deletes the Cognito account (revokes login) and the saved profile row.
+    Past orders are kept - they're a business record, not part of "the account".
+    """
+    _require_admin(event)
+    sub = _resolve_sub(username)
+    table.delete_item(Key={"PK": f"USER#{sub}", "SK": "PROFILE"})
+    cognito_idp.admin_delete_user(UserPoolId=USER_POOL_ID, Username=username)
+    return _response(204, None)
+
+
+def _resolve_sub(username):
+    try:
+        user = cognito_idp.admin_get_user(UserPoolId=USER_POOL_ID, Username=username)
+    except cognito_idp.exceptions.UserNotFoundException:
+        raise BadRequest(f"no such customer: {username}")
+    attrs = {a["Name"]: a["Value"] for a in user.get("UserAttributes", [])}
+    return attrs["sub"]
+
+
+def _customer_out(cognito_user):
+    attrs = {a["Name"]: a["Value"] for a in cognito_user.get("Attributes", [])}
+    sub = attrs.get("sub")
+    username = cognito_user["Username"]
+    profile = table.get_item(Key={"PK": f"USER#{sub}", "SK": "PROFILE"}).get("Item") or {}
+    return {
+        # The stable identifier for edit/delete calls - never shown as an
+        # editable field itself (that's "email" below, which can diverge:
+        # a customer may set a different contact email than their login).
+        "username": username,
+        "name": profile.get("name", ""),
+        "email": profile.get("email") or attrs.get("email", username),
+        "phone": profile.get("phone", ""),
+        "address": profile.get("address", ""),
+        "preferredContact": profile.get("preferredContact", "email"),
+        "unsubscribed": bool(profile.get("unsubscribed", False)),
     }
 
 

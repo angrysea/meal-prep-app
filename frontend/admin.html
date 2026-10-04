@@ -65,17 +65,6 @@
         </thead>
         <tbody id="addons-body"></tbody>
       </table>
-
-      <section class="card form-narrow">
-        <h2>Weekly reminders</h2>
-        <p class="muted">
-          Emails or texts every customer who hasn't unsubscribed, using
-          whichever contact method they prefer.
-        </p>
-        <button id="send-reminders-button">Send weekly reminders</button>
-        <p class="error" id="reminders-error" style="display:none;"></p>
-        <p class="muted" id="reminders-result" style="display:none;"></p>
-      </section>
     </div>
   </main>
 
@@ -86,7 +75,7 @@
     import { renderNav } from "/js/nav.js";
     import { loginUrlWithReturnTo } from "/js/redirect.js";
 
-    renderNav();
+    renderNav("nav", { adminNav: true });
 
     loadConfig().then(async (config) => {
       const session = await getValidSession({ region: config.region, clientId: config.userPoolClientId });
@@ -219,25 +208,6 @@
           document.getElementById("addon-description").value = "";
           document.getElementById("addon-price").value = "";
           refreshAddOns();
-        } catch (err) {
-          errorEl.textContent = err.message;
-          errorEl.style.display = "block";
-        }
-      });
-
-      document.getElementById("send-reminders-button").addEventListener("click", async () => {
-        const errorEl = document.getElementById("reminders-error");
-        const resultEl = document.getElementById("reminders-result");
-        errorEl.style.display = "none";
-        resultEl.style.display = "none";
-        if (!confirm("Send a weekly reminder to every subscribed customer now?")) return;
-        try {
-          const result = await apiRequest(config.apiUrl, "/reminders/send", { method: "POST", token });
-          resultEl.textContent =
-            `Sent ${result.sentEmail} email(s), ${result.sentText} text(s). ` +
-            `Skipped ${result.skippedUnsubscribed} unsubscribed. ${result.failed} failed.` +
-            (result.errors.length ? ` First error: ${result.errors[0]}` : "");
-          resultEl.style.display = "block";
         } catch (err) {
           errorEl.textContent = err.message;
           errorEl.style.display = "block";

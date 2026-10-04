@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Customers - GTX Meals</title>
+  <link rel="icon" href="data:," />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Permanent+Marker&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <header id="nav"></header>
+
+  <main>
+    <h1>Customers</h1>
+    <div id="admin-guard"></div>
+
+    <div id="admin-content" style="display:none;">
+      <table id="customers-table" class="customers-table">
+        <thead>
+          <tr>
+            <th></th><th></th>
+            <th>Email</th><th>Name</th><th>Phone</th><th>Address</th>
+            <th>Contact via</th><th>Unsubscribed</th>
+          </tr>
+        </thead>
+        <tbody id="customers-body"></tbody>
+      </table>
+
+      <section class="card form-narrow">
+        <h2>Weekly reminders</h2>
+        <p class="muted">
+          Emails or texts every customer who hasn't unsubscribed, using
+          whichever contact method they prefer.
+        </p>
+        <button id="send-reminders-button">Send weekly reminders</button>
+        <p class="error" id="reminders-error" style="display:none;"></p>
+        <p class="muted" id="reminders-result" style="display:none;"></p>
+      </section>
+    </div>
+
+    <dialog id="edit-dialog">
+      <h2>Edit customer</h2>
+      <label for="edit-name">Name</label>
+      <input id="edit-name" type="text" />
+
+      <label for="edit-email">Email</label>
+      <input id="edit-email" type="email" />
+
+      <label for="edit-phone">Phone</label>
+      <input id="edit-phone" type="tel" />
+
+      <label for="edit-address">Delivery address</label>
+      <input id="edit-address" type="text" />
+
+      <h3>Notifications</h3>
+      <label class="option-choice"><input type="radio" name="edit-preferred-contact" id="edit-contact-email" value="email" /> Email</label>
+      <label class="option-choice"><input type="radio" name="edit-preferred-contact" id="edit-contact-text" value="text" /> Text</label>
+      <label class="option-choice" style="margin-top:0.5rem;">
+        <input type="checkbox" id="edit-unsubscribed" /> Unsubscribed from weekly reminders
+      </label>
+
+      <p class="error" id="edit-error" style="display:none;"></p>
+      <div style="display:flex; gap:0.5rem; margin-top:1rem;">
+        <button type="button" id="edit-save-button">Save</button>
+        <button type="button" class="secondary" id="edit-cancel-button">Cancel</button>
+      </div>
+    </dialog>
+  </main>
+
+  <script type="module">
+    import { loadConfig } from "/js/config.js";
+    import { apiRequest } from "/js/api.js";
+    import { getValidSession, isAdmin } from "/js/cognito.js";
+    import { renderNav } from "/js/nav.js";
+    import { loginUrlWithReturnTo } from "/js/redirect.js";
+
+    renderNav("nav", { adminNav: true });
+
+    loadConfig().then(async (config) => {
+      const session = await getValidSession({ region: config.region, clientId: config.userPoolClientId });
+      const guard = document.getElementById("admin-guard");
+
+      if (!session) {
+        guard.innerHTML = `<p class="error">You need to <a href="${loginUrlWithReturnTo()}">log in</a> as an admin to view this page.</p>`;
+      } else if (!isAdmin(session)) {
+        guard.innerHTML = `<p class="error">Your account doesn't have admin access.</p>`;
+      } else {
+        document.getElementById("admin-content").style.display = "block";
+        initCustomers(config, session.idToken);
+      }
+    });
+
+    function initCustomers(config, token) {
+      let customers = [];
+      let editingUsername = null;
+
+      async function refresh() {
+        const data = await apiRequest(config.apiUrl, "/customers", { token });
+        customers = data.customers;
+        const body = document.getElementById("customers-body");
+        body.innerHTML = customers
+          .map(
+            (c) => `
+          <tr data-username="${c.username}">
+            <td><button class="secondary edit-customer">Edit</button></td>
+            <td><button class="secondary delete-customer">Delete</button></td>
+            <td>${c.email}</td>
+            <td>${c.name}</td>
+            <td>${c.phone}</td>
+            <td>${c.address}</td>
+            <td>${c.preferredContact}</td>
+            <td>${c.unsubscribed ? "Yes" : "No"}</td>
+          </tr>`
+          )
+          .join("");
+
+        body.querySelectorAll(".edit-customer").forEach((btn) => {
+          btn.addEventListener("click", (e) => {
+            const username = e.target.closest("tr").dataset.username;
+            openEditDialog(customers.find((c) => c.username === username));
+          });
+        });
+
+        body.querySelectorAll(".delete-customer").forEach((btn) => {
+          btn.addEventListener("click", async (e) => {
+            const username = e.target.closest("tr").dataset.username;
+            const customer = customers.find((c) => c.username === username);
+            if (!confirm(`Delete ${customer.email}'s account? This cannot be undone.`)) return;
+            await apiRequest(config.apiUrl, `/customers/${encodeURIComponent(username)}`, {
+              method: "DELETE",
+              token,
+            });
+            refresh();
+          });
+        });
+      }
+
+      function openEditDialog(customer) {
+        editingUsername = customer.username;
+        document.getElementById("edit-name").value = customer.name;
+        document.getElementById("edit-email").value = customer.email;
+        document.getElementById("edit-phone").value = customer.phone;
+        document.getElementById("edit-address").value = customer.address;
+        document.getElementById(customer.preferredContact === "text" ? "edit-contact-text" : "edit-contact-email").checked = true;
+        document.getElementById("edit-unsubscribed").checked = customer.unsubscribed;
+        document.getElementById("edit-error").style.display = "none";
+        document.getElementById("edit-dialog").showModal();
+      }
+
+      document.getElementById("edit-cancel-button").addEventListener("click", () => {
+        document.getElementById("edit-dialog").close();
+      });
+
+      document.getElementById("edit-save-button").addEventListener("click", async () => {
+        const errorEl = document.getElementById("edit-error");
+        errorEl.style.display = "none";
+        try {
+          await apiRequest(config.apiUrl, `/customers/${encodeURIComponent(editingUsername)}`, {
+            method: "PUT",
+            token,
+            body: {
+              name: document.getElementById("edit-name").value,
+              email: document.getElementById("edit-email").value,
+              phone: document.getElementById("edit-phone").value,
+              address: document.getElementById("edit-address").value,
+              preferredContact: document.getElementById("edit-contact-text").checked ? "text" : "email",
+              unsubscribed: document.getElementById("edit-unsubscribed").checked,
+            },
+          });
+          document.getElementById("edit-dialog").close();
+          refresh();
+        } catch (err) {
+          errorEl.textContent = err.message;
+          errorEl.style.display = "block";
+        }
+      });
+
+      document.getElementById("send-reminders-button").addEventListener("click", async () => {
+        const errorEl = document.getElementById("reminders-error");
+        const resultEl = document.getElementById("reminders-result");
+        errorEl.style.display = "none";
+        resultEl.style.display = "none";
+        if (!confirm("Send a weekly reminder to every subscribed customer now?")) return;
+        try {
+          const result = await apiRequest(config.apiUrl, "/reminders/send", { method: "POST", token });
+          resultEl.textContent =
+            `Sent ${result.sentEmail} email(s), ${result.sentText} text(s). ` +
+            `Skipped ${result.skippedUnsubscribed} unsubscribed. ${result.failed} failed.` +
+            (result.errors.length ? ` First error: ${result.errors[0]}` : "");
+          resultEl.style.display = "block";
+        } catch (err) {
+          errorEl.textContent = err.message;
+          errorEl.style.display = "block";
+        }
+      });
+
+      refresh();
+    }
+  </script>
+</body>
+</html>

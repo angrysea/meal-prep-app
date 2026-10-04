@@ -8,6 +8,10 @@ from moto import mock_aws
 os.environ.setdefault("TABLE_NAME", "MealPrepTable")
 os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
 os.environ.setdefault("ADMINS_GROUP_NAME", "Admins")
+# Real value is set per-test (via _create_test_pool) once a moto-mocked pool
+# exists; this placeholder just satisfies the required os.environ[...] read
+# at module import time.
+os.environ.setdefault("USER_POOL_ID", "placeholder")
 
 
 @pytest.fixture
@@ -442,3 +446,141 @@ def test_reminders_counts_failure_when_contact_detail_missing(table):
     result = json.loads(resp["body"])
     assert result["failed"] == 1
     assert result["sentText"] == 0
+
+
+def _create_test_pool(index):
+    cognito = boto3.client("cognito-idp", region_name="us-east-1")
+    pool_id = cognito.create_user_pool(PoolName="test-pool")["UserPool"]["Id"]
+    index.USER_POOL_ID = pool_id
+    return cognito, pool_id
+
+
+def _create_cognito_user(cognito, pool_id, email):
+    created = cognito.admin_create_user(
+        UserPoolId=pool_id, Username=email,
+        UserAttributes=[{"Name": "email", "Value": email}, {"Name": "email_verified", "Value": "true"}],
+        MessageAction="SUPPRESS",
+    )
+    return next(a["Value"] for a in created["User"]["Attributes"] if a["Name"] == "sub")
+
+
+def test_customers_requires_admin(table):
+    from backend.lambda_src import index
+
+    resp = index.handler(_event("GET", "/customers", claims=CUSTOMER_CLAIMS), None)
+    assert resp["statusCode"] == 403
+
+
+def test_list_customers_includes_accounts_without_a_saved_profile(table):
+    from backend.lambda_src import index
+
+    cognito, pool_id = _create_test_pool(index)
+    _create_cognito_user(cognito, pool_id, "noprofile@example.com")
+
+    resp = index.handler(_event("GET", "/customers", claims=ADMIN_CLAIMS), None)
+    assert resp["statusCode"] == 200
+    customers = json.loads(resp["body"])["customers"]
+    assert len(customers) == 1
+    assert customers[0]["username"] == "noprofile@example.com"
+    assert customers[0]["email"] == "noprofile@example.com"  # falls back to Cognito email
+    assert customers[0]["name"] == ""
+
+
+def test_list_customers_merges_in_saved_profile(table):
+    from backend.lambda_src import index
+
+    cognito, pool_id = _create_test_pool(index)
+    sub = _create_cognito_user(cognito, pool_id, "jane@example.com")
+    _save_profile(index, {"sub": sub, "email": "jane@example.com"}, name="Jane Doe", phone="555-1111")
+
+    resp = index.handler(_event("GET", "/customers", claims=ADMIN_CLAIMS), None)
+    customers = json.loads(resp["body"])["customers"]
+    assert len(customers) == 1
+    assert customers[0]["name"] == "Jane Doe"
+    assert customers[0]["phone"] == "555-1111"
+
+
+def test_admin_can_update_customer(table):
+    from backend.lambda_src import index
+
+    cognito, pool_id = _create_test_pool(index)
+    _create_cognito_user(cognito, pool_id, "jane@example.com")
+
+    resp = index.handler(
+        _event(
+            "PUT", "/customers/jane@example.com",
+            {"name": "Jane Updated", "phone": "555-2222", "preferredContact": "text", "unsubscribed": True},
+            path_params={"username": "jane@example.com"}, claims=ADMIN_CLAIMS,
+        ),
+        None,
+    )
+    assert resp["statusCode"] == 200
+    body = json.loads(resp["body"])
+    assert body["name"] == "Jane Updated"
+    assert body["unsubscribed"] is True
+
+    list_resp = index.handler(_event("GET", "/customers", claims=ADMIN_CLAIMS), None)
+    customers = json.loads(list_resp["body"])["customers"]
+    assert customers[0]["phone"] == "555-2222"
+
+
+def test_update_customer_fails_for_unknown_username(table):
+    from backend.lambda_src import index
+
+    _create_test_pool(index)
+    resp = index.handler(
+        _event("PUT", "/customers/ghost@example.com", {"name": "x"}, path_params={"username": "ghost@example.com"}, claims=ADMIN_CLAIMS),
+        None,
+    )
+    assert resp["statusCode"] == 400
+
+
+def test_admin_can_delete_customer(table):
+    from backend.lambda_src import index
+
+    cognito, pool_id = _create_test_pool(index)
+    sub = _create_cognito_user(cognito, pool_id, "jane@example.com")
+    _save_profile(index, {"sub": sub, "email": "jane@example.com"}, name="Jane Doe")
+
+    resp = index.handler(
+        _event("DELETE", "/customers/jane@example.com", path_params={"username": "jane@example.com"}, claims=ADMIN_CLAIMS),
+        None,
+    )
+    assert resp["statusCode"] == 204
+
+    with pytest.raises(cognito.exceptions.UserNotFoundException):
+        cognito.admin_get_user(UserPoolId=pool_id, Username="jane@example.com")
+
+    list_resp = index.handler(_event("GET", "/customers", claims=ADMIN_CLAIMS), None)
+    assert json.loads(list_resp["body"])["customers"] == []
+
+
+def test_delete_customer_does_not_delete_their_orders(table):
+    from backend.lambda_src import index
+
+    cognito, pool_id = _create_test_pool(index)
+    sub = _create_cognito_user(cognito, pool_id, "jane@example.com")
+    meal = _create_meal(index)
+    index.handler(
+        _event("POST", "/orders", {"items": [{"mealId": meal["mealId"], "quantity": 1}]}, claims={"sub": sub, "email": "jane@example.com"}),
+        None,
+    )
+
+    index.handler(
+        _event("DELETE", "/customers/jane@example.com", path_params={"username": "jane@example.com"}, claims=ADMIN_CLAIMS),
+        None,
+    )
+
+    orders = table_resource_scan_orders(sub)
+    assert len(orders) == 1
+
+
+def table_resource_scan_orders(sub):
+    import boto3 as _boto3
+    dynamodb = _boto3.resource("dynamodb", region_name="us-east-1")
+    t = dynamodb.Table("MealPrepTable")
+    resp = t.query(
+        KeyConditionExpression="PK = :pk AND begins_with(SK, :sk)",
+        ExpressionAttributeValues={":pk": f"USER#{sub}", ":sk": "ORDER#"},
+    )
+    return resp.get("Items", [])
