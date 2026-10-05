@@ -19,7 +19,9 @@ export function describeAddOns(allAddOns, selectedAddOnIds) {
 }
 
 // A stable string key so "Bowl + Large" and "Bowl (no add-ons)" are distinct
-// cart lines, but re-selecting the same add-ons collapses onto one line.
-export function selectionsKey(mealId, selectedAddOnIds) {
-  return `${mealId}|${[...selectedAddOnIds].sort().join(",")}`;
+// cart lines, but re-selecting the same add-ons (and note) collapses onto
+// one line. Note is part of the key too, so "Bowl, hold the cheese" and a
+// plain "Bowl" stay separate instead of one overwriting the other's note.
+export function selectionsKey(mealId, selectedAddOnIds, note = "") {
+  return `${mealId}|${[...selectedAddOnIds].sort().join(",")}|${note}`;
 }

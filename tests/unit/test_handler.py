@@ -360,6 +360,35 @@ def test_create_order_with_no_addons_selected(table):
     assert order["items"][0]["selectedAddOns"] == []
 
 
+def test_create_order_stores_item_notes(table):
+    from backend.lambda_src import index
+
+    meal = _create_meal(index)
+    resp = index.handler(
+        _event(
+            "POST", "/orders",
+            {"items": [{"mealId": meal["mealId"], "quantity": 1, "note": "  hold the cheese  "}]},
+            claims=CUSTOMER_CLAIMS,
+        ),
+        None,
+    )
+    assert resp["statusCode"] == 201
+    order = json.loads(resp["body"])
+    assert order["items"][0]["note"] == "hold the cheese"
+
+
+def test_create_order_defaults_note_to_empty_string(table):
+    from backend.lambda_src import index
+
+    meal = _create_meal(index)
+    resp = index.handler(
+        _event("POST", "/orders", {"items": [{"mealId": meal["mealId"], "quantity": 1}]}, claims=CUSTOMER_CLAIMS),
+        None,
+    )
+    order = json.loads(resp["body"])
+    assert order["items"][0]["note"] == ""
+
+
 def test_create_order_fails_for_unknown_addon(table):
     from backend.lambda_src import index
 

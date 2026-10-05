@@ -27,7 +27,7 @@
 
       <table id="prep-table">
         <thead>
-          <tr><th>Meal</th><th>Add-ons</th><th>Quantity</th></tr>
+          <tr><th>Meal</th><th>Add-ons</th><th>Note</th><th>Quantity</th></tr>
         </thead>
         <tbody id="prep-body"></tbody>
       </table>
@@ -71,19 +71,22 @@
       return parts.join(" &middot; ");
     }
 
-    // Tallies quantity per meal + add-on combo across every placed order, so
-    // the kitchen can see "make 6 Chicken Teriyaki Bowls (2 with Large)"
-    // instead of flipping through each order individually. Keyed by mealId
-    // (not name) so it stays correct even if two meals share a name.
+    // Tallies quantity per meal + add-on + note combo across every placed
+    // order, so the kitchen can see "make 6 Chicken Teriyaki Bowls (2 with
+    // Large, 1 hold the cheese)" instead of flipping through each order
+    // individually. Keyed by mealId (not name) so it stays correct even if
+    // two meals share a name; note is part of the key too, since "hold the
+    // cheese" and a plain order of the same meal need separate rows/labels.
     function aggregateByMeal(orders, mealsById) {
       const totals = new Map();
       orders.forEach((order) => {
         order.items.forEach((item) => {
           const addOnLabels = (item.selectedAddOns || []).map((a) => a.description).sort();
-          const key = `${item.mealId}|${addOnLabels.join(",")}`;
+          const note = item.note || "";
+          const key = `${item.mealId}|${addOnLabels.join(",")}|${note}`;
           if (!totals.has(key)) {
             const macros = (mealsById.get(item.mealId) || {}).macros;
-            totals.set(key, { name: item.name, addOnLabels, macros, quantity: 0 });
+            totals.set(key, { name: item.name, addOnLabels, note, macros, quantity: 0 });
           }
           totals.get(key).quantity += item.quantity;
         });
@@ -91,7 +94,9 @@
       return [...totals.values()].sort((a, b) => {
         const byName = a.name.localeCompare(b.name);
         if (byName !== 0) return byName;
-        return a.addOnLabels.join(",").localeCompare(b.addOnLabels.join(","));
+        const byAddOns = a.addOnLabels.join(",").localeCompare(b.addOnLabels.join(","));
+        if (byAddOns !== 0) return byAddOns;
+        return a.note.localeCompare(b.note);
       });
     }
 
@@ -112,6 +117,7 @@
           <div class="label-meal">${row.name}</div>
           ${macrosText ? `<div class="label-macros">${macrosText}</div>` : ""}
           ${row.addOnLabels.length ? `<div class="label-addons">${row.addOnLabels.join(", ")}</div>` : ""}
+          ${row.note ? `<div class="label-note">Note: ${row.note}</div>` : ""}
         </div>`;
         })
         .join("");
@@ -147,7 +153,7 @@
         document.querySelector('label[for="ready-date-filter"]').style.display = "none";
         printButton.style.display = "none";
         document.getElementById("print-labels-hint").style.display = "none";
-        body.innerHTML = `<tr><td colspan="3" class="muted">No ready date has been set yet - set one on the Builder page.</td></tr>`;
+        body.innerHTML = `<tr><td colspan="4" class="muted">No ready date has been set yet - set one on the Builder page.</td></tr>`;
         return;
       }
 
@@ -160,7 +166,7 @@
         if (filtered.length === 0) {
           currentRows = [];
           printButton.disabled = true;
-          body.innerHTML = `<tr><td colspan="3" class="muted">No placed orders for this date.</td></tr>`;
+          body.innerHTML = `<tr><td colspan="4" class="muted">No placed orders for this date.</td></tr>`;
           return;
         }
         const rows = aggregateByMeal(filtered, mealsById);
@@ -172,6 +178,7 @@
           <tr>
             <td>${row.name}</td>
             <td>${row.addOnLabels.length ? row.addOnLabels.join(", ") : "-"}</td>
+            <td>${row.note || "-"}</td>
             <td>${row.quantity}</td>
           </tr>`
           )

@@ -83,11 +83,12 @@
 
       let total = 0;
       lines.innerHTML = entries
-        .map(([key, { meal, selectedAddOnIds, quantity }]) => {
+        .map(([key, { meal, selectedAddOnIds, note, quantity }]) => {
           const unitPrice = computeUnitPriceCents(meal, allAddOns, selectedAddOnIds);
           total += unitPrice * quantity;
           const addOnLabels = describeAddOns(allAddOns, selectedAddOnIds);
           const addOnText = addOnLabels.length ? `<div class="muted" style="font-size:0.85rem;">${addOnLabels.join(", ")}</div>` : "";
+          const noteText = note ? `<div class="muted" style="font-size:0.85rem;">Note: ${note}</div>` : "";
           return `<div class="cart-line-wrap" data-cart-key="${key}">
             <div class="cart-line">
               <span>${meal.name}</span>
@@ -99,6 +100,7 @@
               <span>${formatPrice(unitPrice * quantity)}</span>
             </div>
             ${addOnText}
+            ${noteText}
           </div>`;
         })
         .join("");
@@ -133,18 +135,18 @@
       renderCart();
     }
 
-    function addToCart(meal, selectedAddOnIds) {
-      const key = selectionsKey(meal.mealId, selectedAddOnIds);
+    function addToCart(meal, selectedAddOnIds, note) {
+      const key = selectionsKey(meal.mealId, selectedAddOnIds, note);
       if (!cart[key]) {
-        cart[key] = { meal, selectedAddOnIds, quantity: 0 };
+        cart[key] = { meal, selectedAddOnIds, note, quantity: 0 };
       }
       cart[key].quantity += 1;
       renderCart();
     }
 
-    function setCartItem(meal, selectedAddOnIds, quantity) {
-      const key = selectionsKey(meal.mealId, selectedAddOnIds);
-      cart[key] = { meal, selectedAddOnIds, quantity };
+    function setCartItem(meal, selectedAddOnIds, note, quantity) {
+      const key = selectionsKey(meal.mealId, selectedAddOnIds, note);
+      cart[key] = { meal, selectedAddOnIds, note, quantity };
       renderCart();
     }
 
@@ -163,7 +165,7 @@
       (data.items || []).forEach((item) => {
         const meal = loadedMeals.find((m) => m.mealId === item.mealId);
         if (!meal) return; // no longer on the menu - nothing to re-add
-        setCartItem(meal, item.selectedAddOnIds || [], item.quantity || 1);
+        setCartItem(meal, item.selectedAddOnIds || [], item.note || "", item.quantity || 1);
       });
 
       const delivery = data.delivery || {};
@@ -275,6 +277,12 @@
             ${renderMacros(meal.macros)}
             <p class="price">${formatPrice(meal.priceCents)}</p>
             ${renderAddOnChoices(meal, !interactive)}
+            <label for="note-${meal.mealId}" class="muted" style="font-size:0.85rem; font-weight:normal;">Special requests</label>
+            <input
+              type="text" class="note-input" id="note-${meal.mealId}"
+              placeholder="e.g. hold the cheese" maxlength="200"
+              ${interactive ? "" : "disabled"}
+            />
             <button class="add-to-order" data-meal-id="${meal.mealId}" ${interactive ? "" : "disabled"}>Add to order</button>
           </div>`
           )
@@ -287,8 +295,11 @@
             const cardEl = btn.closest(".meal-card");
             const meal = available.find((m) => m.mealId === btn.dataset.mealId);
             const selectedAddOnIds = [...cardEl.querySelectorAll(".addon-choice:checked")].map((el) => el.dataset.addonId);
-            addToCart(meal, selectedAddOnIds);
+            const noteInput = cardEl.querySelector(".note-input");
+            const note = noteInput.value.trim();
+            addToCart(meal, selectedAddOnIds, note);
             cardEl.querySelectorAll(".addon-choice:checked").forEach((el) => (el.checked = false));
+            noteInput.value = "";
           });
         });
       } catch (err) {
@@ -322,10 +333,11 @@
         return;
       }
 
-      const items = Object.values(cart).map(({ meal, selectedAddOnIds, quantity }) => ({
+      const items = Object.values(cart).map(({ meal, selectedAddOnIds, note, quantity }) => ({
         mealId: meal.mealId,
         quantity,
         selectedAddOnIds,
+        note,
       }));
 
       const deliveryName = document.getElementById("delivery-name").value;

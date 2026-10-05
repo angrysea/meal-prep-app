@@ -66,7 +66,8 @@
                 .map((i) => {
                   const addOnLabels = (i.selectedAddOns || []).map((a) => a.description);
                   const addOnText = addOnLabels.length ? ` <span class="muted">(${addOnLabels.join(", ")})</span>` : "";
-                  return `<li>${i.quantity} x ${i.name}${addOnText} - ${formatPrice(i.unitPriceCents * i.quantity)}</li>`;
+                  const noteText = i.note ? ` <span class="muted">- Note: ${i.note}</span>` : "";
+                  return `<li>${i.quantity} x ${i.name}${addOnText} - ${formatPrice(i.unitPriceCents * i.quantity)}${noteText}</li>`;
                 })
                 .join("")}
             </ul>
@@ -94,6 +95,7 @@
                   mealId: i.mealId,
                   quantity: i.quantity,
                   selectedAddOnIds: (i.selectedAddOns || []).map((a) => a.addOnId),
+                  note: i.note || "",
                 })),
                 delivery: {
                   name: order.deliveryName,

@@ -549,6 +549,9 @@ def create_order(event):
             "unitPriceCents": unit_price_cents,
             "quantity": quantity,
             "selectedAddOns": resolved_addons,
+            # Freeform, e.g. "hold the cheese" - a prep instruction for this
+            # line, not something the server interprets.
+            "note": (requested.get("note") or "").strip(),
         })
 
     order_id = uuid.uuid4().hex[:12]
@@ -674,6 +677,8 @@ def _notify_admins_of_order(order):
         for line_item in order["items"]:
             addon_text = ", ".join(a["description"] for a in line_item["selectedAddOns"])
             suffix = f" ({addon_text})" if addon_text else ""
+            if line_item.get("note"):
+                suffix += f" [Note: {line_item['note']}]"
             lines.append(f"- {line_item['quantity']} x {line_item['name']}{suffix}")
         lines.append("")
         lines.append(f"Total: ${order['totalCents'] / 100:.2f}")
