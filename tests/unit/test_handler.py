@@ -345,6 +345,17 @@ def test_create_order_rejects_unknown_meal(table):
     assert resp["statusCode"] == 400
 
 
+def test_admin_cannot_place_an_order(table):
+    from backend.lambda_src import index
+
+    meal = _create_meal(index)
+    resp = index.handler(
+        _event("POST", "/orders", {"items": [{"mealId": meal["mealId"], "quantity": 1}]}, claims=ADMIN_CLAIMS),
+        None,
+    )
+    assert resp["statusCode"] == 400
+
+
 def test_list_orders_is_scoped_to_the_caller(table):
     from backend.lambda_src import index
 
@@ -521,7 +532,6 @@ def test_create_order_emails_admins(table, monkeypatch):
     from backend.lambda_src import index
 
     cognito, pool_id = _create_test_pool(index)
-    cognito.create_group(UserPoolId=pool_id, GroupName="Admins")
     cognito.admin_create_user(
         UserPoolId=pool_id, Username="admin@example.com",
         UserAttributes=[{"Name": "email", "Value": "admin@example.com"}, {"Name": "email_verified", "Value": "true"}],
@@ -696,7 +706,14 @@ def test_reminders_counts_failure_when_contact_detail_missing(table):
 
 def _create_test_pool(index):
     cognito = boto3.client("cognito-idp", region_name="us-east-1")
-    pool_id = cognito.create_user_pool(PoolName="test-pool")["UserPool"]["Id"]
+    # UsernameAttributes=["email"] matches the real deployed pool: Cognito then
+    # auto-generates a UUID as the real Username, and email is only a login
+    # alias it accepts interchangeably in admin_* calls. Without this, moto
+    # would just use the email as the literal Username and hide bugs that only
+    # show up against the real pool's aliasing (e.g. comparing a path-param
+    # username directly against a canonical-Username set).
+    pool_id = cognito.create_user_pool(PoolName="test-pool", UsernameAttributes=["email"])["UserPool"]["Id"]
+    cognito.create_group(UserPoolId=pool_id, GroupName="Admins")
     index.USER_POOL_ID = pool_id
     return cognito, pool_id
 
@@ -721,13 +738,15 @@ def test_list_customers_includes_accounts_without_a_saved_profile(table):
     from backend.lambda_src import index
 
     cognito, pool_id = _create_test_pool(index)
-    _create_cognito_user(cognito, pool_id, "noprofile@example.com")
+    sub = _create_cognito_user(cognito, pool_id, "noprofile@example.com")
 
     resp = index.handler(_event("GET", "/customers", claims=ADMIN_CLAIMS), None)
     assert resp["statusCode"] == 200
     customers = json.loads(resp["body"])["customers"]
     assert len(customers) == 1
-    assert customers[0]["username"] == "noprofile@example.com"
+    # The real Cognito Username is an auto-generated UUID (UsernameAttributes
+    # = ["email"]), which happens to equal "sub" for this pool.
+    assert customers[0]["username"] == sub
     assert customers[0]["email"] == "noprofile@example.com"  # falls back to Cognito email
     assert customers[0]["name"] == ""
 
@@ -744,6 +763,69 @@ def test_list_customers_merges_in_saved_profile(table):
     assert len(customers) == 1
     assert customers[0]["name"] == "Jane Doe"
     assert customers[0]["phone"] == "555-1111"
+
+
+def test_list_customers_excludes_admin_accounts(table):
+    from backend.lambda_src import index
+
+    cognito, pool_id = _create_test_pool(index)
+    customer_sub = _create_cognito_user(cognito, pool_id, "customer@example.com")
+    cognito.admin_create_user(
+        UserPoolId=pool_id, Username="admin@example.com",
+        UserAttributes=[{"Name": "email", "Value": "admin@example.com"}, {"Name": "email_verified", "Value": "true"}],
+        MessageAction="SUPPRESS",
+    )
+    cognito.admin_add_user_to_group(UserPoolId=pool_id, Username="admin@example.com", GroupName="Admins")
+
+    resp = index.handler(_event("GET", "/customers", claims=ADMIN_CLAIMS), None)
+    customers = json.loads(resp["body"])["customers"]
+    assert [c["username"] for c in customers] == [customer_sub]
+
+
+def test_update_customer_rejects_an_admin_account(table):
+    # Regression test: the path param here is the email alias, not the real
+    # Username (a UUID, since the pool's UsernameAttributes=["email"]) - an
+    # earlier version of this check compared the alias directly against a set
+    # of real Usernames and never matched, silently letting this through.
+    from backend.lambda_src import index
+
+    cognito, pool_id = _create_test_pool(index)
+    cognito.admin_create_user(
+        UserPoolId=pool_id, Username="admin@example.com",
+        UserAttributes=[{"Name": "email", "Value": "admin@example.com"}, {"Name": "email_verified", "Value": "true"}],
+        MessageAction="SUPPRESS",
+    )
+    cognito.admin_add_user_to_group(UserPoolId=pool_id, Username="admin@example.com", GroupName="Admins")
+
+    resp = index.handler(
+        _event("PUT", "/customers/admin@example.com", {"name": "x"},
+               path_params={"username": "admin@example.com"}, claims=ADMIN_CLAIMS),
+        None,
+    )
+    assert resp["statusCode"] == 400
+
+
+def test_delete_customer_rejects_an_admin_account(table):
+    # See the comment in test_update_customer_rejects_an_admin_account - same
+    # email-alias-vs-UUID regression, but for delete, which is unrecoverable.
+    from backend.lambda_src import index
+
+    cognito, pool_id = _create_test_pool(index)
+    cognito.admin_create_user(
+        UserPoolId=pool_id, Username="admin@example.com",
+        UserAttributes=[{"Name": "email", "Value": "admin@example.com"}, {"Name": "email_verified", "Value": "true"}],
+        MessageAction="SUPPRESS",
+    )
+    cognito.admin_add_user_to_group(UserPoolId=pool_id, Username="admin@example.com", GroupName="Admins")
+
+    resp = index.handler(
+        _event("DELETE", "/customers/admin@example.com",
+               path_params={"username": "admin@example.com"}, claims=ADMIN_CLAIMS),
+        None,
+    )
+    assert resp["statusCode"] == 400
+    # Still there - rejecting the request must not have deleted it anyway.
+    cognito.admin_get_user(UserPoolId=pool_id, Username="admin@example.com")
 
 
 def test_admin_can_update_customer(table):

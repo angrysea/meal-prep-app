@@ -58,7 +58,7 @@
   <script type="module">
     import { loadConfig } from "/js/config.js";
     import { apiRequest, formatPrice } from "/js/api.js";
-    import { getValidSession } from "/js/cognito.js";
+    import { getValidSession, isAdmin } from "/js/cognito.js";
     import { renderNav } from "/js/nav.js";
     import { loginUrlWithReturnTo } from "/js/redirect.js";
     import { computeUnitPriceCents, describeAddOns, selectionsKey } from "/js/pricing.js";
@@ -206,13 +206,21 @@
       </div>`;
     }
 
-    async function loadMenu(config, loggedIn) {
+    async function loadMenu(config, loggedIn, admin) {
       const container = document.getElementById("meals");
       const loginPrompt = document.getElementById("login-prompt");
-      loginPrompt.style.display = loggedIn ? "none" : "block";
-      loginPrompt.innerHTML = loggedIn
-        ? ""
-        : `<a href="${loginUrlWithReturnTo()}">Log in or sign up</a> to pick meals and place an order.`;
+      const interactive = loggedIn && !admin;
+
+      if (admin) {
+        loginPrompt.style.display = "block";
+        loginPrompt.textContent =
+          "Viewing as admin - read-only. This is just to check the menu looks right; orders are placed by customer accounts.";
+      } else {
+        loginPrompt.style.display = loggedIn ? "none" : "block";
+        loginPrompt.innerHTML = loggedIn
+          ? ""
+          : `<a href="${loginUrlWithReturnTo()}">Log in or sign up</a> to pick meals and place an order.`;
+      }
 
       try {
         const [{ meals }, { addOns }] = await Promise.all([
@@ -235,13 +243,13 @@
             <p class="description">${meal.description || ""}</p>
             ${renderMacros(meal.macros)}
             <p class="price">${formatPrice(meal.priceCents)}</p>
-            ${renderAddOnChoices(meal, !loggedIn)}
-            <button class="add-to-order" data-meal-id="${meal.mealId}" ${loggedIn ? "" : "disabled"}>Add to order</button>
+            ${renderAddOnChoices(meal, !interactive)}
+            <button class="add-to-order" data-meal-id="${meal.mealId}" ${interactive ? "" : "disabled"}>Add to order</button>
           </div>`
           )
           .join("");
 
-        if (!loggedIn) return; // static for anonymous visitors - nothing left to wire up
+        if (!interactive) return; // anonymous visitor or admin - nothing left to wire up
 
         container.querySelectorAll("button.add-to-order").forEach((btn) => {
           btn.addEventListener("click", () => {
@@ -316,10 +324,16 @@
 
     loadConfig().then(async (config) => {
       const session = await getValidSession({ region: config.region, clientId: config.userPoolClientId });
-      await Promise.all([loadMenu(config, !!session), prefillFromProfile(config, session)]);
-      applyEditCart();
-      document.getElementById("checkout-button").addEventListener("click", () => placeOrder(config));
-      document.getElementById("cancel-order-button").addEventListener("click", cancelOrder);
+      const admin = isAdmin(session);
+      await Promise.all([
+        loadMenu(config, !!session, admin),
+        admin ? Promise.resolve() : prefillFromProfile(config, session),
+      ]);
+      if (!admin) {
+        applyEditCart();
+        document.getElementById("checkout-button").addEventListener("click", () => placeOrder(config));
+        document.getElementById("cancel-order-button").addEventListener("click", cancelOrder);
+      }
     });
   </script>
 </body>

@@ -75,7 +75,7 @@
     import { renderNav } from "/js/nav.js";
     import { loginUrlWithReturnTo } from "/js/redirect.js";
 
-    renderNav("nav", { adminNav: true });
+    renderNav();
 
     loadConfig().then(async (config) => {
       const session = await getValidSession({ region: config.region, clientId: config.userPoolClientId });

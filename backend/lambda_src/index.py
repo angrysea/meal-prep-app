@@ -266,13 +266,32 @@ def _profile_out(item, claims):
 # profile row (if any) for the contact fields. Admin-only - exposes every
 # customer's contact info.
 
+def _admin_usernames():
+    """The Admins group is the one account that runs the business, never a
+    customer - this keeps it (and only it) out of customer management.
+    """
+    usernames = set()
+    kwargs = {"UserPoolId": USER_POOL_ID, "GroupName": ADMINS_GROUP_NAME}
+    while True:
+        page = cognito_idp.list_users_in_group(**kwargs)
+        usernames.update(user["Username"] for user in page.get("Users", []))
+        token = page.get("NextToken")
+        if not token:
+            break
+        kwargs["NextToken"] = token
+    return usernames
+
+
 def list_customers(event):
     _require_admin(event)
+    admin_usernames = _admin_usernames()
     customers = []
     kwargs = {"UserPoolId": USER_POOL_ID}
     while True:
         page = cognito_idp.list_users(**kwargs)
-        customers.extend(_customer_out(user) for user in page.get("Users", []))
+        customers.extend(
+            _customer_out(user) for user in page.get("Users", []) if user["Username"] not in admin_usernames
+        )
         token = page.get("PaginationToken")
         if not token:
             break
@@ -282,7 +301,15 @@ def list_customers(event):
 
 def update_customer(event, username):
     _require_admin(event)
+    # Resolve to the canonical sub BEFORE checking admin-ness: this pool's
+    # UsernameAttributes=["email"] means the real Username is an auto-generated
+    # UUID (which _resolve_sub returns, since it equals "sub" here) and email
+    # is just a login alias Cognito accepts interchangeably in admin_* calls -
+    # comparing the raw, possibly-aliased path param against the admin set
+    # directly would silently never match.
     sub = _resolve_sub(username)
+    if sub in _admin_usernames():
+        raise BadRequest("admin accounts aren't managed as customers")
     body = _body(event)
     preferred_contact = body.get("preferredContact", "email")
     if preferred_contact not in CONTACT_METHODS:
@@ -312,7 +339,10 @@ def delete_customer(event, username):
     Past orders are kept - they're a business record, not part of "the account".
     """
     _require_admin(event)
+    # See update_customer for why this resolves to the canonical sub first.
     sub = _resolve_sub(username)
+    if sub in _admin_usernames():
+        raise BadRequest("admin accounts aren't managed as customers")
     table.delete_item(Key={"PK": f"USER#{sub}", "SK": "PROFILE"})
     cognito_idp.admin_delete_user(UserPoolId=USER_POOL_ID, Username=username)
     return _response(204, None)
@@ -444,6 +474,7 @@ def list_orders(event):
 
 
 def create_order(event):
+    _require_not_admin(event)
     user_id = _user_id(event)
     body = _body(event)
     requested_items = body.get("items") or []
@@ -672,14 +703,26 @@ def _user_id(event):
     return _claims(event)["sub"]
 
 
-def _require_admin(event):
-    claims = _claims(event)
+def _is_admin(claims):
     # Cognito serializes group membership as a stringified list in the JWT claims
     # surfaced by API Gateway, so this checks substring membership rather than
     # parsing it as JSON.
     groups = claims.get("cognito:groups", "")
-    if ADMINS_GROUP_NAME not in groups:
+    return ADMINS_GROUP_NAME in groups
+
+
+def _require_admin(event):
+    if not _is_admin(_claims(event)):
         raise AuthError("admin privileges required", 403)
+
+
+def _require_not_admin(event):
+    """The single Admins-group account manages the business; it never acts as
+    a customer. Used to keep the two roles from overlapping (e.g. placing an
+    order), not as a security boundary - the admin already has full API access.
+    """
+    if _is_admin(_claims(event)):
+        raise BadRequest("admin accounts can't place orders")
 
 
 # ---------- plumbing ----------
