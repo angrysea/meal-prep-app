@@ -28,7 +28,15 @@ export function renderNav(targetId = "nav") {
     links.push(`<a href="/login.html">Log in / Sign up</a>`);
   }
 
-  el.innerHTML = `<nav>${brand}${links.join("")}</nav>`;
+  el.innerHTML = `<nav>
+    <div class="nav-bar">
+      ${brand}
+      <button type="button" id="nav-toggle" aria-label="Toggle menu" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+    <div class="nav-links" id="nav-links">${links.join("")}</div>
+  </nav>`;
 
   const logout = document.getElementById("nav-logout");
   if (logout) {
@@ -38,4 +46,13 @@ export function renderNav(targetId = "nav") {
       window.location.href = "/index.html";
     });
   }
+
+  // Hamburger toggle - only does anything below the CSS breakpoint where
+  // #nav-toggle is actually shown; harmless no-op above it.
+  const toggle = document.getElementById("nav-toggle");
+  const navLinks = document.getElementById("nav-links");
+  toggle.addEventListener("click", () => {
+    const isOpen = navLinks.classList.toggle("open");
+    toggle.setAttribute("aria-expanded", String(isOpen));
+  });
 }
