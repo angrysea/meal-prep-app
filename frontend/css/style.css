@@ -368,10 +368,10 @@ table.customers-table th {
   }
 
   .label {
-    width: 2in;
+    width: 3in;
     height: 2in;
     box-sizing: border-box;
-    padding: 0.15in;
+    padding: 0.12in 0.2in;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -382,9 +382,9 @@ table.customers-table th {
   }
 
   .label img {
-    height: 0.7in;
+    height: 0.5in;
     width: auto;
-    margin-bottom: 0.05in;
+    margin-bottom: 0.04in;
   }
 
   .label-brand {
@@ -395,20 +395,26 @@ table.customers-table th {
 
   .label-meal {
     font-family: var(--font-display);
-    font-size: 13pt;
+    font-size: 14pt;
     text-transform: uppercase;
     letter-spacing: 0.02em;
-    margin-top: 0.1in;
+    margin-top: 0.08in;
   }
 
   .label-addons {
     font-size: 9pt;
     color: var(--color-muted);
-    margin-top: 0.05in;
+    margin-top: 0.04in;
+  }
+
+  .label-macros {
+    font-size: 8pt;
+    color: var(--color-muted);
+    margin-top: 0.04in;
   }
 
   @page {
-    size: 2in 2in;
+    size: 3in 2in;
     margin: 0;
   }
 }

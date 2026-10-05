@@ -22,8 +22,7 @@
       <select id="ready-date-filter" style="max-width:220px;"></select>
       <button type="button" class="secondary" id="print-labels-button" style="margin-left:0.5rem;">Print labels</button>
       <p class="muted" id="print-labels-hint">
-        One label per meal, sized for a 2&quot;x2&quot; thermal label roll (the common size on small
-        label-only printers like Dymo/Rollo/MUNBYN). Tell me if yours uses a different size.
+        One label per meal, sized for a standard 3&quot; wide x 2&quot; high label printer.
       </p>
 
       <table id="prep-table">
@@ -61,17 +60,30 @@
       }
     });
 
+    // Same macro line format as the customer-facing menu cards.
+    function formatMacros(macros) {
+      if (!macros) return "";
+      const parts = [];
+      if (macros.calories) parts.push(`${macros.calories} cal`);
+      if (macros.proteinG) parts.push(`${macros.proteinG}g protein`);
+      if (macros.carbsG) parts.push(`${macros.carbsG}g carbs`);
+      if (macros.fatG) parts.push(`${macros.fatG}g fat`);
+      return parts.join(" &middot; ");
+    }
+
     // Tallies quantity per meal + add-on combo across every placed order, so
     // the kitchen can see "make 6 Chicken Teriyaki Bowls (2 with Large)"
-    // instead of flipping through each order individually.
-    function aggregateByMeal(orders) {
+    // instead of flipping through each order individually. Keyed by mealId
+    // (not name) so it stays correct even if two meals share a name.
+    function aggregateByMeal(orders, mealsById) {
       const totals = new Map();
       orders.forEach((order) => {
         order.items.forEach((item) => {
           const addOnLabels = (item.selectedAddOns || []).map((a) => a.description).sort();
-          const key = `${item.name}|${addOnLabels.join(",")}`;
+          const key = `${item.mealId}|${addOnLabels.join(",")}`;
           if (!totals.has(key)) {
-            totals.set(key, { name: item.name, addOnLabels, quantity: 0 });
+            const macros = (mealsById.get(item.mealId) || {}).macros;
+            totals.set(key, { name: item.name, addOnLabels, macros, quantity: 0 });
           }
           totals.get(key).quantity += item.quantity;
         });
@@ -91,15 +103,17 @@
         for (let i = 0; i < row.quantity; i++) labels.push(row);
       });
       return labels
-        .map(
-          (row) => `
+        .map((row) => {
+          const macrosText = formatMacros(row.macros);
+          return `
         <div class="label">
           <img src="/assets/logo.png" alt="GTX Meals" />
           <div class="label-brand">GTX MEALS</div>
           <div class="label-meal">${row.name}</div>
           ${row.addOnLabels.length ? `<div class="label-addons">${row.addOnLabels.join(", ")}</div>` : ""}
-        </div>`
-        )
+          ${macrosText ? `<div class="label-macros">${macrosText}</div>` : ""}
+        </div>`;
+        })
         .join("");
     }
 
@@ -114,10 +128,12 @@
         window.print();
       });
 
-      const [{ orders }, { nextReadyDate }] = await Promise.all([
+      const [{ orders }, { nextReadyDate }, { meals }] = await Promise.all([
         apiRequest(config.apiUrl, "/admin/orders?status=placed", { token }),
         apiRequest(config.apiUrl, "/settings", { token }),
+        apiRequest(config.apiUrl, "/meals"),
       ]);
+      const mealsById = new Map(meals.map((m) => [m.mealId, m]));
 
       // Orders placed before the ready date last changed may still carry an
       // older date - offer every date actually in play, not just the current
@@ -147,7 +163,7 @@
           body.innerHTML = `<tr><td colspan="3" class="muted">No placed orders for this date.</td></tr>`;
           return;
         }
-        const rows = aggregateByMeal(filtered);
+        const rows = aggregateByMeal(filtered, mealsById);
         currentRows = rows;
         printButton.disabled = false;
         body.innerHTML = rows
