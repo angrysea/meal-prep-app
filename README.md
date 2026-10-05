@@ -104,6 +104,39 @@ The endpoint (`POST /reminders/send`) resolves failures per-recipient, so
 one bad address/number doesn't block everyone else — check the `failed`
 count and `errors` in the response if something looks off.
 
+## Custom domain (gtxmeals.com)
+
+The site is served from `gtxmeals.com` (and `www.gtxmeals.com`, which
+redirects to it) via CloudFront, with DNS hosted at Cloudflare (the
+registrar) rather than Route 53 — Cloudflare supports CNAME flattening at
+the zone apex, which is what an ALIAS-style root record needs.
+
+The one piece **not** managed by CDK is the ACM certificate: it must be
+issued in `us-east-1` for CloudFront regardless of the app's own Region, and
+this account's org-level SCP blocks CloudFormation entirely in `us-east-1`
+(confirmed directly — `cloudformation:ListStacks` there returns an explicit
+deny). So the certificate is requested and DNS-validated outside CDK:
+
+```bash
+aws acm request-certificate \
+  --domain-name gtxmeals.com --subject-alternative-names www.gtxmeals.com \
+  --validation-method DNS --region us-east-1 --profile gtx-meal-prep
+```
+
+Then add the two CNAME validation records ACM returns
+(`aws acm describe-certificate ... --query Certificate.DomainValidationOptions`)
+in Cloudflare's DNS panel (type CNAME, "DNS only"/grey-cloud, not proxied).
+Once issued, its ARN is passed into `MealPrepAppStack` as `certificate_arn`
+in `app.py` and imported with `acm.Certificate.from_certificate_arn(...)` —
+if the cert is ever reissued, update that ARN and redeploy.
+
+Once the distribution has the domain names and certificate attached
+(`cdk deploy`), the live DNS records in Cloudflare are:
+- `gtxmeals.com` — CNAME (flattened) to the CloudFront distribution domain
+  (the `DistributionDomainName` stack output)
+- `www.gtxmeals.com` — CNAME to the same distribution domain (the
+  `CleanUrlsFunction` CloudFront Function redirects it to the apex)
+
 ## One-time setup
 
 ```bash
