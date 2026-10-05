@@ -101,20 +101,34 @@ def handler(event, context):
 
 def get_settings():
     item = table.get_item(Key=SETTINGS_KEY).get("Item") or {}
-    return _response(200, {"nextReadyDate": item.get("nextReadyDate", "")})
+    return _response(200, {
+        "nextReadyDate": item.get("nextReadyDate", ""),
+        # Off by default - SMS costs real money per message and this
+        # account's SNS access is currently blocked at the AWS org level
+        # (see README), so there's nothing to accidentally send to yet.
+        "smsEnabled": bool(item.get("smsEnabled", False)),
+    })
 
 
 def update_settings(event):
     _require_admin(event)
     body = _body(event)
-    next_ready_date = body.get("nextReadyDate", "")
+    # Merged with the existing item, not blindly overwritten - the Builder
+    # page saves each setting from its own button/form, so a request that
+    # only names one field (e.g. just nextReadyDate) must leave the other
+    # (e.g. smsEnabled) as it was, not reset it to a default.
+    existing = table.get_item(Key=SETTINGS_KEY).get("Item") or {}
+
+    next_ready_date = body.get("nextReadyDate", existing.get("nextReadyDate", ""))
     if next_ready_date:
         try:
             datetime.strptime(next_ready_date, "%Y-%m-%d")
         except ValueError:
             raise BadRequest("nextReadyDate must be in YYYY-MM-DD format")
-    table.put_item(Item={**SETTINGS_KEY, "nextReadyDate": next_ready_date})
-    return _response(200, {"nextReadyDate": next_ready_date})
+    sms_enabled = bool(body.get("smsEnabled", existing.get("smsEnabled", False)))
+
+    table.put_item(Item={**SETTINGS_KEY, "nextReadyDate": next_ready_date, "smsEnabled": sms_enabled})
+    return _response(200, {"nextReadyDate": next_ready_date, "smsEnabled": sms_enabled})
 
 
 # ---------- menu ----------
@@ -432,8 +446,9 @@ def send_weekly_reminders(event):
     _require_admin(event)
     message = _reminder_message()
     from_email = _from_email()
+    sms_enabled = bool((table.get_item(Key=SETTINGS_KEY).get("Item") or {}).get("smsEnabled", False))
 
-    sent_email = sent_text = skipped_unsubscribed = failed = 0
+    sent_email = sent_text = skipped_unsubscribed = skipped_sms_disabled = failed = 0
     errors = []
 
     for profile in _scan_all_profiles():
@@ -444,6 +459,10 @@ def send_weekly_reminders(event):
         channel = profile.get("preferredContact", "email")
         try:
             if channel == "text":
+                if not sms_enabled:
+                    print(f"SMS not sent to {profile.get('PK')}: smsEnabled global setting is off")
+                    skipped_sms_disabled += 1
+                    continue
                 phone = profile.get("phone")
                 if not phone:
                     raise ValueError("no phone number on file")
@@ -470,6 +489,7 @@ def send_weekly_reminders(event):
         "sentEmail": sent_email,
         "sentText": sent_text,
         "skippedUnsubscribed": skipped_unsubscribed,
+        "skippedSmsDisabled": skipped_sms_disabled,
         "failed": failed,
         "errors": errors[:10],  # cap so one noisy failure mode doesn't blow up the response
     })

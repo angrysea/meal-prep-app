@@ -31,6 +31,19 @@
       </section>
 
       <section class="card form-narrow">
+        <h2>SMS reminders</h2>
+        <p class="muted">
+          Off by default. While off, weekly reminders due to a customer's
+          texting preference are skipped (and logged) instead of sent.
+        </p>
+        <label class="option-choice">
+          <input type="checkbox" id="sms-enabled" /> Send weekly reminders by text
+        </label>
+        <p class="error" id="sms-enabled-error" style="display:none;"></p>
+        <button id="sms-enabled-save-button">Save</button>
+      </section>
+
+      <section class="card form-narrow">
         <h2>Add a meal</h2>
         <label for="new-name">Name</label>
         <input id="new-name" type="text" />
@@ -106,8 +119,9 @@
 
     async function initAdmin(config, token) {
       async function refreshReadyDate() {
-        const { nextReadyDate } = await apiRequest(config.apiUrl, "/settings");
+        const { nextReadyDate, smsEnabled } = await apiRequest(config.apiUrl, "/settings");
         document.getElementById("next-ready-date").value = nextReadyDate;
+        document.getElementById("sms-enabled").checked = smsEnabled;
       }
 
       document.getElementById("ready-date-save-button").addEventListener("click", async () => {
@@ -118,6 +132,21 @@
             method: "PUT",
             token,
             body: { nextReadyDate: document.getElementById("next-ready-date").value },
+          });
+        } catch (err) {
+          errorEl.textContent = err.message;
+          errorEl.style.display = "block";
+        }
+      });
+
+      document.getElementById("sms-enabled-save-button").addEventListener("click", async () => {
+        const errorEl = document.getElementById("sms-enabled-error");
+        errorEl.style.display = "none";
+        try {
+          await apiRequest(config.apiUrl, "/settings", {
+            method: "PUT",
+            token,
+            body: { smsEnabled: document.getElementById("sms-enabled").checked },
           });
         } catch (err) {
           errorEl.textContent = err.message;

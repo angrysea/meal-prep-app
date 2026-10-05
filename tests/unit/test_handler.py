@@ -190,12 +190,12 @@ def test_update_addon_fails_for_unknown_id(table):
     assert resp["statusCode"] == 404
 
 
-def test_get_settings_defaults_to_empty_ready_date(table):
+def test_get_settings_defaults_to_empty_ready_date_and_sms_off(table):
     from backend.lambda_src import index
 
     resp = index.handler(_event("GET", "/settings"), None)
     assert resp["statusCode"] == 200
-    assert json.loads(resp["body"]) == {"nextReadyDate": ""}
+    assert json.loads(resp["body"]) == {"nextReadyDate": "", "smsEnabled": False}
 
 
 def test_update_settings_requires_admin(table):
@@ -211,13 +211,39 @@ def test_admin_can_update_settings(table):
     from backend.lambda_src import index
 
     resp = index.handler(
-        _event("PUT", "/settings", {"nextReadyDate": "2026-12-01"}, claims=ADMIN_CLAIMS), None
+        _event("PUT", "/settings", {"nextReadyDate": "2026-12-01", "smsEnabled": True}, claims=ADMIN_CLAIMS), None
     )
     assert resp["statusCode"] == 200
-    assert json.loads(resp["body"]) == {"nextReadyDate": "2026-12-01"}
+    assert json.loads(resp["body"]) == {"nextReadyDate": "2026-12-01", "smsEnabled": True}
 
     get_resp = index.handler(_event("GET", "/settings"), None)
-    assert json.loads(get_resp["body"]) == {"nextReadyDate": "2026-12-01"}
+    assert json.loads(get_resp["body"]) == {"nextReadyDate": "2026-12-01", "smsEnabled": True}
+
+
+def test_update_settings_defaults_sms_enabled_to_false_when_omitted(table):
+    from backend.lambda_src import index
+
+    resp = index.handler(
+        _event("PUT", "/settings", {"nextReadyDate": "2026-12-01"}, claims=ADMIN_CLAIMS), None
+    )
+    assert json.loads(resp["body"])["smsEnabled"] is False
+
+
+def test_update_settings_merges_instead_of_overwriting(table):
+    from backend.lambda_src import index
+
+    index.handler(_event("PUT", "/settings", {"smsEnabled": True}, claims=ADMIN_CLAIMS), None)
+
+    # Saving just the ready date (as the Builder page's ready-date form
+    # does) must not silently reset smsEnabled back to False.
+    resp = index.handler(
+        _event("PUT", "/settings", {"nextReadyDate": "2026-12-01"}, claims=ADMIN_CLAIMS), None
+    )
+    assert json.loads(resp["body"]) == {"nextReadyDate": "2026-12-01", "smsEnabled": True}
+
+    # And saving just smsEnabled must not reset nextReadyDate either.
+    resp = index.handler(_event("PUT", "/settings", {"smsEnabled": False}, claims=ADMIN_CLAIMS), None)
+    assert json.loads(resp["body"]) == {"nextReadyDate": "2026-12-01", "smsEnabled": False}
 
 
 def test_update_settings_rejects_bad_date_format(table):
@@ -799,6 +825,10 @@ def test_reminders_requires_admin(table):
     assert resp["statusCode"] == 403
 
 
+def _enable_sms(index):
+    index.handler(_event("PUT", "/settings", {"smsEnabled": True}, claims=ADMIN_CLAIMS), None)
+
+
 def test_reminders_sends_by_preference_and_skips_unsubscribed(table):
     import boto3
     from backend.lambda_src import index
@@ -807,6 +837,7 @@ def test_reminders_sends_by_preference_and_skips_unsubscribed(table):
     _create_admin_cognito_user(cognito, pool_id, "admin@example.com")
     # moto's SES mock enforces the same verified-sender rule real SES does.
     boto3.client("ses", region_name="us-east-1").verify_email_identity(EmailAddress="admin@example.com")
+    _enable_sms(index)
 
     _save_profile(index, {"sub": "u1", "email": "u1@example.com"}, email="u1@example.com", preferredContact="email")
     _save_profile(index, {"sub": "u2", "email": "u2@example.com"}, phone="+15551234567", preferredContact="text")
@@ -818,6 +849,7 @@ def test_reminders_sends_by_preference_and_skips_unsubscribed(table):
     assert result["sentEmail"] == 1
     assert result["sentText"] == 1
     assert result["skippedUnsubscribed"] == 1
+    assert result["skippedSmsDisabled"] == 0
     assert result["failed"] == 0
 
 
@@ -828,6 +860,7 @@ def test_reminders_counts_failure_when_contact_detail_missing(table):
     cognito, pool_id = _create_test_pool(index)
     _create_admin_cognito_user(cognito, pool_id, "admin@example.com")
     boto3.client("ses", region_name="us-east-1").verify_email_identity(EmailAddress="admin@example.com")
+    _enable_sms(index)
 
     # preferredContact=text but no phone on file
     _save_profile(index, {"sub": "u1", "email": "u1@example.com"}, preferredContact="text")
@@ -836,6 +869,47 @@ def test_reminders_counts_failure_when_contact_detail_missing(table):
     result = json.loads(resp["body"])
     assert result["failed"] == 1
     assert result["sentText"] == 0
+
+
+def test_reminders_skip_sms_when_globally_disabled(table, monkeypatch):
+    from backend.lambda_src import index
+
+    cognito, pool_id = _create_test_pool(index)
+    _create_admin_cognito_user(cognito, pool_id, "admin@example.com")
+    # smsEnabled defaults to False - never explicitly turned on in this test.
+
+    publish_calls = []
+    monkeypatch.setattr(index.sns, "publish", lambda **kwargs: publish_calls.append(kwargs))
+
+    _save_profile(index, {"sub": "u1", "email": "u1@example.com"}, phone="+15551234567", preferredContact="text")
+
+    resp = index.handler(_event("POST", "/reminders/send", claims=ADMIN_CLAIMS), None)
+    assert resp["statusCode"] == 200
+    result = json.loads(resp["body"])
+    assert result["sentText"] == 0
+    assert result["skippedSmsDisabled"] == 1
+    assert result["failed"] == 0
+    assert publish_calls == []
+
+
+def test_reminders_sends_sms_once_globally_enabled(table, monkeypatch):
+    from backend.lambda_src import index
+
+    cognito, pool_id = _create_test_pool(index)
+    _create_admin_cognito_user(cognito, pool_id, "admin@example.com")
+    _enable_sms(index)
+
+    publish_calls = []
+    monkeypatch.setattr(index.sns, "publish", lambda **kwargs: publish_calls.append(kwargs))
+
+    _save_profile(index, {"sub": "u1", "email": "u1@example.com"}, phone="+15551234567", preferredContact="text")
+
+    resp = index.handler(_event("POST", "/reminders/send", claims=ADMIN_CLAIMS), None)
+    result = json.loads(resp["body"])
+    assert result["sentText"] == 1
+    assert result["skippedSmsDisabled"] == 0
+    assert len(publish_calls) == 1
+    assert publish_calls[0]["PhoneNumber"] == "+15551234567"
 
 
 def test_reminders_fails_cleanly_when_no_admin_is_configured(table):
