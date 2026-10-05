@@ -43,6 +43,7 @@
     import { getValidSession, isAdmin } from "/js/cognito.js";
     import { renderNav } from "/js/nav.js";
     import { loginUrlWithReturnTo } from "/js/redirect.js";
+    import { formatMacros } from "/js/pricing.js";
 
     renderNav();
 
@@ -60,33 +61,33 @@
       }
     });
 
-    // Same macro line format as the customer-facing menu cards.
-    function formatMacros(macros) {
-      if (!macros) return "";
-      const parts = [];
-      if (macros.calories) parts.push(`${macros.calories} cal`);
-      if (macros.proteinG) parts.push(`${macros.proteinG}g protein`);
-      if (macros.carbsG) parts.push(`${macros.carbsG}g carbs`);
-      if (macros.fatG) parts.push(`${macros.fatG}g fat`);
-      return parts.join(" &middot; ");
-    }
-
     // Tallies quantity per meal + add-on + note combo across every placed
     // order, so the kitchen can see "make 6 Chicken Teriyaki Bowls (2 with
     // Large, 1 hold the cheese)" instead of flipping through each order
     // individually. Keyed by mealId (not name) so it stays correct even if
     // two meals share a name; note is part of the key too, since "hold the
     // cheese" and a plain order of the same meal need separate rows/labels.
-    function aggregateByMeal(orders, mealsById) {
+    //
+    // Add-on macros come from the CURRENT add-on list (addOnsById), not the
+    // order's own snapshot: this view aggregates across every matching order
+    // for today's cooking, and two orders for the same add-on can carry
+    // different snapshotted macros (the add-on's nutrition info was edited
+    // in between, or one predates macros existing at all) - showing live
+    // values keeps one aggregated row internally consistent instead of
+    // silently reflecting whichever order happened to be seen first.
+    function aggregateByMeal(orders, mealsById, addOnsById) {
       const totals = new Map();
       orders.forEach((order) => {
         order.items.forEach((item) => {
-          const addOnLabels = (item.selectedAddOns || []).map((a) => a.description).sort();
+          const addOns = (item.selectedAddOns || [])
+            .map((a) => ({ ...a, macros: (addOnsById.get(a.addOnId) || {}).macros || a.macros }))
+            .sort((a, b) => a.description.localeCompare(b.description));
+          const addOnKey = addOns.map((a) => a.description).join(",");
           const note = item.note || "";
-          const key = `${item.mealId}|${addOnLabels.join(",")}|${note}`;
+          const key = `${item.mealId}|${addOnKey}|${note}`;
           if (!totals.has(key)) {
             const macros = (mealsById.get(item.mealId) || {}).macros;
-            totals.set(key, { name: item.name, addOnLabels, note, macros, quantity: 0 });
+            totals.set(key, { name: item.name, addOns, addOnKey, note, macros, quantity: 0 });
           }
           totals.get(key).quantity += item.quantity;
         });
@@ -94,10 +95,39 @@
       return [...totals.values()].sort((a, b) => {
         const byName = a.name.localeCompare(b.name);
         if (byName !== 0) return byName;
-        const byAddOns = a.addOnLabels.join(",").localeCompare(b.addOnLabels.join(","));
+        const byAddOns = a.addOnKey.localeCompare(b.addOnKey);
         if (byAddOns !== 0) return byAddOns;
         return a.note.localeCompare(b.note);
       });
+    }
+
+    // "Calories: 450 / Protein: 35g" etc., in reading order (Calories,
+    // Protein, Carbs, Fat) flowed into a 2-column grid - the label format
+    // requested to match the physical labels already in use.
+    function macroGridHtml(macros) {
+      if (!macros) return "";
+      const { calories = 0, proteinG = 0, carbsG = 0, fatG = 0 } = macros;
+      if (!calories && !proteinG && !carbsG && !fatG) return "";
+      return `<div class="label-macros-grid">
+        <div>Calories: ${calories}</div>
+        <div>Protein: ${proteinG}g</div>
+        <div>Carbs: ${carbsG}g</div>
+        <div>Fat: ${fatG}g</div>
+      </div>`;
+    }
+
+    // "Cauliflower Rice: 25 Cal | 1g Protein | 5g Carbs | 0g Fat" - the
+    // add-on's own macros (not blended with the meal), same values shown
+    // for it everywhere else in the app.
+    function addOnLineHtml(addOn) {
+      const m = addOn.macros || {};
+      const parts = [];
+      if (m.calories) parts.push(`${m.calories} Cal`);
+      if (m.proteinG) parts.push(`${m.proteinG}g Protein`);
+      if (m.carbsG) parts.push(`${m.carbsG}g Carbs`);
+      if (m.fatG) parts.push(`${m.fatG}g Fat`);
+      const text = parts.length ? `${addOn.description}: ${parts.join(" | ")}` : addOn.description;
+      return `<div class="label-addon-line">${text}</div>`;
     }
 
     // One label per physical meal, built straight from the orders (not the
@@ -108,12 +138,12 @@
       const labels = [];
       orders.forEach((order) => {
         order.items.forEach((item) => {
-          const addOnLabels = (item.selectedAddOns || []).map((a) => a.description).sort();
+          const addOns = (item.selectedAddOns || []).slice().sort((a, b) => a.description.localeCompare(b.description));
           const macros = (mealsById.get(item.mealId) || {}).macros;
           for (let i = 0; i < item.quantity; i++) {
             labels.push({
               name: item.name,
-              addOnLabels,
+              addOns,
               note: item.note || "",
               macros,
               customerName: order.deliveryName || "",
@@ -124,26 +154,33 @@
       labels.sort((a, b) => {
         const byName = a.name.localeCompare(b.name);
         if (byName !== 0) return byName;
-        const byAddOns = a.addOnLabels.join(",").localeCompare(b.addOnLabels.join(","));
+        const addOnKeyA = a.addOns.map((x) => x.description).join(",");
+        const addOnKeyB = b.addOns.map((x) => x.description).join(",");
+        const byAddOns = addOnKeyA.localeCompare(addOnKeyB);
         if (byAddOns !== 0) return byAddOns;
         const byNote = a.note.localeCompare(b.note);
         if (byNote !== 0) return byNote;
         return a.customerName.localeCompare(b.customerName);
       });
       return labels
-        .map((row) => {
-          const macrosText = formatMacros(row.macros);
-          return `
+        .map(
+          (row) => `
         <div class="label">
-          <img src="/assets/logo.png" alt="GTX Meals" />
-          <div class="label-brand">GTX MEALS</div>
-          ${row.customerName ? `<div class="label-customer">${row.customerName}</div>` : ""}
-          <div class="label-meal">${row.name}</div>
-          ${macrosText ? `<div class="label-macros">${macrosText}</div>` : ""}
-          ${row.addOnLabels.length ? `<div class="label-addons">${row.addOnLabels.join(", ")}</div>` : ""}
+          <div class="label-header">
+            <div class="label-title">
+              <div class="label-meal">${row.name}</div>
+              ${row.customerName ? `<div class="label-customer">${row.customerName}</div>` : ""}
+            </div>
+            <div class="label-logo">
+              <img src="/assets/logo.png" alt="GTX Meals" />
+              <div class="label-brand">GTX MEALS</div>
+            </div>
+          </div>
+          ${macroGridHtml(row.macros)}
+          ${row.addOns.map(addOnLineHtml).join("")}
           ${row.note ? `<div class="label-note">Note: ${row.note}</div>` : ""}
-        </div>`;
-        })
+        </div>`
+        )
         .join("");
     }
 
@@ -158,12 +195,14 @@
         window.print();
       });
 
-      const [{ orders }, { nextReadyDate }, { meals }] = await Promise.all([
+      const [{ orders }, { nextReadyDate }, { meals }, { addOns }] = await Promise.all([
         apiRequest(config.apiUrl, "/admin/orders?status=placed", { token }),
         apiRequest(config.apiUrl, "/settings", { token }),
         apiRequest(config.apiUrl, "/meals"),
+        apiRequest(config.apiUrl, "/addons"),
       ]);
       const mealsById = new Map(meals.map((m) => [m.mealId, m]));
+      const addOnsById = new Map(addOns.map((a) => [a.addOnId, a]));
 
       // Orders placed before the ready date last changed may still carry an
       // older date - offer every date actually in play, not just the current
@@ -193,14 +232,23 @@
           body.innerHTML = `<tr><td colspan="4" class="muted">No placed orders for this date.</td></tr>`;
           return;
         }
-        const rows = aggregateByMeal(filtered, mealsById);
+        const rows = aggregateByMeal(filtered, mealsById, addOnsById);
         printButton.disabled = false;
         body.innerHTML = rows
           .map(
             (row) => `
           <tr>
             <td>${row.name}</td>
-            <td>${row.addOnLabels.length ? row.addOnLabels.join(", ") : "-"}</td>
+            <td>${
+              row.addOns.length
+                ? row.addOns
+                    .map((a) => {
+                      const m = formatMacros(a.macros);
+                      return `<div>${a.description}${m ? `<div class="muted" style="font-size:0.75rem;">${m}</div>` : ""}</div>`;
+                    })
+                    .join("")
+                : "-"
+            }</td>
             <td>${row.note || "-"}</td>
             <td>${row.quantity}</td>
           </tr>`

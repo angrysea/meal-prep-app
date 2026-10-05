@@ -80,6 +80,17 @@
         <input id="addon-description" type="text" placeholder="e.g. Large, Extra Protein" />
         <label for="addon-price">Price (USD)</label>
         <input id="addon-price" type="number" step="0.01" min="0" />
+
+        <h3>Macros</h3>
+        <label for="addon-calories">Calories</label>
+        <input id="addon-calories" type="number" min="0" />
+        <label for="addon-protein">Protein (g)</label>
+        <input id="addon-protein" type="number" min="0" />
+        <label for="addon-carbs">Carbs (g)</label>
+        <input id="addon-carbs" type="number" min="0" />
+        <label for="addon-fat">Fat (g)</label>
+        <input id="addon-fat" type="number" min="0" />
+
         <p class="error" id="addon-error" style="display:none;"></p>
         <button id="addon-create-button">Add add-on</button>
       </section>
@@ -87,7 +98,7 @@
       <h2>Current add-ons</h2>
       <table id="addons-table">
         <thead>
-          <tr><th>Description</th><th>Price</th><th>Available</th><th></th></tr>
+          <tr><th>Description</th><th>Price</th><th>Macros</th><th>Available</th><th></th></tr>
         </thead>
         <tbody id="addons-body"></tbody>
       </table>
@@ -100,6 +111,7 @@
     import { getValidSession, isAdmin } from "/js/cognito.js";
     import { renderNav } from "/js/nav.js";
     import { loginUrlWithReturnTo } from "/js/redirect.js";
+    import { formatMacros } from "/js/pricing.js";
 
     renderNav();
 
@@ -205,6 +217,7 @@
           <tr data-addon-id="${addOn.addOnId}">
             <td>${addOn.description}</td>
             <td>${formatPrice(addOn.priceCents)}</td>
+            <td>${formatMacros(addOn.macros) || "-"}</td>
             <td>${addOn.available ? "Yes" : "No"}</td>
             <td>
               <button class="secondary toggle-addon-available">${addOn.available ? "Hide" : "Show"}</button>
@@ -282,10 +295,20 @@
             body: {
               description: document.getElementById("addon-description").value,
               priceCents,
+              macros: {
+                calories: parseInt(document.getElementById("addon-calories").value, 10) || 0,
+                proteinG: parseInt(document.getElementById("addon-protein").value, 10) || 0,
+                carbsG: parseInt(document.getElementById("addon-carbs").value, 10) || 0,
+                fatG: parseInt(document.getElementById("addon-fat").value, 10) || 0,
+              },
             },
           });
           document.getElementById("addon-description").value = "";
           document.getElementById("addon-price").value = "";
+          document.getElementById("addon-calories").value = "";
+          document.getElementById("addon-protein").value = "";
+          document.getElementById("addon-carbs").value = "";
+          document.getElementById("addon-fat").value = "";
           refreshAddOns();
         } catch (err) {
           errorEl.textContent = err.message;

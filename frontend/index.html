@@ -64,7 +64,7 @@
     import { getValidSession, isAdmin } from "/js/cognito.js";
     import { renderNav } from "/js/nav.js";
     import { loginUrlWithReturnTo } from "/js/redirect.js";
-    import { computeUnitPriceCents, describeAddOns, selectionsKey } from "/js/pricing.js";
+    import { computeUnitPriceCents, selectionsKey, formatMacros } from "/js/pricing.js";
 
     renderNav();
 
@@ -97,8 +97,13 @@
         .map(([key, { meal, selectedAddOnIds, note, quantity }]) => {
           const unitPrice = computeUnitPriceCents(meal, allAddOns, selectedAddOnIds);
           total += unitPrice * quantity;
-          const addOnLabels = describeAddOns(allAddOns, selectedAddOnIds);
-          const addOnText = addOnLabels.length ? `<div class="muted" style="font-size:0.85rem;">${addOnLabels.join(", ")}</div>` : "";
+          const selectedAddOns = selectedAddOnIds.map((id) => allAddOns.find((a) => a.addOnId === id)).filter(Boolean);
+          const addOnText = selectedAddOns
+            .map((a) => {
+              const macrosText = formatMacros(a.macros);
+              return `<div class="muted" style="font-size:0.85rem;">${a.description}${macrosText ? ` - ${macrosText}` : ""}</div>`;
+            })
+            .join("");
           const noteText = note ? `<div class="muted" style="font-size:0.85rem;">Note: ${note}</div>` : "";
           return `<div class="cart-line-wrap" data-cart-key="${key}">
             <div class="cart-line">
@@ -195,13 +200,8 @@
     }
 
     function renderMacros(macros) {
-      if (!macros) return "";
-      const parts = [];
-      if (macros.calories) parts.push(`${macros.calories} cal`);
-      if (macros.proteinG) parts.push(`${macros.proteinG}g protein`);
-      if (macros.carbsG) parts.push(`${macros.carbsG}g carbs`);
-      if (macros.fatG) parts.push(`${macros.fatG}g fat`);
-      return parts.length ? `<p class="macros muted">${parts.join(" &middot; ")}</p>` : "";
+      const text = formatMacros(macros);
+      return text ? `<p class="macros muted">${text}</p>` : "";
     }
 
     function renderAddOnChoices(meal, disabled) {
@@ -209,13 +209,15 @@
       if (visibleAddOns.length === 0) return "";
       return `<div class="option-groups">
         ${visibleAddOns
-          .map(
-            (a) => `
+          .map((a) => {
+            const macrosText = formatMacros(a.macros);
+            return `
           <label class="option-choice">
             <input type="checkbox" class="addon-choice" data-addon-id="${a.addOnId}" ${disabled ? "disabled" : ""} />
             ${a.description} (+${formatPrice(a.priceCents)})
-          </label>`
-          )
+            ${macrosText ? `<div class="muted addon-macros">${macrosText}</div>` : ""}
+          </label>`;
+          })
           .join("")}
       </div>`;
     }

@@ -224,6 +224,7 @@ def create_addon(event):
         "description": body["description"],
         "priceCents": int(body["priceCents"]),
         "available": bool(body.get("available", True)),
+        "macros": _parse_macros(body.get("macros")),
     }
     table.put_item(Item=item)
     return _response(201, _addon_out(item))
@@ -241,6 +242,7 @@ def update_addon(event, addon_id):
         "description": body.get("description", existing["description"]),
         "priceCents": int(body.get("priceCents", existing["priceCents"])),
         "available": bool(body.get("available", existing.get("available", True))),
+        "macros": _parse_macros(body["macros"]) if "macros" in body else existing.get("macros", _parse_macros(None)),
     }
     table.put_item(Item=updated)
     return _response(200, _addon_out(updated))
@@ -258,6 +260,7 @@ def _addon_out(item):
         "description": item["description"],
         "priceCents": int(item["priceCents"]),
         "available": bool(item.get("available", True)),
+        "macros": {field: int(item.get("macros", {}).get(field, 0)) for field in MACRO_FIELDS},
     }
 
 
@@ -731,9 +734,11 @@ def _notify_admins_of_order(order):
 
 def _resolve_addons(requested_addon_ids):
     """Validates the client's add-on id picks against the current global
-    add-on list and returns (resolved add-ons with description/price
+    add-on list and returns (resolved add-ons with description/price/macros
     snapshotted, total price delta in cents). Raises BadRequest for any id
-    that doesn't currently exist.
+    that doesn't currently exist. Macros are snapshotted (not looked up live)
+    for the same reason description/price are - so a past order's label is
+    unaffected by the add-on's nutrition info changing later.
     """
     resolved = []
     total_cents = 0
@@ -747,6 +752,7 @@ def _resolve_addons(requested_addon_ids):
             "addOnId": addon_id,
             "description": addon["description"],
             "priceCents": price_cents,
+            "macros": {field: int(addon.get("macros", {}).get(field, 0)) for field in MACRO_FIELDS},
         })
     return resolved, total_cents
 

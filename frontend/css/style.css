@@ -225,6 +225,11 @@ h2 {
   margin: 0 0.4rem 0 0;
 }
 
+.addon-macros {
+  margin-left: 1.4rem;
+  font-size: 0.78rem;
+}
+
 .cart-line-wrap {
   margin-bottom: 0.4rem;
 }
@@ -424,32 +429,23 @@ table.customers-table th {
     width: 3in;
     height: 2in;
     box-sizing: border-box;
-    padding: 0.12in 0.2in;
+    padding: 0.14in 0.18in;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
+    text-align: left;
     page-break-after: always;
     break-after: page;
   }
 
-  .label img {
-    height: 0.4in;
-    width: auto;
-    margin-bottom: 0.03in;
+  .label-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.1in;
   }
 
-  .label-brand {
-    font-family: var(--font-display);
-    font-size: 11pt;
-    letter-spacing: 0.04em;
-  }
-
-  .label-customer {
-    font-size: 11pt;
-    font-weight: bold;
-    margin-top: 0.06in;
+  .label-title {
+    min-width: 0;
   }
 
   .label-meal {
@@ -457,18 +453,46 @@ table.customers-table th {
     font-size: 14pt;
     text-transform: uppercase;
     letter-spacing: 0.02em;
-    margin-top: 0.08in;
+    line-height: 1.1;
   }
 
-  .label-addons {
+  .label-customer {
+    font-size: 10pt;
+    font-weight: bold;
+    margin-top: 0.03in;
+  }
+
+  .label-logo {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+
+  .label-logo img {
+    height: 0.35in;
+    width: auto;
+  }
+
+  .label-logo .label-brand {
+    font-family: var(--font-display);
+    font-size: 7pt;
+    letter-spacing: 0.03em;
+    margin-top: 0.02in;
+  }
+
+  .label-macros-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: 0.15in;
     font-size: 9pt;
-    color: var(--color-muted);
-    margin-top: 0.04in;
+    font-weight: bold;
+    margin-top: 0.07in;
   }
 
-  .label-macros {
+  .label-addon-line {
     font-size: 8pt;
-    color: var(--color-muted);
     margin-top: 0.04in;
   }
 

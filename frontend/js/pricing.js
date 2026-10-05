@@ -18,6 +18,18 @@ export function describeAddOns(allAddOns, selectedAddOnIds) {
     .map((a) => a.description);
 }
 
+// Same compact macro summary everywhere one's shown - meals and add-ons
+// both use this shape ({calories, proteinG, carbsG, fatG}).
+export function formatMacros(macros) {
+  if (!macros) return "";
+  const parts = [];
+  if (macros.calories) parts.push(`${macros.calories} cal`);
+  if (macros.proteinG) parts.push(`${macros.proteinG}g protein`);
+  if (macros.carbsG) parts.push(`${macros.carbsG}g carbs`);
+  if (macros.fatG) parts.push(`${macros.fatG}g fat`);
+  return parts.join(" &middot; ");
+}
+
 // A stable string key so "Bowl + Large" and "Bowl (no add-ons)" are distinct
 // cart lines, but re-selecting the same add-ons (and note) collapses onto
 // one line. Note is part of the key too, so "Bowl, hold the cheese" and a
