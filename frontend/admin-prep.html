@@ -110,8 +110,8 @@
           <img src="/assets/logo.png" alt="GTX Meals" />
           <div class="label-brand">GTX MEALS</div>
           <div class="label-meal">${row.name}</div>
-          ${row.addOnLabels.length ? `<div class="label-addons">${row.addOnLabels.join(", ")}</div>` : ""}
           ${macrosText ? `<div class="label-macros">${macrosText}</div>` : ""}
+          ${row.addOnLabels.length ? `<div class="label-addons">${row.addOnLabels.join(", ")}</div>` : ""}
         </div>`;
         })
         .join("");
