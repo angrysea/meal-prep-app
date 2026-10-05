@@ -350,3 +350,65 @@ table.customers-table td,
 table.customers-table th {
   white-space: nowrap;
 }
+
+/* Meal-prep labels: hidden on screen, only shown (and sized for a 2"x2"
+   thermal label roll - a common size on small label-only printers like
+   Dymo/Rollo/MUNBYN) when actually printing. One label per physical meal. */
+#print-labels {
+  display: none;
+}
+
+@media print {
+  body > *:not(#print-labels) {
+    display: none !important;
+  }
+
+  #print-labels {
+    display: block;
+  }
+
+  .label {
+    width: 2in;
+    height: 2in;
+    box-sizing: border-box;
+    padding: 0.15in;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    page-break-after: always;
+    break-after: page;
+  }
+
+  .label img {
+    height: 0.7in;
+    width: auto;
+    margin-bottom: 0.05in;
+  }
+
+  .label-brand {
+    font-family: var(--font-display);
+    font-size: 11pt;
+    letter-spacing: 0.04em;
+  }
+
+  .label-meal {
+    font-family: var(--font-display);
+    font-size: 13pt;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    margin-top: 0.1in;
+  }
+
+  .label-addons {
+    font-size: 9pt;
+    color: var(--color-muted);
+    margin-top: 0.05in;
+  }
+
+  @page {
+    size: 2in 2in;
+    margin: 0;
+  }
+}
