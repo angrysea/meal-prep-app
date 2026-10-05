@@ -665,12 +665,7 @@ def test_create_order_emails_admins(table, monkeypatch):
     from backend.lambda_src import index
 
     cognito, pool_id = _create_test_pool(index)
-    cognito.admin_create_user(
-        UserPoolId=pool_id, Username="admin@example.com",
-        UserAttributes=[{"Name": "email", "Value": "admin@example.com"}, {"Name": "email_verified", "Value": "true"}],
-        MessageAction="SUPPRESS",
-    )
-    cognito.admin_add_user_to_group(UserPoolId=pool_id, Username="admin@example.com", GroupName="Admins")
+    _create_admin_cognito_user(cognito, pool_id, "admin@example.com")
 
     sent = {}
     monkeypatch.setattr(index.ses, "send_email", lambda **kwargs: sent.update(kwargs) or {"MessageId": "test"})
@@ -678,6 +673,8 @@ def test_create_order_emails_admins(table, monkeypatch):
     _place_order(index, CUSTOMER_CLAIMS)
 
     assert sent["Destination"]["ToAddresses"] == ["admin@example.com"]
+    # Sent from the admin's own address, not a hardcoded setting.
+    assert sent["Source"] == "admin@example.com"
     assert "New order" in sent["Message"]["Subject"]["Data"]
 
 
@@ -806,8 +803,10 @@ def test_reminders_sends_by_preference_and_skips_unsubscribed(table):
     import boto3
     from backend.lambda_src import index
 
+    cognito, pool_id = _create_test_pool(index)
+    _create_admin_cognito_user(cognito, pool_id, "admin@example.com")
     # moto's SES mock enforces the same verified-sender rule real SES does.
-    boto3.client("ses", region_name="us-east-1").verify_email_identity(EmailAddress=index.FROM_EMAIL)
+    boto3.client("ses", region_name="us-east-1").verify_email_identity(EmailAddress="admin@example.com")
 
     _save_profile(index, {"sub": "u1", "email": "u1@example.com"}, email="u1@example.com", preferredContact="email")
     _save_profile(index, {"sub": "u2", "email": "u2@example.com"}, phone="+15551234567", preferredContact="text")
@@ -826,7 +825,9 @@ def test_reminders_counts_failure_when_contact_detail_missing(table):
     import boto3
     from backend.lambda_src import index
 
-    boto3.client("ses", region_name="us-east-1").verify_email_identity(EmailAddress=index.FROM_EMAIL)
+    cognito, pool_id = _create_test_pool(index)
+    _create_admin_cognito_user(cognito, pool_id, "admin@example.com")
+    boto3.client("ses", region_name="us-east-1").verify_email_identity(EmailAddress="admin@example.com")
 
     # preferredContact=text but no phone on file
     _save_profile(index, {"sub": "u1", "email": "u1@example.com"}, preferredContact="text")
@@ -835,6 +836,18 @@ def test_reminders_counts_failure_when_contact_detail_missing(table):
     result = json.loads(resp["body"])
     assert result["failed"] == 1
     assert result["sentText"] == 0
+
+
+def test_reminders_fails_cleanly_when_no_admin_is_configured(table):
+    from backend.lambda_src import index
+
+    # A real pool with an Admins group that has no members - _from_email()
+    # has nothing to resolve, and should fail the whole request up front
+    # rather than fail every single recipient one at a time.
+    _create_test_pool(index)
+
+    resp = index.handler(_event("POST", "/reminders/send", claims=ADMIN_CLAIMS), None)
+    assert resp["statusCode"] == 400
 
 
 def _create_test_pool(index):
@@ -858,6 +871,12 @@ def _create_cognito_user(cognito, pool_id, email):
         MessageAction="SUPPRESS",
     )
     return next(a["Value"] for a in created["User"]["Attributes"] if a["Name"] == "sub")
+
+
+def _create_admin_cognito_user(cognito, pool_id, email):
+    sub = _create_cognito_user(cognito, pool_id, email)
+    cognito.admin_add_user_to_group(UserPoolId=pool_id, Username=email, GroupName="Admins")
+    return sub
 
 
 def test_customers_requires_admin(table):

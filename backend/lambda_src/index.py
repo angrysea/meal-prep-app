@@ -10,9 +10,6 @@ import boto3
 TABLE_NAME = os.environ["TABLE_NAME"]
 USER_POOL_ID = os.environ["USER_POOL_ID"]
 ADMINS_GROUP_NAME = os.environ.get("ADMINS_GROUP_NAME", "Admins")
-# Must be verified in SES before weekly reminder emails will actually send -
-# see README. Placeholder until the real sender address is configured.
-FROM_EMAIL = os.environ.get("FROM_EMAIL", "orders@example.com")
 SITE_URL = os.environ.get("SITE_URL", "")
 
 # DYNAMODB_ENDPOINT_OVERRIDE lets this run against DynamoDB Local
@@ -434,6 +431,7 @@ def _reminder_message():
 def send_weekly_reminders(event):
     _require_admin(event)
     message = _reminder_message()
+    from_email = _from_email()
 
     sent_email = sent_text = skipped_unsubscribed = failed = 0
     errors = []
@@ -456,7 +454,7 @@ def send_weekly_reminders(event):
                 if not email:
                     raise ValueError("no email on file")
                 ses.send_email(
-                    Source=FROM_EMAIL,
+                    Source=from_email,
                     Destination={"ToAddresses": [email]},
                     Message={
                         "Subject": {"Data": REMINDER_SUBJECT},
@@ -664,6 +662,20 @@ def _admin_emails():
     return emails
 
 
+def _from_email():
+    """The sender identity for every outbound email (weekly reminders,
+    new-order notifications) - the admin's own address, resolved from
+    Cognito rather than a hardcoded setting, so it always matches whoever
+    actually holds the Admins-group account instead of needing to be kept
+    in sync by hand. It also has to be a verified SES identity, same as
+    before - see README.
+    """
+    emails = _admin_emails()
+    if not emails:
+        raise BadRequest("no admin account is configured to send email from")
+    return emails[0]
+
+
 def _notify_admins_of_order(order):
     """Best-effort - a notification failure (unverified sender, no admins
     found, SES outage) should never block the order itself from going through.
@@ -686,7 +698,7 @@ def _notify_admins_of_order(order):
         lines.append(f"Contact: {order.get('deliveryEmail', '')} {order.get('deliveryPhone', '')}".strip())
 
         ses.send_email(
-            Source=FROM_EMAIL,
+            Source=admin_emails[0],
             Destination={"ToAddresses": admin_emails},
             Message={
                 "Subject": {"Data": f"New order #{order['orderId']}"},

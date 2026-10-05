@@ -94,12 +94,12 @@ class MealPrepAppStack(Stack):
                 "TABLE_NAME": table_name,
                 "USER_POOL_ID": user_pool.user_pool_id,
                 "ADMINS_GROUP_NAME": ADMINS_GROUP_NAME,
-                # Must be a verified SES sender identity before any email
-                # (weekly reminders, new-order notifications) actually sends.
-                # Also the sole Admins-group member's address today, so
-                # verifying it covers SES sandbox's recipient-verification
-                # requirement too. See README.
-                "FROM_EMAIL": "gtxmeals@gmail.com",
+                # No FROM_EMAIL setting - the Lambda resolves the sender
+                # identity at send time from whoever is actually in the
+                # Admins group (see _from_email() in index.py), rather than
+                # a hardcoded address that has to be kept in sync by hand.
+                # Whatever that address is must still be verified in SES
+                # before any email actually sends - see README.
                 # Empty by default (real Lambda uses the real AWS endpoint);
                 # local-env.json overrides this for `sam local` / testing.
                 "DYNAMODB_ENDPOINT_OVERRIDE": "",

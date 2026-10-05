@@ -88,10 +88,13 @@ customer who hasn't unsubscribed, using their saved `preferredContact`
 (`email` via SES, `text` via SNS). This **will not actually deliver
 anything yet** without one-time setup in the AWS console:
 
-1. **Verify a sender identity in SES** (Console → SES → Verified identities →
-   Create identity — a single email is enough to start). Then update
-   `FROM_EMAIL` in `meal_prep_app_stack.py` (currently the placeholder
-   `orders@example.com`) to that address and redeploy.
+1. **Verify the admin's email as a sender identity in SES** (Console → SES →
+   Verified identities → Create identity, using whatever address is
+   currently in the Admins group — e.g. `gtxmeals@gmail.com`). The Lambda
+   sends from this address automatically (resolved from Cognito at send
+   time, not a hardcoded setting - see `_from_email()` in `index.py`), so
+   if the admin account's email ever changes, just verify the new address
+   in SES; no code change or redeploy needed.
 2. New accounts start in the **SES sandbox**, which only allows sending to
    *verified* recipient addresses — fine for testing with your own inbox,
    but you'll need to request production access (Console → SES → Account
