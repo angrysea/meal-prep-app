@@ -56,6 +56,8 @@
     </section>
   </main>
 
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
   <script type="module">
     import { loadConfig } from "/js/config.js";
     import { apiRequest, formatPrice } from "/js/api.js";
@@ -69,6 +71,15 @@
     const cart = {}; // selectionsKey -> { meal, selectedAddOnIds, quantity }
     let allAddOns = [];
     let loadedMeals = [];
+
+    let toastTimeout;
+    function showToast(message) {
+      const toast = document.getElementById("toast");
+      toast.textContent = message;
+      toast.classList.add("visible");
+      clearTimeout(toastTimeout);
+      toastTimeout = setTimeout(() => toast.classList.remove("visible"), 2500);
+    }
 
     function renderCart() {
       const section = document.getElementById("cart-section");
@@ -300,6 +311,7 @@
             addToCart(meal, selectedAddOnIds, note);
             cardEl.querySelectorAll(".addon-choice:checked").forEach((el) => (el.checked = false));
             noteInput.value = "";
+            showToast(`${meal.name} added to your order`);
           });
         });
       } catch (err) {

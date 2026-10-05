@@ -100,12 +100,35 @@
       });
     }
 
-    // One label per physical meal, not per aggregated row - 2 Chicken Bowls
-    // means 2 separate labels to stick on 2 separate containers.
-    function buildLabelsHtml(rows) {
+    // One label per physical meal, built straight from the orders (not the
+    // aggregated table rows) so each label can carry its own customer name -
+    // 2 Chicken Bowls for 2 different customers means 2 labels, each naming
+    // who it's for, not one row worth of identical unlabeled bowls.
+    function buildLabelsHtml(orders, mealsById) {
       const labels = [];
-      rows.forEach((row) => {
-        for (let i = 0; i < row.quantity; i++) labels.push(row);
+      orders.forEach((order) => {
+        order.items.forEach((item) => {
+          const addOnLabels = (item.selectedAddOns || []).map((a) => a.description).sort();
+          const macros = (mealsById.get(item.mealId) || {}).macros;
+          for (let i = 0; i < item.quantity; i++) {
+            labels.push({
+              name: item.name,
+              addOnLabels,
+              note: item.note || "",
+              macros,
+              customerName: order.deliveryName || "",
+            });
+          }
+        });
+      });
+      labels.sort((a, b) => {
+        const byName = a.name.localeCompare(b.name);
+        if (byName !== 0) return byName;
+        const byAddOns = a.addOnLabels.join(",").localeCompare(b.addOnLabels.join(","));
+        if (byAddOns !== 0) return byAddOns;
+        const byNote = a.note.localeCompare(b.note);
+        if (byNote !== 0) return byNote;
+        return a.customerName.localeCompare(b.customerName);
       });
       return labels
         .map((row) => {
@@ -114,6 +137,7 @@
         <div class="label">
           <img src="/assets/logo.png" alt="GTX Meals" />
           <div class="label-brand">GTX MEALS</div>
+          ${row.customerName ? `<div class="label-customer">${row.customerName}</div>` : ""}
           <div class="label-meal">${row.name}</div>
           ${macrosText ? `<div class="label-macros">${macrosText}</div>` : ""}
           ${row.addOnLabels.length ? `<div class="label-addons">${row.addOnLabels.join(", ")}</div>` : ""}
@@ -127,10 +151,10 @@
       const body = document.getElementById("prep-body");
       const select = document.getElementById("ready-date-filter");
       const printButton = document.getElementById("print-labels-button");
-      let currentRows = [];
+      let currentOrders = [];
 
       printButton.addEventListener("click", () => {
-        document.getElementById("print-labels").innerHTML = buildLabelsHtml(currentRows);
+        document.getElementById("print-labels").innerHTML = buildLabelsHtml(currentOrders, mealsById);
         window.print();
       });
 
@@ -163,14 +187,13 @@
 
       function renderForSelectedDate() {
         const filtered = orders.filter((o) => o.readyDate === select.value);
+        currentOrders = filtered;
         if (filtered.length === 0) {
-          currentRows = [];
           printButton.disabled = true;
           body.innerHTML = `<tr><td colspan="4" class="muted">No placed orders for this date.</td></tr>`;
           return;
         }
         const rows = aggregateByMeal(filtered, mealsById);
-        currentRows = rows;
         printButton.disabled = false;
         body.innerHTML = rows
           .map(

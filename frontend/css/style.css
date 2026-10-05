@@ -435,15 +435,21 @@ table.customers-table th {
   }
 
   .label img {
-    height: 0.5in;
+    height: 0.4in;
     width: auto;
-    margin-bottom: 0.04in;
+    margin-bottom: 0.03in;
   }
 
   .label-brand {
     font-family: var(--font-display);
     font-size: 11pt;
     letter-spacing: 0.04em;
+  }
+
+  .label-customer {
+    font-size: 11pt;
+    font-weight: bold;
+    margin-top: 0.06in;
   }
 
   .label-meal {
@@ -476,4 +482,26 @@ table.customers-table th {
     size: 3in 2in;
     margin: 0;
   }
+}
+
+.toast {
+  position: fixed;
+  bottom: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: var(--color-black);
+  color: #ffffff;
+  padding: 0.75rem 1.25rem;
+  border-radius: 8px;
+  font-weight: 500;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  z-index: 1000;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+.toast.visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
 }
