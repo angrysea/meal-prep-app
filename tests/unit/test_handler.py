@@ -1,5 +1,6 @@
 import json
 import os
+from datetime import date, timedelta
 
 import boto3
 import pytest
@@ -189,6 +190,45 @@ def test_update_addon_fails_for_unknown_id(table):
     assert resp["statusCode"] == 404
 
 
+def test_get_settings_defaults_to_empty_ready_date(table):
+    from backend.lambda_src import index
+
+    resp = index.handler(_event("GET", "/settings"), None)
+    assert resp["statusCode"] == 200
+    assert json.loads(resp["body"]) == {"nextReadyDate": ""}
+
+
+def test_update_settings_requires_admin(table):
+    from backend.lambda_src import index
+
+    resp = index.handler(
+        _event("PUT", "/settings", {"nextReadyDate": "2026-12-01"}, claims=CUSTOMER_CLAIMS), None
+    )
+    assert resp["statusCode"] == 403
+
+
+def test_admin_can_update_settings(table):
+    from backend.lambda_src import index
+
+    resp = index.handler(
+        _event("PUT", "/settings", {"nextReadyDate": "2026-12-01"}, claims=ADMIN_CLAIMS), None
+    )
+    assert resp["statusCode"] == 200
+    assert json.loads(resp["body"]) == {"nextReadyDate": "2026-12-01"}
+
+    get_resp = index.handler(_event("GET", "/settings"), None)
+    assert json.loads(get_resp["body"]) == {"nextReadyDate": "2026-12-01"}
+
+
+def test_update_settings_rejects_bad_date_format(table):
+    from backend.lambda_src import index
+
+    resp = index.handler(
+        _event("PUT", "/settings", {"nextReadyDate": "12/01/2026"}, claims=ADMIN_CLAIMS), None
+    )
+    assert resp["statusCode"] == 400
+
+
 def test_list_meals_is_public(table):
     from backend.lambda_src import index
 
@@ -340,6 +380,70 @@ def test_create_order_rejects_unknown_meal(table):
 
     resp = index.handler(
         _event("POST", "/orders", {"items": [{"mealId": "does-not-exist", "quantity": 1}]}, claims=CUSTOMER_CLAIMS),
+        None,
+    )
+    assert resp["statusCode"] == 400
+
+
+def test_create_order_stores_the_current_ready_date(table):
+    from backend.lambda_src import index
+
+    index.handler(_event("PUT", "/settings", {"nextReadyDate": "2026-12-25"}, claims=ADMIN_CLAIMS), None)
+    meal = _create_meal(index)
+    resp = index.handler(
+        _event("POST", "/orders", {"items": [{"mealId": meal["mealId"], "quantity": 1}]}, claims=CUSTOMER_CLAIMS),
+        None,
+    )
+    assert resp["statusCode"] == 201
+    assert json.loads(resp["body"])["readyDate"] == "2026-12-25"
+
+
+def test_create_order_allowed_when_no_ready_date_is_set(table):
+    from backend.lambda_src import index
+
+    meal = _create_meal(index)
+    resp = index.handler(
+        _event("POST", "/orders", {"items": [{"mealId": meal["mealId"], "quantity": 1}]}, claims=CUSTOMER_CLAIMS),
+        None,
+    )
+    assert resp["statusCode"] == 201
+    assert json.loads(resp["body"])["readyDate"] == ""
+
+
+def test_create_order_allowed_exactly_at_the_cutoff(table):
+    from backend.lambda_src import index
+
+    ready_date = (date.today() + timedelta(days=2)).isoformat()
+    index.handler(_event("PUT", "/settings", {"nextReadyDate": ready_date}, claims=ADMIN_CLAIMS), None)
+    meal = _create_meal(index)
+    resp = index.handler(
+        _event("POST", "/orders", {"items": [{"mealId": meal["mealId"], "quantity": 1}]}, claims=CUSTOMER_CLAIMS),
+        None,
+    )
+    assert resp["statusCode"] == 201
+
+
+def test_create_order_rejected_inside_the_cutoff(table):
+    from backend.lambda_src import index
+
+    ready_date = (date.today() + timedelta(days=1)).isoformat()
+    index.handler(_event("PUT", "/settings", {"nextReadyDate": ready_date}, claims=ADMIN_CLAIMS), None)
+    meal = _create_meal(index)
+    resp = index.handler(
+        _event("POST", "/orders", {"items": [{"mealId": meal["mealId"], "quantity": 1}]}, claims=CUSTOMER_CLAIMS),
+        None,
+    )
+    assert resp["statusCode"] == 400
+
+
+def test_create_order_rejected_after_the_ready_date_has_passed(table):
+    from backend.lambda_src import index
+
+    ready_date = (date.today() - timedelta(days=1)).isoformat()
+    index.handler(_event("PUT", "/settings", {"nextReadyDate": ready_date}, claims=ADMIN_CLAIMS), None)
+    meal = _create_meal(index)
+    resp = index.handler(
+        _event("POST", "/orders", {"items": [{"mealId": meal["mealId"], "quantity": 1}]}, claims=CUSTOMER_CLAIMS),
         None,
     )
     assert resp["statusCode"] == 400

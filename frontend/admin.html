@@ -18,6 +18,19 @@
 
     <div id="admin-content" style="display:none;">
       <section class="card form-narrow">
+        <h2>Next ready date</h2>
+        <p class="muted">
+          The next date meals will be ready for pickup. Orders placed between
+          now and then are prepped for this date; customers can't order within
+          2 days of it.
+        </p>
+        <label for="next-ready-date">Next ready date</label>
+        <input id="next-ready-date" type="date" />
+        <p class="error" id="ready-date-error" style="display:none;"></p>
+        <button id="ready-date-save-button">Save</button>
+      </section>
+
+      <section class="card form-narrow">
         <h2>Add a meal</h2>
         <label for="new-name">Name</label>
         <input id="new-name" type="text" />
@@ -92,6 +105,26 @@
     });
 
     async function initAdmin(config, token) {
+      async function refreshReadyDate() {
+        const { nextReadyDate } = await apiRequest(config.apiUrl, "/settings");
+        document.getElementById("next-ready-date").value = nextReadyDate;
+      }
+
+      document.getElementById("ready-date-save-button").addEventListener("click", async () => {
+        const errorEl = document.getElementById("ready-date-error");
+        errorEl.style.display = "none";
+        try {
+          await apiRequest(config.apiUrl, "/settings", {
+            method: "PUT",
+            token,
+            body: { nextReadyDate: document.getElementById("next-ready-date").value },
+          });
+        } catch (err) {
+          errorEl.textContent = err.message;
+          errorEl.style.display = "block";
+        }
+      });
+
       async function refreshMeals() {
         const { meals } = await apiRequest(config.apiUrl, "/meals");
         const body = document.getElementById("meals-body");
@@ -231,6 +264,7 @@
         }
       });
 
+      refreshReadyDate();
       refreshMeals();
       refreshAddOns();
     }

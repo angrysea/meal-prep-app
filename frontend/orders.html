@@ -60,6 +60,7 @@
           <div class="card order-card" data-order-id="${order.orderId}">
             <p><strong>${new Date(order.createdAt).toLocaleString()}</strong>
               &nbsp;<span class="status">${order.status}</span></p>
+            ${order.readyDate ? `<p class="muted">Ready for pickup: ${order.readyDate}</p>` : ""}
             <ul>
               ${order.items
                 .map((i) => {

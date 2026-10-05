@@ -14,10 +14,13 @@
 
   <main>
     <h1>Meals to prepare</h1>
-    <p class="muted">Total quantity needed across every order still in placed status, by meal.</p>
+    <p class="muted">Total quantity needed for the selected ready date's placed orders, by meal.</p>
     <div id="admin-guard"></div>
 
     <div id="admin-content" style="display:none;">
+      <label for="ready-date-filter">Ready date</label>
+      <select id="ready-date-filter" style="max-width:220px;"></select>
+
       <table id="prep-table">
         <thead>
           <tr><th>Meal</th><th>Add-ons</th><th>Quantity</th></tr>
@@ -74,24 +77,52 @@
 
     async function initPrepList(config, token) {
       const body = document.getElementById("prep-body");
-      const { orders } = await apiRequest(config.apiUrl, "/admin/orders?status=placed", { token });
+      const select = document.getElementById("ready-date-filter");
 
-      if (orders.length === 0) {
-        body.innerHTML = `<tr><td colspan="3" class="muted">No placed orders right now.</td></tr>`;
+      const [{ orders }, { nextReadyDate }] = await Promise.all([
+        apiRequest(config.apiUrl, "/admin/orders?status=placed", { token }),
+        apiRequest(config.apiUrl, "/settings", { token }),
+      ]);
+
+      // Orders placed before the ready date last changed may still carry an
+      // older date - offer every date actually in play, not just the current
+      // one, so none of them get missed.
+      const dates = new Set(orders.map((o) => o.readyDate).filter(Boolean));
+      if (nextReadyDate) dates.add(nextReadyDate);
+      const sortedDates = [...dates].sort();
+
+      if (sortedDates.length === 0) {
+        select.style.display = "none";
+        document.querySelector('label[for="ready-date-filter"]').style.display = "none";
+        body.innerHTML = `<tr><td colspan="3" class="muted">No ready date has been set yet - set one on the Builder page.</td></tr>`;
         return;
       }
 
-      const rows = aggregateByMeal(orders);
-      body.innerHTML = rows
-        .map(
-          (row) => `
-        <tr>
-          <td>${row.name}</td>
-          <td>${row.addOnLabels.length ? row.addOnLabels.join(", ") : "-"}</td>
-          <td>${row.quantity}</td>
-        </tr>`
-        )
+      select.innerHTML = sortedDates
+        .map((d) => `<option value="${d}" ${d === nextReadyDate ? "selected" : ""}>${d}</option>`)
         .join("");
+
+      function renderForSelectedDate() {
+        const filtered = orders.filter((o) => o.readyDate === select.value);
+        if (filtered.length === 0) {
+          body.innerHTML = `<tr><td colspan="3" class="muted">No placed orders for this date.</td></tr>`;
+          return;
+        }
+        const rows = aggregateByMeal(filtered);
+        body.innerHTML = rows
+          .map(
+            (row) => `
+          <tr>
+            <td>${row.name}</td>
+            <td>${row.addOnLabels.length ? row.addOnLabels.join(", ") : "-"}</td>
+            <td>${row.quantity}</td>
+          </tr>`
+          )
+          .join("");
+      }
+
+      select.addEventListener("change", renderForSelectedDate);
+      renderForSelectedDate();
     }
   </script>
 </body>

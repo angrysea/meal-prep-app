@@ -83,6 +83,7 @@
             </p>
             <p class="muted">${order.deliveryName} - ${order.deliveryAddress}</p>
             <p class="muted">${order.deliveryEmail}${order.deliveryPhone ? ` - ${order.deliveryPhone}` : ""}</p>
+            ${order.readyDate ? `<p class="muted">Ready for pickup: ${order.readyDate}</p>` : ""}
             <p>Total: <strong>${formatPrice(order.totalCents)}</strong></p>
             <ul>
               ${order.items

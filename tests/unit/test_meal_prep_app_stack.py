@@ -63,6 +63,8 @@ def test_api_routes_have_expected_authorization():
 
     assert routes_by_key["GET /meals"]["AuthorizationType"] == "NONE"
     assert routes_by_key["POST /meals"]["AuthorizationType"] == "JWT"
+    assert routes_by_key["GET /settings"]["AuthorizationType"] == "NONE"
+    assert routes_by_key["PUT /settings"]["AuthorizationType"] == "JWT"
     assert routes_by_key["GET /orders"]["AuthorizationType"] == "JWT"
     assert routes_by_key["POST /orders"]["AuthorizationType"] == "JWT"
     assert routes_by_key["GET /addons"]["AuthorizationType"] == "NONE"

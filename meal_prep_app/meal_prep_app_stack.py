@@ -192,6 +192,16 @@ class MealPrepAppStack(Stack):
             integration=integration, authorizer=jwt_authorizer,
         )
 
+        # Global settings (currently just the next ready date): browsing is
+        # public so the menu page can show it; only the admin can change it.
+        http_api.add_routes(
+            path="/settings", methods=[apigwv2.HttpMethod.GET], integration=integration,
+        )
+        http_api.add_routes(
+            path="/settings", methods=[apigwv2.HttpMethod.PUT], integration=integration,
+            authorizer=jwt_authorizer,
+        )
+
         # Orders: any signed-in customer, scoped to their own orders. PUT is
         # self-service cancel only (used by the "Edit" flow).
         http_api.add_routes(

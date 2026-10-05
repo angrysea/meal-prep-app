@@ -15,6 +15,7 @@
   <main>
     <h1>This Week's Menu</h1>
     <p class="muted">Pick your meals, then check out below.</p>
+    <p class="muted" id="ready-date-info" style="display:none;"></p>
     <p class="muted" id="login-prompt" style="display:none;"></p>
     <p class="muted" id="edit-notice" style="display:none;">Editing your previous order - update it below and place it again.</p>
 
@@ -206,15 +207,45 @@
       </div>`;
     }
 
-    async function loadMenu(config, loggedIn, admin) {
+    function formatReadyDate(isoDate) {
+      const [y, m, d] = isoDate.split("-").map(Number);
+      return new Date(y, m - 1, d).toLocaleDateString(undefined, {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      });
+    }
+
+    // Orders must be placed at least this many days before the ready date -
+    // mirrors the server's ORDER_CUTOFF_DAYS so the UI can head off an order
+    // that the API would reject anyway, with a clearer explanation.
+    const ORDER_CUTOFF_DAYS = 2;
+
+    function isOrderingClosed(nextReadyDate) {
+      if (!nextReadyDate) return false;
+      const [y, m, d] = nextReadyDate.split("-").map(Number);
+      const cutoff = new Date(y, m - 1, d);
+      cutoff.setDate(cutoff.getDate() - ORDER_CUTOFF_DAYS);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      return today > cutoff;
+    }
+
+    async function loadMenu(config, loggedIn, admin, nextReadyDate) {
       const container = document.getElementById("meals");
       const loginPrompt = document.getElementById("login-prompt");
-      const interactive = loggedIn && !admin;
+      const orderingClosed = !admin && isOrderingClosed(nextReadyDate);
+      const interactive = loggedIn && !admin && !orderingClosed;
 
       if (admin) {
         loginPrompt.style.display = "block";
         loginPrompt.textContent =
           "Viewing as admin - read-only. This is just to check the menu looks right; orders are placed by customer accounts.";
+      } else if (orderingClosed) {
+        loginPrompt.style.display = "block";
+        loginPrompt.textContent =
+          `Ordering is closed for the ${formatReadyDate(nextReadyDate)} ready date - check back soon for the next one.`;
       } else {
         loginPrompt.style.display = loggedIn ? "none" : "block";
         loginPrompt.innerHTML = loggedIn
@@ -325,8 +356,16 @@
     loadConfig().then(async (config) => {
       const session = await getValidSession({ region: config.region, clientId: config.userPoolClientId });
       const admin = isAdmin(session);
+      const { nextReadyDate } = await apiRequest(config.apiUrl, "/settings").catch(() => ({ nextReadyDate: "" }));
+
+      const readyInfo = document.getElementById("ready-date-info");
+      if (nextReadyDate) {
+        readyInfo.style.display = "block";
+        readyInfo.textContent = `Next ready date: ${formatReadyDate(nextReadyDate)}`;
+      }
+
       await Promise.all([
-        loadMenu(config, !!session, admin),
+        loadMenu(config, !!session, admin, nextReadyDate),
         admin ? Promise.resolve() : prefillFromProfile(config, session),
       ]);
       if (!admin) {

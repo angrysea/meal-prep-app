@@ -2,7 +2,7 @@ import base64
 import json
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 import boto3
@@ -28,6 +28,15 @@ MACRO_FIELDS = ("calories", "proteinG", "carbsG", "fatG")
 CONTACT_METHODS = ("email", "text")
 ORDER_STATUSES = ("placed", "cancelled", "prepared", "delivered")
 
+# A single global value: the next date meals will be ready for pickup. Stored
+# as one DynamoDB item rather than per-meal/per-order, since it's set once by
+# the admin on the Builder page and every order placed before it changes again
+# is prepped for that same date.
+SETTINGS_KEY = {"PK": "SETTINGS", "SK": "GLOBAL"}
+# Customers can't place an order within this many days of the ready date -
+# the kitchen needs lead time to shop/prep.
+ORDER_CUTOFF_DAYS = 2
+
 
 def handler(event, context):
     method = event.get("requestContext", {}).get("http", {}).get("method", "GET")
@@ -43,6 +52,10 @@ def handler(event, context):
             return update_meal(event, path_params["mealId"])
         if path.startswith("/meals/") and method == "DELETE":
             return delete_meal(event, path_params["mealId"])
+        if path == "/settings" and method == "GET":
+            return get_settings()
+        if path == "/settings" and method == "PUT":
+            return update_settings(event)
         if path == "/addons" and method == "GET":
             return list_addons()
         if path == "/addons" and method == "POST":
@@ -81,6 +94,30 @@ def handler(event, context):
         return _response(400, {"message": f"missing required field: {e}"})
 
     return _response(404, {"message": f"no route for {method} {path}"})
+
+
+# ---------- global settings ----------
+# Just the next ready date today, but kept as its own small item/route rather
+# than folded into meals, since it's a business-wide value with its own
+# lifecycle (admin sets it on the Builder page, every order placed before it
+# next changes is prepped for that date).
+
+def get_settings():
+    item = table.get_item(Key=SETTINGS_KEY).get("Item") or {}
+    return _response(200, {"nextReadyDate": item.get("nextReadyDate", "")})
+
+
+def update_settings(event):
+    _require_admin(event)
+    body = _body(event)
+    next_ready_date = body.get("nextReadyDate", "")
+    if next_ready_date:
+        try:
+            datetime.strptime(next_ready_date, "%Y-%m-%d")
+        except ValueError:
+            raise BadRequest("nextReadyDate must be in YYYY-MM-DD format")
+    table.put_item(Item={**SETTINGS_KEY, "nextReadyDate": next_ready_date})
+    return _response(200, {"nextReadyDate": next_ready_date})
 
 
 # ---------- menu ----------
@@ -481,6 +518,16 @@ def create_order(event):
     if not requested_items:
         return _response(400, {"message": "order must include at least one item"})
 
+    ready_date_str = (table.get_item(Key=SETTINGS_KEY).get("Item") or {}).get("nextReadyDate", "")
+    if ready_date_str:
+        ready_date = datetime.strptime(ready_date_str, "%Y-%m-%d").date()
+        days_out = (ready_date - date.today()).days
+        if days_out < ORDER_CUTOFF_DAYS:
+            raise BadRequest(
+                f"Ordering is closed for the {ready_date_str} ready date - orders must be "
+                f"placed at least {ORDER_CUTOFF_DAYS} days ahead."
+            )
+
     # Prices (and add-ons) are recomputed from the current menu/add-on list,
     # never trusted from the client.
     line_items = []
@@ -517,6 +564,7 @@ def create_order(event):
         "deliveryEmail": body.get("deliveryEmail", ""),
         "deliveryPhone": body.get("deliveryPhone", ""),
         "deliveryAddress": body.get("deliveryAddress", ""),
+        "readyDate": ready_date_str,
         "status": "placed",  # stub checkout - no real payment is taken
     }
     table.put_item(Item=item)
@@ -676,6 +724,7 @@ def _order_out(item):
         "deliveryEmail": item.get("deliveryEmail", ""),
         "deliveryPhone": item.get("deliveryPhone", ""),
         "deliveryAddress": item.get("deliveryAddress", ""),
+        "readyDate": item.get("readyDate", ""),
         "status": item.get("status", "placed"),
     }
 
