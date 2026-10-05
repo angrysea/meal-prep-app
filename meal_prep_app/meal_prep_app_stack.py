@@ -3,6 +3,7 @@ from aws_cdk import (
     Duration,
     RemovalPolicy,
     CfnOutput,
+    Fn,
     aws_dynamodb as dynamodb,
     aws_lambda as lambda_,
     aws_apigatewayv2 as apigwv2,
@@ -14,6 +15,7 @@ from aws_cdk import (
     aws_cloudfront as cloudfront,
     aws_cloudfront_origins as origins,
     aws_s3_deployment as s3_deployment,
+    aws_route53 as route53,
 )
 from constructs import Construct
 
@@ -22,8 +24,27 @@ ADMINS_GROUP_NAME = "Admins"
 
 class MealPrepAppStack(Stack):
 
-    def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
+    def __init__(self, scope: Construct, construct_id: str, *, domain_name: str | None = None, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
+
+        # ---------- Custom domain (optional) ----------
+        # Route 53 is global, not Region-pinned, so the hosted zone deploys
+        # fine from this (us-east-2) stack. Only the ACM certificate actually
+        # needs us-east-1 for CloudFront - and this account's org-level SCP
+        # blocks CloudFormation entirely in us-east-1, so that certificate is
+        # requested and DNS-validated outside CDK (see scripts/) and imported
+        # here by ARN once issued, rather than managed as a CDK resource.
+        hosted_zone = None
+        if domain_name:
+            hosted_zone = route53.PublicHostedZone(
+                self, "HostedZone",
+                zone_name=domain_name,
+            )
+            CfnOutput(
+                self, "NameServers",
+                value=Fn.join(", ", hosted_zone.hosted_zone_name_servers),
+                description=f"Set these as {domain_name}'s nameservers at your registrar",
+            )
 
         # ---------- DynamoDB ----------
         table_name = "MealPrepTable"
