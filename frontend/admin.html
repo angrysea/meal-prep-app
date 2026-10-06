@@ -69,7 +69,7 @@
       <h2>Current menu</h2>
       <table id="meals-table">
         <thead>
-          <tr><th>Name</th><th>Price</th><th>Available</th><th></th></tr>
+          <tr><th></th><th>Name</th><th>Price</th><th>Macros</th><th>Available</th><th></th></tr>
         </thead>
         <tbody id="meals-body"></tbody>
       </table>
@@ -103,6 +103,34 @@
         <tbody id="addons-body"></tbody>
       </table>
     </div>
+
+    <dialog id="meal-edit-dialog">
+      <h2>Edit meal</h2>
+      <label for="edit-meal-name">Name</label>
+      <input id="edit-meal-name" type="text" />
+
+      <label for="edit-meal-description">Description</label>
+      <input id="edit-meal-description" type="text" />
+
+      <label for="edit-meal-price">Base price (USD)</label>
+      <input id="edit-meal-price" type="number" step="0.01" min="0" />
+
+      <h3>Macros</h3>
+      <label for="edit-meal-calories">Calories</label>
+      <input id="edit-meal-calories" type="number" min="0" />
+      <label for="edit-meal-protein">Protein (g)</label>
+      <input id="edit-meal-protein" type="number" min="0" />
+      <label for="edit-meal-carbs">Carbs (g)</label>
+      <input id="edit-meal-carbs" type="number" min="0" />
+      <label for="edit-meal-fat">Fat (g)</label>
+      <input id="edit-meal-fat" type="number" min="0" />
+
+      <p class="error" id="meal-edit-error" style="display:none;"></p>
+      <div style="display:flex; gap:0.5rem; margin-top:1rem;">
+        <button type="button" id="meal-edit-save-button">Save</button>
+        <button type="button" class="secondary" id="meal-edit-cancel-button">Cancel</button>
+      </div>
+    </dialog>
 
     <dialog id="addon-edit-dialog">
       <h2>Edit add-on</h2>
@@ -156,6 +184,7 @@
 
     async function initAdmin(config, token) {
       let editingAddOnId = null;
+      let editingMealId = null;
 
       async function refreshReadyDate() {
         const { nextReadyDate, smsEnabled } = await apiRequest(config.apiUrl, "/settings");
@@ -200,8 +229,10 @@
           .map(
             (meal) => `
           <tr data-meal-id="${meal.mealId}">
+            <td><button class="secondary edit-meal">Edit</button></td>
             <td>${meal.name}</td>
             <td>${formatPrice(meal.priceCents)}</td>
+            <td>${formatMacros(meal.macros) || "-"}</td>
             <td>${meal.available ? "Yes" : "No"}</td>
             <td>
               <button class="secondary toggle-available">${meal.available ? "Hide" : "Show"}</button>
@@ -210,6 +241,13 @@
           </tr>`
           )
           .join("");
+
+        body.querySelectorAll(".edit-meal").forEach((btn) => {
+          btn.addEventListener("click", (e) => {
+            const mealId = e.target.closest("tr").dataset.mealId;
+            openMealEditDialog(meals.find((m) => m.mealId === mealId));
+          });
+        });
 
         body.querySelectorAll(".toggle-available").forEach((btn) => {
           btn.addEventListener("click", async (e) => {
@@ -284,6 +322,51 @@
           });
         });
       }
+
+      function openMealEditDialog(meal) {
+        editingMealId = meal.mealId;
+        document.getElementById("edit-meal-name").value = meal.name;
+        document.getElementById("edit-meal-description").value = meal.description || "";
+        document.getElementById("edit-meal-price").value = (meal.priceCents / 100).toFixed(2);
+        document.getElementById("edit-meal-calories").value = meal.macros.calories || "";
+        document.getElementById("edit-meal-protein").value = meal.macros.proteinG || "";
+        document.getElementById("edit-meal-carbs").value = meal.macros.carbsG || "";
+        document.getElementById("edit-meal-fat").value = meal.macros.fatG || "";
+        document.getElementById("meal-edit-error").style.display = "none";
+        document.getElementById("meal-edit-dialog").showModal();
+      }
+
+      document.getElementById("meal-edit-cancel-button").addEventListener("click", () => {
+        document.getElementById("meal-edit-dialog").close();
+      });
+
+      document.getElementById("meal-edit-save-button").addEventListener("click", async () => {
+        const errorEl = document.getElementById("meal-edit-error");
+        errorEl.style.display = "none";
+        try {
+          const priceCents = Math.round(parseFloat(document.getElementById("edit-meal-price").value) * 100);
+          await apiRequest(config.apiUrl, `/meals/${editingMealId}`, {
+            method: "PUT",
+            token,
+            body: {
+              name: document.getElementById("edit-meal-name").value,
+              description: document.getElementById("edit-meal-description").value,
+              priceCents,
+              macros: {
+                calories: parseInt(document.getElementById("edit-meal-calories").value, 10) || 0,
+                proteinG: parseInt(document.getElementById("edit-meal-protein").value, 10) || 0,
+                carbsG: parseInt(document.getElementById("edit-meal-carbs").value, 10) || 0,
+                fatG: parseInt(document.getElementById("edit-meal-fat").value, 10) || 0,
+              },
+            },
+          });
+          document.getElementById("meal-edit-dialog").close();
+          refreshMeals();
+        } catch (err) {
+          errorEl.textContent = err.message;
+          errorEl.style.display = "block";
+        }
+      });
 
       function openAddOnEditDialog(addOn) {
         editingAddOnId = addOn.addOnId;
