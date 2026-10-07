@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Monthly Menu - GTX Meals</title>
+  <link rel="icon" href="data:," />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Permanent+Marker&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <header id="nav"></header>
+
+  <main>
+    <h1>Monthly menu</h1>
+    <p class="muted">
+      Generates a flyer of staple meals plus each ready date's rotating meals for the month you pick.
+    </p>
+    <div id="admin-guard"></div>
+
+    <div id="admin-content" style="display:none;">
+      <label for="menu-month">Month</label>
+      <input id="menu-month" type="month" style="max-width:220px;" />
+      <div style="display:flex; gap:0.5rem; margin-top:0.5rem;">
+        <button type="button" id="generate-button">Generate</button>
+        <button type="button" class="secondary" id="print-menu-button" style="display:none;">Print</button>
+      </div>
+
+      <div id="menu-output"></div>
+    </div>
+  </main>
+
+  <!-- Only shown (via @media print in style.css) when printing - mirrors
+       #menu-output's content so printing doesn't depend on the admin page
+       chrome (nav, month picker, buttons) being hidden piecemeal. -->
+  <div id="print-monthly-menu"></div>
+
+  <script type="module">
+    import { loadConfig } from "/js/config.js";
+    import { apiRequest } from "/js/api.js";
+    import { getValidSession, isAdmin } from "/js/cognito.js";
+    import { renderNav } from "/js/nav.js";
+    import { loginUrlWithReturnTo } from "/js/redirect.js";
+    import { formatMacros } from "/js/pricing.js";
+
+    renderNav();
+
+    const MONTH_NAMES = [
+      "January", "February", "March", "April", "May", "June",
+      "July", "August", "September", "October", "November", "December",
+    ];
+
+    // 5 -> "5th", 1 -> "1st", 12 -> "12th", 23 -> "23rd" - the day-of-month
+    // suffix style used on the physical flyer ("October 5th").
+    function ordinal(day) {
+      const j = day % 10;
+      const k = day % 100;
+      if (j === 1 && k !== 11) return `${day}st`;
+      if (j === 2 && k !== 12) return `${day}nd`;
+      if (j === 3 && k !== 13) return `${day}rd`;
+      return `${day}th`;
+    }
+
+    function formatDateHeading(isoDate) {
+      const [, month, day] = isoDate.split("-").map(Number);
+      return `${MONTH_NAMES[month - 1]} ${ordinal(day)}`;
+    }
+
+    function mealHtml(meal) {
+      const macrosText = formatMacros(meal.macros);
+      return `
+        <div class="menu-item">
+          <h4 class="menu-item-name">${meal.name}</h4>
+          <p class="menu-item-description">${meal.description || ""}</p>
+          ${macrosText ? `<p class="menu-item-macros">${macrosText}</p>` : ""}
+        </div>`;
+    }
+
+    // Staples always show; a rotating meal shows only when its own weekOf
+    // falls in the picked month - same membership rule the customer menu
+    // uses day-of, just evaluated against a whole month here instead of a
+    // single ready date.
+    function buildMenuHtml(meals, monthValue) {
+      const [year, month] = monthValue.split("-").map(Number);
+      const monthName = MONTH_NAMES[month - 1];
+
+      const staples = meals.filter((m) => m.available && m.staple);
+      const rotating = meals.filter((m) => m.available && !m.staple && m.weekOf && m.weekOf.startsWith(monthValue));
+
+      const byDate = new Map();
+      rotating.forEach((m) => {
+        if (!byDate.has(m.weekOf)) byDate.set(m.weekOf, []);
+        byDate.get(m.weekOf).push(m);
+      });
+      const sortedDates = [...byDate.keys()].sort();
+
+      if (staples.length === 0 && sortedDates.length === 0) {
+        return `<p class="muted">No staple meals, and no rotating meals scheduled for ${monthName} ${year}.</p>`;
+      }
+
+      const staplesHtml = staples.length
+        ? `
+        <h2>Staple meals</h2>
+        <p class="menu-subheading">Available weekly for the month of ${monthName}</p>
+        ${staples.map(mealHtml).join("")}`
+        : "";
+
+      const rotatingHtml = sortedDates.length
+        ? `
+        <h2>Rotating meals</h2>
+        ${sortedDates
+          .map(
+            (isoDate) => `
+          <h3 class="menu-date">${formatDateHeading(isoDate)}</h3>
+          ${byDate.get(isoDate).map(mealHtml).join("")}`
+          )
+          .join("")}`
+        : "";
+
+      return `<div class="monthly-menu"><div class="monthly-menu-title">${monthName} ${year}</div>${staplesHtml}${rotatingHtml}</div>`;
+    }
+
+    loadConfig().then(async (config) => {
+      const session = await getValidSession({ region: config.region, clientId: config.userPoolClientId });
+      const guard = document.getElementById("admin-guard");
+
+      if (!session) {
+        guard.innerHTML = `<p class="error">You need to <a href="${loginUrlWithReturnTo()}">log in</a> as an admin to view this page.</p>`;
+      } else if (!isAdmin(session)) {
+        guard.innerHTML = `<p class="error">Your account doesn't have admin access.</p>`;
+      } else {
+        document.getElementById("admin-content").style.display = "block";
+        initMonthlyMenu(config);
+      }
+    });
+
+    function initMonthlyMenu(config) {
+      const monthInput = document.getElementById("menu-month");
+      const generateButton = document.getElementById("generate-button");
+      const printButton = document.getElementById("print-menu-button");
+      const output = document.getElementById("menu-output");
+      const printOutput = document.getElementById("print-monthly-menu");
+
+      const now = new Date();
+      monthInput.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+      generateButton.addEventListener("click", async () => {
+        if (!monthInput.value) return;
+        const { meals } = await apiRequest(config.apiUrl, "/meals");
+        const html = buildMenuHtml(meals, monthInput.value);
+        output.innerHTML = html;
+        printOutput.innerHTML = html;
+        printButton.style.display = "inline-block";
+      });
+
+      printButton.addEventListener("click", () => {
+        window.print();
+      });
+    }
+  </script>
+</body>
+</html>

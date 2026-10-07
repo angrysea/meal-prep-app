@@ -424,13 +424,112 @@ table.customers-table th {
   display: none;
 }
 
+/* Monthly menu flyer: on-screen preview styling lives outside @media print
+   (admin views it live before printing); #print-monthly-menu mirrors the
+   same generated HTML and is only shown when actually printing. */
+#print-monthly-menu {
+  display: none;
+}
+
+.monthly-menu {
+  max-width: 640px;
+  margin-top: 1.5rem;
+}
+
+.monthly-menu-title {
+  font-family: var(--font-display);
+  font-size: 1.8rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--color-primary);
+  margin-bottom: 0.5rem;
+}
+
+.menu-subheading {
+  font-style: italic;
+  color: var(--color-muted);
+  margin: 0 0 0.75rem;
+}
+
+.menu-date {
+  font-family: var(--font-display);
+  color: var(--color-primary-dark);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  font-size: 1rem;
+  margin: 1.25rem 0 0.25rem;
+}
+
+.menu-item {
+  margin-bottom: 0.9rem;
+}
+
+.menu-item-name {
+  margin: 0 0 0.15rem;
+  font-size: 1rem;
+}
+
+.menu-item-description {
+  margin: 0 0 0.25rem;
+  color: var(--color-muted);
+  font-size: 0.9rem;
+}
+
+.menu-item-macros {
+  margin: 0;
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
 @media print {
-  body > *:not(#print-labels) {
+  body > *:not(#print-labels):not(#print-monthly-menu) {
     display: none !important;
   }
 
   #print-labels {
     display: block;
+  }
+
+  #print-monthly-menu {
+    display: block;
+  }
+
+  #print-monthly-menu .monthly-menu-title {
+    font-size: 22pt;
+  }
+
+  #print-monthly-menu h2 {
+    font-family: var(--font-display);
+    color: var(--color-primary);
+    font-size: 14pt;
+    text-transform: uppercase;
+    margin: 0.3in 0 0.05in;
+  }
+
+  #print-monthly-menu .menu-subheading {
+    font-size: 10pt;
+    margin: 0 0 0.15in;
+  }
+
+  #print-monthly-menu .menu-date {
+    font-size: 12pt;
+    margin: 0.2in 0 0.05in;
+  }
+
+  #print-monthly-menu .menu-item {
+    margin-bottom: 0.12in;
+  }
+
+  #print-monthly-menu .menu-item-name {
+    font-size: 11pt;
+  }
+
+  #print-monthly-menu .menu-item-description {
+    font-size: 9pt;
+  }
+
+  #print-monthly-menu .menu-item-macros {
+    font-size: 8.5pt;
   }
 
   .label-sheet {

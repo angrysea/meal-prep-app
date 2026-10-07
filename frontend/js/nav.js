@@ -18,6 +18,7 @@ export function renderNav(targetId = "nav") {
     links.push(`<a href="/admin.html">Builder</a>`);
     links.push(`<a href="/admin-orders.html">Orders</a>`);
     links.push(`<a href="/admin-prep.html">Prep List</a>`);
+    links.push(`<a href="/admin-monthly-menu.html">Monthly Menu</a>`);
     links.push(`<a href="/customers.html">Customers</a>`);
     links.push(`<a href="#" id="nav-logout">Log out</a>`);
   } else if (session) {
