@@ -266,6 +266,13 @@ button.secondary {
   border: 1px solid var(--color-primary-dark);
 }
 
+/* Hide/Show and Delete sit side by side in the same table row - fix their
+   width so the shorter label ("Hide"/"Show") doesn't render narrower than
+   "Delete" next to it. */
+.table-action {
+  min-width: 5.5rem;
+}
+
 input, textarea {
   width: 100%;
   padding: 0.5rem 0.6rem;

@@ -250,8 +250,8 @@
             <td>${meal.staple ? "Always" : meal.weekOf || "-"}</td>
             <td>${meal.available ? "Yes" : "No"}</td>
             <td>
-              <button class="secondary toggle-available">${meal.available ? "Hide" : "Show"}</button>
-              <button class="secondary delete-meal">Delete</button>
+              <button class="secondary table-action toggle-available">${meal.available ? "Hide" : "Show"}</button>
+              <button class="secondary table-action delete-meal">Delete</button>
             </td>
           </tr>`
           )
@@ -301,8 +301,8 @@
             <td>${formatMacros(addOn.macros) || "-"}</td>
             <td>${addOn.available ? "Yes" : "No"}</td>
             <td>
-              <button class="secondary toggle-addon-available">${addOn.available ? "Hide" : "Show"}</button>
-              <button class="secondary delete-addon">Delete</button>
+              <button class="secondary table-action toggle-addon-available">${addOn.available ? "Hide" : "Show"}</button>
+              <button class="secondary table-action delete-addon">Delete</button>
             </td>
           </tr>`
           )
