@@ -64,13 +64,18 @@
     import { getValidSession, isAdmin } from "/js/cognito.js";
     import { renderNav } from "/js/nav.js";
     import { loginUrlWithReturnTo } from "/js/redirect.js";
-    import { computeUnitPriceCents, selectionsKey, formatMacros } from "/js/pricing.js";
+    import { computeUnitPriceCents, selectionsKey, formatMacros, formatPhone } from "/js/pricing.js";
 
     renderNav();
 
     const cart = {}; // selectionsKey -> { meal, selectedAddOnIds, quantity }
     let allAddOns = [];
     let loadedMeals = [];
+
+    const deliveryPhoneInput = document.getElementById("delivery-phone");
+    deliveryPhoneInput.addEventListener("input", () => {
+      deliveryPhoneInput.value = formatPhone(deliveryPhoneInput.value);
+    });
 
     let toastTimeout;
     function showToast(message) {
@@ -187,7 +192,7 @@
       const delivery = data.delivery || {};
       if (delivery.name) document.getElementById("delivery-name").value = delivery.name;
       if (delivery.email) document.getElementById("delivery-email").value = delivery.email;
-      if (delivery.phone) document.getElementById("delivery-phone").value = delivery.phone;
+      if (delivery.phone) document.getElementById("delivery-phone").value = formatPhone(delivery.phone);
       if (delivery.address) document.getElementById("delivery-address").value = delivery.address;
 
       document.getElementById("edit-notice").style.display = "block";
@@ -327,7 +332,7 @@
         const profile = await apiRequest(config.apiUrl, "/profile", { token: session.idToken });
         document.getElementById("delivery-name").value = profile.name || "";
         document.getElementById("delivery-email").value = profile.email || "";
-        document.getElementById("delivery-phone").value = profile.phone || "";
+        document.getElementById("delivery-phone").value = formatPhone(profile.phone || "");
         document.getElementById("delivery-address").value = profile.address || "";
         if (profile.name || profile.address) {
           document.getElementById("profile-hint").style.display = "block";

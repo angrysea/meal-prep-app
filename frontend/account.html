@@ -48,6 +48,7 @@
     import { getValidSession } from "/js/cognito.js";
     import { renderNav } from "/js/nav.js";
     import { loginUrlWithReturnTo } from "/js/redirect.js";
+    import { formatPhone } from "/js/pricing.js";
 
     renderNav();
 
@@ -62,16 +63,6 @@
       const errorEl = document.getElementById("account-error");
       const savedEl = document.getElementById("account-saved");
       const phoneInput = document.getElementById("account-phone");
-
-      // (555) 555-5555 as the user types - formats on every keystroke from
-      // the raw digits typed so far, dropping anything past 10 digits.
-      function formatPhone(value) {
-        const digits = value.replace(/\D/g, "").slice(0, 10);
-        if (digits.length > 6) return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
-        if (digits.length > 3) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
-        if (digits.length > 0) return `(${digits}`;
-        return "";
-      }
 
       phoneInput.addEventListener("input", () => {
         phoneInput.value = formatPhone(phoneInput.value);

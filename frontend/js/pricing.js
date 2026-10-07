@@ -30,6 +30,17 @@ export function formatMacros(macros) {
   return parts.join(" &middot; ");
 }
 
+// (555) 555-5555 as the user types - formats from the raw digits typed so
+// far, dropping anything past 10 digits. Shared so every phone input in the
+// app (account, checkout) masks the same way.
+export function formatPhone(value) {
+  const digits = value.replace(/\D/g, "").slice(0, 10);
+  if (digits.length > 6) return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+  if (digits.length > 3) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+  if (digits.length > 0) return `(${digits}`;
+  return "";
+}
+
 // A stable string key so "Bowl + Large" and "Bowl (no add-ons)" are distinct
 // cart lines, but re-selecting the same add-ons (and note) collapses onto
 // one line. Note is part of the key too, so "Bowl, hold the cheese" and a
