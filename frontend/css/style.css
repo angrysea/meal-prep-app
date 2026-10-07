@@ -409,9 +409,10 @@ table.customers-table th {
   white-space: nowrap;
 }
 
-/* Meal-prep labels: hidden on screen, only shown (and sized for a 2"x2"
-   thermal label roll - a common size on small label-only printers like
-   Dymo/Rollo/MUNBYN) when actually printing. One label per physical meal. */
+/* Meal-prep labels: hidden on screen, only shown (laid out to match
+   SpartanIndustrial's R011 sheet - 3"x2" rectangle labels, 2 columns x 5
+   rows, 10 per standard letter sheet) when actually printing. One label
+   per physical meal, chunked into 10-label sheets by buildLabelsHtml(). */
 #print-labels {
   display: none;
 }
@@ -425,6 +426,21 @@ table.customers-table th {
     display: block;
   }
 
+  .label-sheet {
+    display: grid;
+    grid-template-columns: 3in 3in;
+    grid-auto-rows: 2in;
+    column-gap: 0.25in;
+    row-gap: 0;
+    page-break-after: always;
+    break-after: page;
+  }
+
+  .label-sheet:last-child {
+    page-break-after: auto;
+    break-after: auto;
+  }
+
   .label {
     width: 3in;
     height: 2in;
@@ -433,8 +449,6 @@ table.customers-table th {
     display: flex;
     flex-direction: column;
     text-align: left;
-    page-break-after: always;
-    break-after: page;
   }
 
   .label-header {
@@ -503,8 +517,8 @@ table.customers-table th {
   }
 
   @page {
-    size: 3in 2in;
-    margin: 0;
+    size: letter;
+    margin: 0.5in 1.125in;
   }
 }
 

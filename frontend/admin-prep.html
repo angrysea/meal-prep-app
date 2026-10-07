@@ -162,9 +162,8 @@
         if (byNote !== 0) return byNote;
         return a.customerName.localeCompare(b.customerName);
       });
-      return labels
-        .map(
-          (row) => `
+      const labelsHtml = labels.map(
+        (row) => `
         <div class="label">
           <div class="label-header">
             <div class="label-title">
@@ -180,7 +179,19 @@
           ${row.addOns.map(addOnLineHtml).join("")}
           ${row.note ? `<div class="label-note">Note: ${row.note}</div>` : ""}
         </div>`
-        )
+      );
+
+      // SpartanIndustrial R011 sheets hold 10 labels (2 columns x 5 rows) -
+      // chunk into one <div class="label-sheet"> per physical sheet, each
+      // starting a new printed page, instead of relying on CSS grid to
+      // paginate on its own (unreliable across browsers when printing).
+      const LABELS_PER_SHEET = 10;
+      const sheets = [];
+      for (let i = 0; i < labelsHtml.length; i += LABELS_PER_SHEET) {
+        sheets.push(labelsHtml.slice(i, i + LABELS_PER_SHEET));
+      }
+      return sheets
+        .map((sheetLabels) => `<div class="label-sheet">${sheetLabels.join("")}</div>`)
         .join("");
     }
 
