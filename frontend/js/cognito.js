@@ -143,7 +143,15 @@ function decodeIdToken(idToken) {
 
 export function isAdmin(session) {
   if (!session) return false;
-  const claims = decodeIdToken(session.idToken);
-  const groups = claims["cognito:groups"] || "";
-  return String(groups).includes("Admins");
+  // Called unconditionally on every page via renderNav(), before any other
+  // page script runs - a malformed/stale stored session (an old schema, a
+  // corrupted token) must not throw here, or it silently kills the entire
+  // page script before it ever gets to the real content.
+  try {
+    const claims = decodeIdToken(session.idToken);
+    const groups = claims["cognito:groups"] || "";
+    return String(groups).includes("Admins");
+  } catch {
+    return false;
+  }
 }
