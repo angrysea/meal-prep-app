@@ -15,7 +15,8 @@
   <main>
     <h1>Monthly menu</h1>
     <p class="muted">
-      Generates a flyer of staple meals plus each ready date's rotating meals for the month you pick.
+      Generates a flyer of staple meals plus each ready date's rotating meals for the month you pick, then emails
+      it to every subscribed customer.
     </p>
     <div id="admin-guard"></div>
 
@@ -24,17 +25,30 @@
       <input id="menu-month" type="month" style="max-width:220px;" />
       <div style="display:flex; gap:0.5rem; margin-top:0.5rem;">
         <button type="button" id="generate-button">Generate</button>
-        <button type="button" class="secondary" id="print-menu-button" style="display:none;">Print</button>
+        <button type="button" class="secondary" id="email-menu-button" style="display:none;">Email menu to customers</button>
       </div>
+
+      <p class="error" id="email-error" style="display:none;"></p>
+      <p class="muted" id="email-status" style="display:none;"></p>
 
       <div id="menu-output"></div>
     </div>
   </main>
 
-  <!-- Only shown (via @media print in style.css) when printing - mirrors
-       #menu-output's content so printing doesn't depend on the admin page
-       chrome (nav, month picker, buttons) being hidden piecemeal. -->
-  <div id="print-monthly-menu"></div>
+  <dialog id="email-preview-dialog" style="max-width:700px; width:90%;">
+    <h2>Preview email</h2>
+    <p id="email-preview-subject" style="font-weight:bold;"></p>
+    <p class="muted" id="email-preview-recipients"></p>
+    <iframe
+      id="email-preview-frame"
+      title="Email preview"
+      style="width:100%; height:420px; border:1px solid var(--color-border); border-radius:8px;"
+    ></iframe>
+    <div style="display:flex; gap:0.5rem; margin-top:1rem;">
+      <button type="button" id="email-send-button">Send</button>
+      <button type="button" class="secondary" id="email-cancel-button">Cancel</button>
+    </div>
+  </dialog>
 
   <script type="module">
     import { loadConfig } from "/js/config.js";
@@ -80,11 +94,9 @@
     // Staples always show; a rotating meal shows only when its own weekOf
     // falls in the picked month - same membership rule the customer menu
     // uses day-of, just evaluated against a whole month here instead of a
-    // single ready date.
-    function buildMenuHtml(meals, monthValue) {
-      const [year, month] = monthValue.split("-").map(Number);
-      const monthName = MONTH_NAMES[month - 1];
-
+    // single ready date. Returns {} when there's nothing to show so both
+    // the on-screen preview and the email builder share one source of truth.
+    function groupMealsForMonth(meals, monthValue) {
       const staples = meals.filter((m) => m.available && m.staple);
       const rotating = meals.filter((m) => m.available && !m.staple && m.weekOf && m.weekOf.startsWith(monthValue));
 
@@ -94,6 +106,14 @@
         byDate.get(m.weekOf).push(m);
       });
       const sortedDates = [...byDate.keys()].sort();
+
+      return { staples, byDate, sortedDates };
+    }
+
+    function buildMenuHtml(meals, monthValue) {
+      const [year, month] = monthValue.split("-").map(Number);
+      const monthName = MONTH_NAMES[month - 1];
+      const { staples, byDate, sortedDates } = groupMealsForMonth(meals, monthValue);
 
       if (staples.length === 0 && sortedDates.length === 0) {
         return `<p class="muted">No staple meals, and no rotating meals scheduled for ${monthName} ${year}.</p>`;
@@ -121,6 +141,55 @@
       return `<div class="monthly-menu"><div class="monthly-menu-title">${monthName} ${year}</div>${staplesHtml}${rotatingHtml}</div>`;
     }
 
+    // Email clients generally strip <link>/external stylesheets and many
+    // strip <style> blocks too, so this is a separate, self-contained
+    // builder with every style inline - it can't share markup with the
+    // on-screen preview above, which depends on /css/style.css and the
+    // site's Google Fonts link.
+    function emailMealHtml(meal) {
+      const macrosText = formatMacros(meal.macros);
+      return `
+        <div style="margin-bottom:14px;">
+          <div style="font-weight:bold; font-size:15px; margin-bottom:2px;">${meal.name}</div>
+          <div style="color:#666666; font-size:13px; margin-bottom:4px;">${meal.description || ""}</div>
+          ${macrosText ? `<div style="font-weight:bold; font-size:12px;">${macrosText}</div>` : ""}
+        </div>`;
+    }
+
+    function buildMenuEmailHtml(meals, monthValue) {
+      const [year, month] = monthValue.split("-").map(Number);
+      const monthName = MONTH_NAMES[month - 1];
+      const { staples, byDate, sortedDates } = groupMealsForMonth(meals, monthValue);
+
+      const staplesHtml = staples.length
+        ? `
+        <h2 style="font-size:18px; text-transform:uppercase; color:#d20d0d; margin:24px 0 2px;">Staple meals</h2>
+        <p style="font-style:italic; color:#666666; margin:0 0 12px;">Available weekly for the month of ${monthName}</p>
+        ${staples.map(emailMealHtml).join("")}`
+        : "";
+
+      const rotatingHtml = sortedDates.length
+        ? `
+        <h2 style="font-size:18px; text-transform:uppercase; color:#d20d0d; margin:24px 0 2px;">Rotating meals</h2>
+        ${sortedDates
+          .map(
+            (isoDate) => `
+          <h3 style="font-size:15px; text-transform:uppercase; color:#aa0e0c; margin:16px 0 4px;">${formatDateHeading(isoDate)}</h3>
+          ${byDate.get(isoDate).map(emailMealHtml).join("")}`
+          )
+          .join("")}`
+        : "";
+
+      return `
+        <div style="font-family:Arial,Helvetica,sans-serif; color:#111111; max-width:600px; margin:0 auto;">
+          <div style="font-size:24px; font-weight:bold; text-transform:uppercase; color:#d20d0d; margin-bottom:8px;">
+            ${monthName} ${year} Menu
+          </div>
+          ${staplesHtml}
+          ${rotatingHtml}
+        </div>`;
+    }
+
     loadConfig().then(async (config) => {
       const session = await getValidSession({ region: config.region, clientId: config.userPoolClientId });
       const guard = document.getElementById("admin-guard");
@@ -131,31 +200,97 @@
         guard.innerHTML = `<p class="error">Your account doesn't have admin access.</p>`;
       } else {
         document.getElementById("admin-content").style.display = "block";
-        initMonthlyMenu(config);
+        initMonthlyMenu(config, session.idToken);
       }
     });
 
-    function initMonthlyMenu(config) {
+    function initMonthlyMenu(config, token) {
       const monthInput = document.getElementById("menu-month");
       const generateButton = document.getElementById("generate-button");
-      const printButton = document.getElementById("print-menu-button");
+      const emailButton = document.getElementById("email-menu-button");
       const output = document.getElementById("menu-output");
-      const printOutput = document.getElementById("print-monthly-menu");
+      const errorEl = document.getElementById("email-error");
+      const statusEl = document.getElementById("email-status");
 
       const now = new Date();
       monthInput.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
+      let currentMeals = [];
+
       generateButton.addEventListener("click", async () => {
         if (!monthInput.value) return;
+        errorEl.style.display = "none";
+        statusEl.style.display = "none";
         const { meals } = await apiRequest(config.apiUrl, "/meals");
-        const html = buildMenuHtml(meals, monthInput.value);
-        output.innerHTML = html;
-        printOutput.innerHTML = html;
-        printButton.style.display = "inline-block";
+        currentMeals = meals;
+        output.innerHTML = buildMenuHtml(meals, monthInput.value);
+        emailButton.style.display = "inline-block";
       });
 
-      printButton.addEventListener("click", () => {
-        window.print();
+      const previewDialog = document.getElementById("email-preview-dialog");
+      const previewSubject = document.getElementById("email-preview-subject");
+      const previewRecipients = document.getElementById("email-preview-recipients");
+      const previewFrame = document.getElementById("email-preview-frame");
+      const sendButton = document.getElementById("email-send-button");
+      const cancelButton = document.getElementById("email-cancel-button");
+
+      let pendingSubject = "";
+      let pendingHtml = "";
+
+      emailButton.addEventListener("click", async () => {
+        errorEl.style.display = "none";
+        statusEl.style.display = "none";
+
+        const [year, month] = monthInput.value.split("-").map(Number);
+        const monthName = MONTH_NAMES[month - 1];
+
+        let customerCount = null;
+        try {
+          const { customers } = await apiRequest(config.apiUrl, "/customers", { token });
+          customerCount = customers.length;
+        } catch {
+          // Non-fatal - the preview just won't show a recipient count.
+        }
+
+        pendingSubject = `GTX Meals - ${monthName} ${year} Menu`;
+        pendingHtml = buildMenuEmailHtml(currentMeals, monthInput.value);
+
+        previewSubject.textContent = `Subject: ${pendingSubject}`;
+        previewRecipients.textContent =
+          customerCount === null
+            ? "Will be sent to every subscribed customer."
+            : `Will be sent to ${customerCount} customer${customerCount === 1 ? "" : "s"}.`;
+        previewFrame.srcdoc = pendingHtml;
+        previewDialog.showModal();
+      });
+
+      cancelButton.addEventListener("click", () => {
+        previewDialog.close();
+      });
+
+      sendButton.addEventListener("click", async () => {
+        sendButton.disabled = true;
+        try {
+          const result = await apiRequest(config.apiUrl, "/monthly-menu/email", {
+            method: "POST",
+            token,
+            body: { subject: pendingSubject, html: pendingHtml },
+          });
+          previewDialog.close();
+          statusEl.textContent =
+            `Sent to ${result.sent} customer${result.sent === 1 ? "" : "s"}` +
+            (result.skippedUnsubscribed ? `, skipped ${result.skippedUnsubscribed} unsubscribed` : "") +
+            (result.skippedNoEmail ? `, skipped ${result.skippedNoEmail} with no email on file` : "") +
+            (result.failed ? `, ${result.failed} failed` : "") +
+            ".";
+          statusEl.style.display = "block";
+        } catch (err) {
+          previewDialog.close();
+          errorEl.textContent = err.message;
+          errorEl.style.display = "block";
+        } finally {
+          sendButton.disabled = false;
+        }
       });
     }
   </script>

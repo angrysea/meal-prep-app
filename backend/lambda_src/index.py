@@ -77,6 +77,8 @@ def handler(event, context):
             return update_profile(event)
         if path == "/reminders/send" and method == "POST":
             return send_weekly_reminders(event)
+        if path == "/monthly-menu/email" and method == "POST":
+            return send_monthly_menu_email(event)
         if path == "/customers" and method == "GET":
             return list_customers(event)
         if path.startswith("/customers/") and method == "PUT":
@@ -511,6 +513,57 @@ def send_weekly_reminders(event):
         "skippedSmsDisabled": skipped_sms_disabled,
         "failed": failed,
         "errors": errors[:10],  # cap so one noisy failure mode doesn't blow up the response
+    })
+
+
+def send_monthly_menu_email(event):
+    """Emails the admin-built monthly menu flyer (already rendered to HTML
+    client-side by admin-monthly-menu.html) to every subscribed customer.
+    Respects the same unsubscribed flag as weekly reminders - it's the
+    account's only opt-out of promotional email, and a monthly menu flyer
+    is exactly that, not an order-specific transactional message.
+    """
+    _require_admin(event)
+    body = _body(event)
+    subject = body.get("subject", "").strip()
+    html = body.get("html", "").strip()
+    if not subject:
+        raise BadRequest("subject is required")
+    if not html:
+        raise BadRequest("html is required")
+    from_email = _from_email()
+
+    sent = skipped_unsubscribed = skipped_no_email = failed = 0
+    errors = []
+
+    for profile in _scan_all_profiles():
+        if profile.get("unsubscribed"):
+            skipped_unsubscribed += 1
+            continue
+        email = profile.get("email")
+        if not email:
+            skipped_no_email += 1
+            continue
+        try:
+            ses.send_email(
+                Source=from_email,
+                Destination={"ToAddresses": [email]},
+                Message={
+                    "Subject": {"Data": subject},
+                    "Body": {"Html": {"Data": html}},
+                },
+            )
+            sent += 1
+        except Exception as e:  # noqa: BLE001 - one bad recipient shouldn't abort the batch
+            failed += 1
+            errors.append(f"{profile.get('PK')}: {e}")
+
+    return _response(200, {
+        "sent": sent,
+        "skippedUnsubscribed": skipped_unsubscribed,
+        "skippedNoEmail": skipped_no_email,
+        "failed": failed,
+        "errors": errors[:10],
     })
 
 

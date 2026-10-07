@@ -1076,6 +1076,59 @@ def test_reminders_fails_cleanly_when_no_admin_is_configured(table):
     assert resp["statusCode"] == 400
 
 
+def test_monthly_menu_email_requires_admin(table):
+    from backend.lambda_src import index
+
+    resp = index.handler(
+        _event("POST", "/monthly-menu/email", {"subject": "October Menu", "html": "<p>hi</p>"}, claims=CUSTOMER_CLAIMS),
+        None,
+    )
+    assert resp["statusCode"] == 403
+
+
+def test_monthly_menu_email_requires_subject_and_html(table):
+    import boto3
+    from backend.lambda_src import index
+
+    cognito, pool_id = _create_test_pool(index)
+    _create_admin_cognito_user(cognito, pool_id, "admin@example.com")
+    boto3.client("ses", region_name="us-east-1").verify_email_identity(EmailAddress="admin@example.com")
+
+    resp = index.handler(_event("POST", "/monthly-menu/email", {"html": "<p>hi</p>"}, claims=ADMIN_CLAIMS), None)
+    assert resp["statusCode"] == 400
+
+    resp = index.handler(_event("POST", "/monthly-menu/email", {"subject": "October Menu"}, claims=ADMIN_CLAIMS), None)
+    assert resp["statusCode"] == 400
+
+
+def test_monthly_menu_email_sends_to_subscribed_customers_only(table):
+    import boto3
+    from backend.lambda_src import index
+
+    cognito, pool_id = _create_test_pool(index)
+    _create_admin_cognito_user(cognito, pool_id, "admin@example.com")
+    boto3.client("ses", region_name="us-east-1").verify_email_identity(EmailAddress="admin@example.com")
+
+    _save_profile(index, {"sub": "u1", "email": "u1@example.com"}, email="u1@example.com")
+    _save_profile(index, {"sub": "u2", "email": "u2@example.com"}, email="u2@example.com", unsubscribed=True)
+    _save_profile(index, {"sub": "u3", "email": "u3@example.com"})  # no email on file
+
+    resp = index.handler(
+        _event(
+            "POST", "/monthly-menu/email",
+            {"subject": "October Menu", "html": "<p>Staple meals...</p>"},
+            claims=ADMIN_CLAIMS,
+        ),
+        None,
+    )
+    assert resp["statusCode"] == 200
+    result = json.loads(resp["body"])
+    assert result["sent"] == 1
+    assert result["skippedUnsubscribed"] == 1
+    assert result["skippedNoEmail"] == 1
+    assert result["failed"] == 0
+
+
 def _create_test_pool(index):
     cognito = boto3.client("cognito-idp", region_name="us-east-1")
     # UsernameAttributes=["email"] matches the real deployed pool: Cognito then

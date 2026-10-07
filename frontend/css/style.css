@@ -424,13 +424,9 @@ table.customers-table th {
   display: none;
 }
 
-/* Monthly menu flyer: on-screen preview styling lives outside @media print
-   (admin views it live before printing); #print-monthly-menu mirrors the
-   same generated HTML and is only shown when actually printing. */
-#print-monthly-menu {
-  display: none;
-}
-
+/* Monthly menu flyer preview (admin-monthly-menu.html) - on-screen only;
+   the version actually emailed is built separately with inline styles,
+   since email clients don't load external stylesheets. */
 .monthly-menu {
   max-width: 640px;
   margin-top: 1.5rem;
@@ -482,54 +478,12 @@ table.customers-table th {
 }
 
 @media print {
-  body > *:not(#print-labels):not(#print-monthly-menu) {
+  body > *:not(#print-labels) {
     display: none !important;
   }
 
   #print-labels {
     display: block;
-  }
-
-  #print-monthly-menu {
-    display: block;
-  }
-
-  #print-monthly-menu .monthly-menu-title {
-    font-size: 22pt;
-  }
-
-  #print-monthly-menu h2 {
-    font-family: var(--font-display);
-    color: var(--color-primary);
-    font-size: 14pt;
-    text-transform: uppercase;
-    margin: 0.3in 0 0.05in;
-  }
-
-  #print-monthly-menu .menu-subheading {
-    font-size: 10pt;
-    margin: 0 0 0.15in;
-  }
-
-  #print-monthly-menu .menu-date {
-    font-size: 12pt;
-    margin: 0.2in 0 0.05in;
-  }
-
-  #print-monthly-menu .menu-item {
-    margin-bottom: 0.12in;
-  }
-
-  #print-monthly-menu .menu-item-name {
-    font-size: 11pt;
-  }
-
-  #print-monthly-menu .menu-item-description {
-    font-size: 9pt;
-  }
-
-  #print-monthly-menu .menu-item-macros {
-    font-size: 8.5pt;
   }
 
   .label-sheet {
