@@ -101,14 +101,14 @@
       });
     }
 
-    // "Calories: 450 / Protein: 35g" etc., in reading order (Calories,
-    // Protein, Carbs, Fat) flowed into a 2-column grid - the label format
-    // requested to match the physical labels already in use.
+    // "Calories: 450 / Protein: 35g / Carbs: 40g / Fat: 15g" stacked
+    // vertically next to the logo - matches the physical label format
+    // already in use (see 10.12.26 Labels.pdf).
     function macroGridHtml(macros) {
       if (!macros) return "";
       const { calories = 0, proteinG = 0, carbsG = 0, fatG = 0 } = macros;
       if (!calories && !proteinG && !carbsG && !fatG) return "";
-      return `<div class="label-macros-grid">
+      return `<div class="label-macros">
         <div>Calories: ${calories}</div>
         <div>Protein: ${proteinG}g</div>
         <div>Carbs: ${carbsG}g</div>
@@ -116,13 +116,13 @@
       </div>`;
     }
 
-    // "Cauliflower Rice: 25 Cal | 1g Protein | 5g Carbs | 0g Fat" - the
+    // "CAULIFLOWER RICE: 25 Calories | 1g Protein | 5g Carbs | 0g Fat" - the
     // add-on's own macros (not blended with the meal), same values shown
     // for it everywhere else in the app.
     function addOnLineHtml(addOn) {
       const m = addOn.macros || {};
       const parts = [];
-      if (m.calories) parts.push(`${m.calories} Cal`);
+      if (m.calories) parts.push(`${m.calories} Calories`);
       if (m.proteinG) parts.push(`${m.proteinG}g Protein`);
       if (m.carbsG) parts.push(`${m.carbsG}g Carbs`);
       if (m.fatG) parts.push(`${m.fatG}g Fat`);
@@ -165,17 +165,12 @@
       const labelsHtml = labels.map(
         (row) => `
         <div class="label">
-          <div class="label-header">
-            <div class="label-title">
-              <div class="label-meal">${row.name}</div>
-              ${row.customerName ? `<div class="label-customer">${row.customerName}</div>` : ""}
-            </div>
-            <div class="label-logo">
-              <img src="/assets/logo.png" alt="GTX Meals" />
-              <div class="label-brand">GTX MEALS</div>
-            </div>
+          <div class="label-meal">${row.name}</div>
+          ${row.customerName ? `<div class="label-customer">${row.customerName}</div>` : ""}
+          <div class="label-body">
+            <img class="label-logo-img" src="/assets/logo.png" alt="GTX Meals" />
+            ${macroGridHtml(row.macros)}
           </div>
-          ${macroGridHtml(row.macros)}
           ${row.addOns.map(addOnLineHtml).join("")}
           ${row.note ? `<div class="label-note">Note: ${row.note}</div>` : ""}
         </div>`

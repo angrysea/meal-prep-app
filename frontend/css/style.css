@@ -445,75 +445,60 @@ table.customers-table th {
     width: 3in;
     height: 2in;
     box-sizing: border-box;
-    padding: 0.14in 0.18in;
+    padding: 0.13in 0.16in;
     display: flex;
     flex-direction: column;
-    text-align: left;
-  }
-
-  .label-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 0.1in;
-  }
-
-  .label-title {
-    min-width: 0;
+    text-align: center;
+    border: 1px solid #ccc;
+    border-radius: 10px;
   }
 
   .label-meal {
     font-family: var(--font-display);
-    font-size: 14pt;
+    font-size: 13pt;
     text-transform: uppercase;
     letter-spacing: 0.02em;
     line-height: 1.1;
   }
 
   .label-customer {
-    font-size: 10pt;
+    font-size: 9pt;
     font-weight: bold;
     margin-top: 0.03in;
   }
 
-  .label-logo {
-    flex-shrink: 0;
+  .label-body {
     display: flex;
-    flex-direction: column;
     align-items: center;
-    text-align: center;
+    justify-content: center;
+    gap: 0.2in;
+    margin-top: 0.05in;
   }
 
-  .label-logo img {
-    height: 0.35in;
+  .label-logo-img {
+    height: 0.55in;
     width: auto;
+    flex-shrink: 0;
   }
 
-  .label-logo .label-brand {
-    font-family: var(--font-display);
-    font-size: 7pt;
-    letter-spacing: 0.03em;
-    margin-top: 0.02in;
-  }
-
-  .label-macros-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    column-gap: 0.15in;
+  .label-macros {
+    text-align: left;
     font-size: 9pt;
     font-weight: bold;
-    margin-top: 0.07in;
+    line-height: 1.3;
   }
 
   .label-addon-line {
-    font-size: 8pt;
-    margin-top: 0.04in;
+    font-size: 7.5pt;
+    font-weight: bold;
+    text-transform: uppercase;
+    margin-top: 0.03in;
   }
 
   .label-note {
-    font-size: 9pt;
+    font-size: 8pt;
     font-weight: bold;
-    margin-top: 0.05in;
+    margin-top: 0.03in;
   }
 
   @page {
