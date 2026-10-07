@@ -305,6 +305,18 @@ class MealPrepAppStack(Stack):
             destination_bucket=site_bucket,
             distribution=distribution,
             distribution_paths=["/*"],
+            # No cache-busting filename hashes on these assets, so without
+            # this, a browser that heuristically cached an old JS/HTML file
+            # right before a deploy can keep serving it well after - e.g. an
+            # index.html that imports a function from pricing.js newer than
+            # the browser's still-cached copy of pricing.js, which throws at
+            # module-load time and silently kills the entire page script.
+            # Forcing revalidation on every load (cheap: a 304 if unchanged)
+            # closes that gap for every future deploy, not just this one.
+            cache_control=[
+                s3_deployment.CacheControl.no_cache(),
+                s3_deployment.CacheControl.must_revalidate(),
+            ],
         )
 
         CfnOutput(self, "ApiUrl", value=http_api.api_endpoint)

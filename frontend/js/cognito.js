@@ -75,9 +75,18 @@ export async function signIn({ region, clientId, email, password }) {
   return data.AuthenticationResult;
 }
 
+// Called via getSession() synchronously inside renderNav(), the first thing
+// every page's script does - must never throw. A browser that blocks storage
+// access (private browsing, strict cookie/privacy settings) or a corrupted
+// non-JSON value left over in localStorage would otherwise kill the entire
+// page script before it renders anything, including the nav and the menu.
 function loadRawSession() {
-  const raw = localStorage.getItem(SESSION_KEY);
-  return raw ? JSON.parse(raw) : null;
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
 }
 
 function saveSession(result) {
