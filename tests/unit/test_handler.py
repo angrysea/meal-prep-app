@@ -88,27 +88,27 @@ def test_create_meal_defaults_macros_when_omitted(table):
     assert meal["macros"] == {"calories": 0, "proteinG": 0, "carbsG": 0, "fatG": 0}
 
 
-def test_create_meal_defaults_perpetual_and_week_of_when_omitted(table):
+def test_create_meal_defaults_staple_and_week_of_when_omitted(table):
     from backend.lambda_src import index
 
     meal = _create_meal(index)
-    assert meal["perpetual"] is False
+    assert meal["staple"] is False
     assert meal["weekOf"] == ""
 
 
-def test_create_meal_with_perpetual_and_week_of(table):
+def test_create_meal_with_staple_and_week_of(table):
     from backend.lambda_src import index
 
     resp = index.handler(
         _event(
             "POST", "/meals",
-            {"name": "Chicken Bowl", "priceCents": 1200, "perpetual": True, "weekOf": "2026-10-19"},
+            {"name": "Chicken Bowl", "priceCents": 1200, "staple": True, "weekOf": "2026-10-19"},
             claims=ADMIN_CLAIMS,
         ),
         None,
     )
     meal = json.loads(resp["body"])
-    assert meal["perpetual"] is True
+    assert meal["staple"] is True
     assert meal["weekOf"] == "2026-10-19"
 
 
@@ -122,7 +122,7 @@ def test_create_meal_rejects_invalid_week_of_format(table):
     assert resp["statusCode"] == 400
 
 
-def test_update_meal_merges_perpetual_and_week_of_instead_of_overwriting(table):
+def test_update_meal_merges_staple_and_week_of_instead_of_overwriting(table):
     from backend.lambda_src import index
 
     meal = _create_meal(index)

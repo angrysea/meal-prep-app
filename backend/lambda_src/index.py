@@ -154,7 +154,7 @@ def create_meal(event):
         "priceCents": int(body["priceCents"]),
         "available": bool(body.get("available", True)),
         "macros": _parse_macros(body.get("macros")),
-        "perpetual": bool(body.get("perpetual", False)),
+        "staple": bool(body.get("staple", False)),
         "weekOf": _parse_week_of(body.get("weekOf", "")),
     }
     table.put_item(Item=item)
@@ -175,7 +175,7 @@ def update_meal(event, meal_id):
         "priceCents": int(body.get("priceCents", existing["priceCents"])),
         "available": bool(body.get("available", existing.get("available", True))),
         "macros": _parse_macros(body["macros"]) if "macros" in body else existing.get("macros", _parse_macros(None)),
-        "perpetual": bool(body.get("perpetual", existing.get("perpetual", False))),
+        "staple": bool(body.get("staple", existing.get("staple", False))),
         "weekOf": _parse_week_of(body["weekOf"]) if "weekOf" in body else existing.get("weekOf", ""),
     }
     table.put_item(Item=updated)
@@ -211,7 +211,7 @@ def _meal_out(item):
         "priceCents": int(item["priceCents"]),
         "available": bool(item.get("available", True)),
         "macros": {field: int(item.get("macros", {}).get(field, 0)) for field in MACRO_FIELDS},
-        "perpetual": bool(item.get("perpetual", False)),
+        "staple": bool(item.get("staple", False)),
         "weekOf": item.get("weekOf", ""),
     }
 

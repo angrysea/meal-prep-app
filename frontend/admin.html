@@ -64,7 +64,7 @@
 
         <h3>Availability</h3>
         <label class="option-choice">
-          <input type="checkbox" id="new-perpetual" /> Always on the menu (perpetual)
+          <input type="checkbox" id="new-staple" /> Staple (always on the menu)
         </label>
         <label for="new-week-of">Or only for this ready date</label>
         <input id="new-week-of" type="date" />
@@ -134,7 +134,7 @@
 
       <h3>Availability</h3>
       <label class="option-choice">
-        <input type="checkbox" id="edit-meal-perpetual" /> Always on the menu (perpetual)
+        <input type="checkbox" id="edit-meal-staple" /> Staple (always on the menu)
       </label>
       <label for="edit-meal-week-of">Or only for this ready date</label>
       <input id="edit-meal-week-of" type="date" />
@@ -247,7 +247,7 @@
             <td>${meal.name}</td>
             <td>${formatPrice(meal.priceCents)}</td>
             <td>${formatMacros(meal.macros) || "-"}</td>
-            <td>${meal.perpetual ? "Always" : meal.weekOf || "-"}</td>
+            <td>${meal.staple ? "Always" : meal.weekOf || "-"}</td>
             <td>${meal.available ? "Yes" : "No"}</td>
             <td>
               <button class="secondary toggle-available">${meal.available ? "Hide" : "Show"}</button>
@@ -347,7 +347,7 @@
         document.getElementById("edit-meal-protein").value = meal.macros.proteinG || "";
         document.getElementById("edit-meal-carbs").value = meal.macros.carbsG || "";
         document.getElementById("edit-meal-fat").value = meal.macros.fatG || "";
-        document.getElementById("edit-meal-perpetual").checked = !!meal.perpetual;
+        document.getElementById("edit-meal-staple").checked = !!meal.staple;
         document.getElementById("edit-meal-week-of").value = meal.weekOf || "";
         document.getElementById("meal-edit-error").style.display = "none";
         document.getElementById("meal-edit-dialog").showModal();
@@ -375,7 +375,7 @@
                 carbsG: parseInt(document.getElementById("edit-meal-carbs").value, 10) || 0,
                 fatG: parseInt(document.getElementById("edit-meal-fat").value, 10) || 0,
               },
-              perpetual: document.getElementById("edit-meal-perpetual").checked,
+              staple: document.getElementById("edit-meal-staple").checked,
               weekOf: document.getElementById("edit-meal-week-of").value,
             },
           });
@@ -448,7 +448,7 @@
                 carbsG: parseInt(document.getElementById("new-carbs").value, 10) || 0,
                 fatG: parseInt(document.getElementById("new-fat").value, 10) || 0,
               },
-              perpetual: document.getElementById("new-perpetual").checked,
+              staple: document.getElementById("new-staple").checked,
               weekOf: document.getElementById("new-week-of").value,
             },
           });
@@ -459,7 +459,7 @@
           document.getElementById("new-protein").value = "";
           document.getElementById("new-carbs").value = "";
           document.getElementById("new-fat").value = "";
-          document.getElementById("new-perpetual").checked = false;
+          document.getElementById("new-staple").checked = false;
           document.getElementById("new-week-of").value = "";
           refreshMeals();
         } catch (err) {

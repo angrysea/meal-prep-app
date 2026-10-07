@@ -284,7 +284,7 @@
         // the current ready date - a meal with neither (e.g. a future week's
         // meal, or one with no date set yet) stays hidden until it does.
         const available = meals.filter(
-          (m) => m.available && (m.perpetual || (nextReadyDate && m.weekOf === nextReadyDate))
+          (m) => m.available && (m.staple || (nextReadyDate && m.weekOf === nextReadyDate))
         );
         loadedMeals = available;
         if (available.length === 0) {
