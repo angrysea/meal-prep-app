@@ -146,6 +146,15 @@
       </div>
     </dialog>
 
+    <dialog id="confirm-dialog">
+      <h2>Please confirm</h2>
+      <p id="confirm-dialog-message"></p>
+      <div style="display:flex; gap:0.5rem; margin-top:1rem;">
+        <button type="button" id="confirm-dialog-ok-button">Delete</button>
+        <button type="button" class="secondary" id="confirm-dialog-cancel-button">Cancel</button>
+      </div>
+    </dialog>
+
     <dialog id="addon-edit-dialog">
       <h2>Edit add-on</h2>
       <label for="edit-addon-description">Description</label>
@@ -199,6 +208,34 @@
     async function initAdmin(config, token) {
       let editingAddOnId = null;
       let editingMealId = null;
+
+      // A centered, consistently-styled stand-in for window.confirm() -
+      // native confirm() dialogs are positioned and styled by the browser
+      // itself, not by this page's CSS.
+      function confirmDialog(message) {
+        return new Promise((resolve) => {
+          const dialog = document.getElementById("confirm-dialog");
+          const okButton = document.getElementById("confirm-dialog-ok-button");
+          const cancelButton = document.getElementById("confirm-dialog-cancel-button");
+          document.getElementById("confirm-dialog-message").textContent = message;
+
+          function cleanup(result) {
+            okButton.removeEventListener("click", onOk);
+            cancelButton.removeEventListener("click", onCancel);
+            dialog.close();
+            resolve(result);
+          }
+          function onOk() {
+            cleanup(true);
+          }
+          function onCancel() {
+            cleanup(false);
+          }
+          okButton.addEventListener("click", onOk);
+          cancelButton.addEventListener("click", onCancel);
+          dialog.showModal();
+        });
+      }
 
       async function refreshReadyDate() {
         const { nextReadyDate, smsEnabled } = await apiRequest(config.apiUrl, "/settings");
@@ -281,7 +318,7 @@
         body.querySelectorAll(".delete-meal").forEach((btn) => {
           btn.addEventListener("click", async (e) => {
             const mealId = e.target.closest("tr").dataset.mealId;
-            if (!confirm("Delete this meal?")) return;
+            if (!(await confirmDialog("Delete this meal?"))) return;
             await apiRequest(config.apiUrl, `/meals/${mealId}`, { method: "DELETE", token });
             refreshMeals();
           });
