@@ -88,6 +88,70 @@ def test_create_meal_defaults_macros_when_omitted(table):
     assert meal["macros"] == {"calories": 0, "proteinG": 0, "carbsG": 0, "fatG": 0}
 
 
+def test_create_meal_defaults_perpetual_and_week_of_when_omitted(table):
+    from backend.lambda_src import index
+
+    meal = _create_meal(index)
+    assert meal["perpetual"] is False
+    assert meal["weekOf"] == ""
+
+
+def test_create_meal_with_perpetual_and_week_of(table):
+    from backend.lambda_src import index
+
+    resp = index.handler(
+        _event(
+            "POST", "/meals",
+            {"name": "Chicken Bowl", "priceCents": 1200, "perpetual": True, "weekOf": "2026-10-19"},
+            claims=ADMIN_CLAIMS,
+        ),
+        None,
+    )
+    meal = json.loads(resp["body"])
+    assert meal["perpetual"] is True
+    assert meal["weekOf"] == "2026-10-19"
+
+
+def test_create_meal_rejects_invalid_week_of_format(table):
+    from backend.lambda_src import index
+
+    resp = index.handler(
+        _event("POST", "/meals", {"name": "Chicken Bowl", "priceCents": 1200, "weekOf": "10/19/2026"}, claims=ADMIN_CLAIMS),
+        None,
+    )
+    assert resp["statusCode"] == 400
+
+
+def test_update_meal_merges_perpetual_and_week_of_instead_of_overwriting(table):
+    from backend.lambda_src import index
+
+    meal = _create_meal(index)
+    index.handler(
+        _event("PUT", f"/meals/{meal['mealId']}", {"weekOf": "2026-10-19"}, path_params={"mealId": meal["mealId"]}, claims=ADMIN_CLAIMS),
+        None,
+    )
+    # A later update naming only priceCents must leave weekOf as it was,
+    # not reset it back to blank - same merge pattern as settings.
+    resp = index.handler(
+        _event("PUT", f"/meals/{meal['mealId']}", {"priceCents": 1500}, path_params={"mealId": meal["mealId"]}, claims=ADMIN_CLAIMS),
+        None,
+    )
+    updated = json.loads(resp["body"])
+    assert updated["weekOf"] == "2026-10-19"
+    assert updated["priceCents"] == 1500
+
+
+def test_update_meal_rejects_invalid_week_of_format(table):
+    from backend.lambda_src import index
+
+    meal = _create_meal(index)
+    resp = index.handler(
+        _event("PUT", f"/meals/{meal['mealId']}", {"weekOf": "not-a-date"}, path_params={"mealId": meal["mealId"]}, claims=ADMIN_CLAIMS),
+        None,
+    )
+    assert resp["statusCode"] == 400
+
+
 def _create_addon(index, description="Large", price_cents=300):
     resp = index.handler(
         _event("POST", "/addons", {"description": description, "priceCents": price_cents}, claims=ADMIN_CLAIMS),

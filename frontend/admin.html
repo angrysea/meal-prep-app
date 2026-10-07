@@ -62,6 +62,13 @@
         <label for="new-fat">Fat (g)</label>
         <input id="new-fat" type="number" min="0" />
 
+        <h3>Availability</h3>
+        <label class="option-choice">
+          <input type="checkbox" id="new-perpetual" /> Always on the menu (perpetual)
+        </label>
+        <label for="new-week-of">Or only for this ready date</label>
+        <input id="new-week-of" type="date" />
+
         <p class="error" id="create-error" style="display:none;"></p>
         <button id="create-button">Add meal</button>
       </section>
@@ -69,7 +76,7 @@
       <h2>Current menu</h2>
       <table id="meals-table">
         <thead>
-          <tr><th></th><th>Name</th><th>Price</th><th>Macros</th><th>Available</th><th></th></tr>
+          <tr><th></th><th>Name</th><th>Price</th><th>Macros</th><th>Ready date</th><th>Available</th><th></th></tr>
         </thead>
         <tbody id="meals-body"></tbody>
       </table>
@@ -124,6 +131,13 @@
       <input id="edit-meal-carbs" type="number" min="0" />
       <label for="edit-meal-fat">Fat (g)</label>
       <input id="edit-meal-fat" type="number" min="0" />
+
+      <h3>Availability</h3>
+      <label class="option-choice">
+        <input type="checkbox" id="edit-meal-perpetual" /> Always on the menu (perpetual)
+      </label>
+      <label for="edit-meal-week-of">Or only for this ready date</label>
+      <input id="edit-meal-week-of" type="date" />
 
       <p class="error" id="meal-edit-error" style="display:none;"></p>
       <div style="display:flex; gap:0.5rem; margin-top:1rem;">
@@ -233,6 +247,7 @@
             <td>${meal.name}</td>
             <td>${formatPrice(meal.priceCents)}</td>
             <td>${formatMacros(meal.macros) || "-"}</td>
+            <td>${meal.perpetual ? "Always" : meal.weekOf || "-"}</td>
             <td>${meal.available ? "Yes" : "No"}</td>
             <td>
               <button class="secondary toggle-available">${meal.available ? "Hide" : "Show"}</button>
@@ -332,6 +347,8 @@
         document.getElementById("edit-meal-protein").value = meal.macros.proteinG || "";
         document.getElementById("edit-meal-carbs").value = meal.macros.carbsG || "";
         document.getElementById("edit-meal-fat").value = meal.macros.fatG || "";
+        document.getElementById("edit-meal-perpetual").checked = !!meal.perpetual;
+        document.getElementById("edit-meal-week-of").value = meal.weekOf || "";
         document.getElementById("meal-edit-error").style.display = "none";
         document.getElementById("meal-edit-dialog").showModal();
       }
@@ -358,6 +375,8 @@
                 carbsG: parseInt(document.getElementById("edit-meal-carbs").value, 10) || 0,
                 fatG: parseInt(document.getElementById("edit-meal-fat").value, 10) || 0,
               },
+              perpetual: document.getElementById("edit-meal-perpetual").checked,
+              weekOf: document.getElementById("edit-meal-week-of").value,
             },
           });
           document.getElementById("meal-edit-dialog").close();
@@ -429,6 +448,8 @@
                 carbsG: parseInt(document.getElementById("new-carbs").value, 10) || 0,
                 fatG: parseInt(document.getElementById("new-fat").value, 10) || 0,
               },
+              perpetual: document.getElementById("new-perpetual").checked,
+              weekOf: document.getElementById("new-week-of").value,
             },
           });
           document.getElementById("new-name").value = "";
@@ -438,6 +459,8 @@
           document.getElementById("new-protein").value = "";
           document.getElementById("new-carbs").value = "";
           document.getElementById("new-fat").value = "";
+          document.getElementById("new-perpetual").checked = false;
+          document.getElementById("new-week-of").value = "";
           refreshMeals();
         } catch (err) {
           errorEl.textContent = err.message;

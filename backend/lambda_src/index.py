@@ -154,6 +154,8 @@ def create_meal(event):
         "priceCents": int(body["priceCents"]),
         "available": bool(body.get("available", True)),
         "macros": _parse_macros(body.get("macros")),
+        "perpetual": bool(body.get("perpetual", False)),
+        "weekOf": _parse_week_of(body.get("weekOf", "")),
     }
     table.put_item(Item=item)
     return _response(201, _meal_out(item))
@@ -173,6 +175,8 @@ def update_meal(event, meal_id):
         "priceCents": int(body.get("priceCents", existing["priceCents"])),
         "available": bool(body.get("available", existing.get("available", True))),
         "macros": _parse_macros(body["macros"]) if "macros" in body else existing.get("macros", _parse_macros(None)),
+        "perpetual": bool(body.get("perpetual", existing.get("perpetual", False))),
+        "weekOf": _parse_week_of(body["weekOf"]) if "weekOf" in body else existing.get("weekOf", ""),
     }
     table.put_item(Item=updated)
     return _response(200, _meal_out(updated))
@@ -189,6 +193,16 @@ def _parse_macros(raw):
     return {field: int(raw.get(field, 0) or 0) for field in MACRO_FIELDS}
 
 
+def _parse_week_of(raw):
+    raw = raw or ""
+    if raw:
+        try:
+            datetime.strptime(raw, "%Y-%m-%d")
+        except ValueError:
+            raise BadRequest("weekOf must be in YYYY-MM-DD format")
+    return raw
+
+
 def _meal_out(item):
     return {
         "mealId": item["SK"],
@@ -197,6 +211,8 @@ def _meal_out(item):
         "priceCents": int(item["priceCents"]),
         "available": bool(item.get("available", True)),
         "macros": {field: int(item.get("macros", {}).get(field, 0)) for field in MACRO_FIELDS},
+        "perpetual": bool(item.get("perpetual", False)),
+        "weekOf": item.get("weekOf", ""),
     }
 
 

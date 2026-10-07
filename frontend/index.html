@@ -280,7 +280,12 @@
         ]);
         allAddOns = addOns;
 
-        const available = meals.filter((m) => m.available);
+        // On the menu if it's always available, or its week-of date matches
+        // the current ready date - a meal with neither (e.g. a future week's
+        // meal, or one with no date set yet) stays hidden until it does.
+        const available = meals.filter(
+          (m) => m.available && (m.perpetual || (nextReadyDate && m.weekOf === nextReadyDate))
+        );
         loadedMeals = available;
         if (available.length === 0) {
           container.innerHTML = `<p class="muted">No meals on the menu right now - check back soon.</p>`;
