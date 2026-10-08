@@ -6,7 +6,7 @@
   <title>Monthly Menu - GTX Meals</title>
   <link rel="icon" href="data:," />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Permanent+Marker&family=Cinzel:wght@600;700&family=Playfair+Display:ital@1&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Permanent+Marker&family=League+Spartan:wght@700&family=Playfair+Display:ital@1&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/css/style.css" />
 </head>
 <body>
@@ -122,11 +122,11 @@
       const monthName = MONTH_NAMES[month - 1];
       const { staples, byDate, sortedDates } = groupMealsForMonth(meals, monthValue);
 
-      // Georgia rather than the flyer's Cinzel/Playfair Display - mail
-      // clients won't load web fonts, so this is the closest widely
-      // available serif that keeps the same elegant look.
+      // Most mail clients won't load web fonts, so these fall back to
+      // widely available web-safe faces in the same style family: Arial
+      // for League Spartan (sans), Georgia for Playfair Display (serif).
       const headerStyle =
-        "font-family:Georgia,'Times New Roman',serif; font-size:22px; font-weight:bold; text-transform:uppercase; letter-spacing:0.5px; color:#8f1a1a; margin:24px 0 2px;";
+        "font-family:'League Spartan',Arial,sans-serif; font-size:22px; font-weight:bold; text-transform:uppercase; letter-spacing:0.5px; color:#8f1a1a; margin:24px 0 2px;";
       const italicStyle =
         "font-family:Georgia,'Times New Roman',serif; font-style:italic; font-size:17px; color:#8f1a1a; margin:0 0 10px;";
 

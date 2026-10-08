@@ -441,11 +441,11 @@ table.customers-table th {
   margin-bottom: 0.5rem;
 }
 
-/* Header/date-line type matches the printed flyer: elegant serif caps for
-   the section headers, serif italic (mixed case, not uppercase) for the
+/* Header/date-line type matches the printed flyer: League Spartan for the
+   section headers, serif italic (mixed case, not uppercase) for the
    subheading and the "October 5th" date lines. */
 .monthly-menu h2 {
-  font-family: "Cinzel", Georgia, serif;
+  font-family: "League Spartan", Arial, sans-serif;
   font-weight: 700;
   color: #8f1a1a;
   text-transform: uppercase;
