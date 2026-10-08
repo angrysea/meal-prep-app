@@ -153,6 +153,8 @@
     .flyer-footer { margin-top: 2.5rem; text-align: center; color: #aa0e0c; }
     .flyer-footer .footer-line1 { font-weight: bold; text-transform: uppercase; letter-spacing: 0.02em; }
     .flyer-footer .footer-line2 { font-size: 0.85rem; margin-top: 0.2rem; }
+    #print-button { display: block; margin: 1.5rem auto 0; background: #d20d0d; color: #fff; border: none; border-radius: 6px; padding: 0.6rem 1.1rem; font-size: 0.95rem; cursor: pointer; }
+    @media print { #print-button { display: none; } }
   </style>
 </head>
 <body>
@@ -168,6 +170,7 @@
         <div class="footer-line1">Order by Friday 2 PM &bull; Prepared Sunday &bull; Monday pickup</div>
         <div class="footer-line2">Monthly menu is planned in advance and subject to change</div>
       </div>
+      <button type="button" id="print-button" onclick="window.print()">View as PDF</button>
     </div>
   </div>
 </body>
@@ -187,15 +190,10 @@
       }
       popup.document.write(html);
       popup.document.close();
-      // Straight to the native print dialog - "Save as PDF" is a standard
-      // destination there. This is now the ONLY print() call anywhere in
-      // the popup (no in-page button too) - having both earlier made
-      // browsers silently ignore the second call, since print() only
-      // reliably fires once per fresh user gesture.
-      popup.addEventListener("load", () => {
-        popup.focus();
-        popup.print();
-      });
+      // Not auto-calling print() here - the "View as PDF" button in the
+      // popup is the only print() call. Having both an auto-trigger and a
+      // button made browsers silently ignore the second call, since
+      // print() only reliably fires once per fresh user gesture.
     });
 
     let toastTimeout;
