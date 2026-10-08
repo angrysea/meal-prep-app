@@ -180,6 +180,14 @@
       }
       popup.document.write(html);
       popup.document.close();
+      // Go straight to the browser's native print dialog - "Save as PDF" is
+      // a standard destination there, so there's no need for a separate
+      // button/step just to get a PDF. onload (not an immediate call) so
+      // the Google Fonts stylesheet has a chance to apply before printing.
+      popup.addEventListener("load", () => {
+        popup.focus();
+        popup.print();
+      });
     });
 
     let toastTimeout;
