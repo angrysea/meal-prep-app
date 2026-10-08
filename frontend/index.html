@@ -141,7 +141,7 @@
     .flyer-scan-caption { font-family: "Anton", sans-serif; font-size: 0.75rem; color: #111111; text-transform: uppercase; letter-spacing: 0.06em; margin-top: 0.5rem; text-align: center; }
     .flyer-content { flex: 1; min-width: 0; position: relative; }
     .watermark-anchor { position: relative; height: 0; }
-    .flyer-watermark { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 1848px; opacity: 0.07; z-index: -1; pointer-events: none; }
+    .flyer-watermark { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 420px; opacity: 0.07; z-index: -1; pointer-events: none; }
     h2 { font-family: "Cinzel", Georgia, serif; font-weight: 700; color: #8f1a1a; text-transform: uppercase; letter-spacing: 0.01em; font-size: 1.85rem; margin: 2rem 0 0.1rem; }
     h3 { font-family: "Playfair Display", Georgia, serif; font-style: italic; font-weight: 400; color: #8f1a1a; font-size: 1.3rem; margin: 1.25rem 0 0.25rem; }
     .subheading { font-family: "Playfair Display", Georgia, serif; font-style: italic; color: #8f1a1a; font-size: 1.3rem; margin: 0 0 0.6rem; }
@@ -153,8 +153,6 @@
     .flyer-footer { margin-top: 2.5rem; text-align: center; color: #aa0e0c; }
     .flyer-footer .footer-line1 { font-weight: bold; text-transform: uppercase; letter-spacing: 0.02em; }
     .flyer-footer .footer-line2 { font-size: 0.85rem; margin-top: 0.2rem; }
-    #print-button { display: block; margin: 1.5rem auto 0; background: #d20d0d; color: #fff; border: none; border-radius: 6px; padding: 0.6rem 1.1rem; font-size: 0.95rem; cursor: pointer; }
-    @media print { #print-button { display: none; } }
   </style>
 </head>
 <body>
@@ -170,7 +168,6 @@
         <div class="footer-line1">Order by Friday 2 PM &bull; Prepared Sunday &bull; Monday pickup</div>
         <div class="footer-line2">Monthly menu is planned in advance and subject to change</div>
       </div>
-      <button type="button" id="print-button" onclick="window.print()">Print / Save as PDF</button>
     </div>
   </div>
 </body>
@@ -190,11 +187,15 @@
       }
       popup.document.write(html);
       popup.document.close();
-      // Not auto-triggering window.print() here anymore - calling it
-      // automatically on load, then again from the in-page button, made
-      // browsers silently ignore the second (button-triggered) call, since
-      // print() reliably fires only from a direct user gesture. The button
-      // is the single, dependable way to print/save as PDF now.
+      // Straight to the native print dialog - "Save as PDF" is a standard
+      // destination there. This is now the ONLY print() call anywhere in
+      // the popup (no in-page button too) - having both earlier made
+      // browsers silently ignore the second call, since print() only
+      // reliably fires once per fresh user gesture.
+      popup.addEventListener("load", () => {
+        popup.focus();
+        popup.print();
+      });
     });
 
     let toastTimeout;
