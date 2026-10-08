@@ -57,29 +57,9 @@
     import { renderNav } from "/js/nav.js";
     import { loginUrlWithReturnTo } from "/js/redirect.js";
     import { formatMacros } from "/js/pricing.js";
+    import { MONTH_NAMES, formatDateHeading, groupMealsForMonth } from "/js/monthlyMenu.js";
 
     renderNav();
-
-    const MONTH_NAMES = [
-      "January", "February", "March", "April", "May", "June",
-      "July", "August", "September", "October", "November", "December",
-    ];
-
-    // 5 -> "5th", 1 -> "1st", 12 -> "12th", 23 -> "23rd" - the day-of-month
-    // suffix style used on the physical flyer ("October 5th").
-    function ordinal(day) {
-      const j = day % 10;
-      const k = day % 100;
-      if (j === 1 && k !== 11) return `${day}st`;
-      if (j === 2 && k !== 12) return `${day}nd`;
-      if (j === 3 && k !== 13) return `${day}rd`;
-      return `${day}th`;
-    }
-
-    function formatDateHeading(isoDate) {
-      const [, month, day] = isoDate.split("-").map(Number);
-      return `${MONTH_NAMES[month - 1]} ${ordinal(day)}`;
-    }
 
     function mealHtml(meal) {
       const macrosText = formatMacros(meal.macros);
@@ -89,25 +69,6 @@
           <p class="menu-item-description">${meal.description || ""}</p>
           ${macrosText ? `<p class="menu-item-macros">${macrosText}</p>` : ""}
         </div>`;
-    }
-
-    // Staples always show; a rotating meal shows only when its own weekOf
-    // falls in the picked month - same membership rule the customer menu
-    // uses day-of, just evaluated against a whole month here instead of a
-    // single ready date. Returns {} when there's nothing to show so both
-    // the on-screen preview and the email builder share one source of truth.
-    function groupMealsForMonth(meals, monthValue) {
-      const staples = meals.filter((m) => m.available && m.staple);
-      const rotating = meals.filter((m) => m.available && !m.staple && m.weekOf && m.weekOf.startsWith(monthValue));
-
-      const byDate = new Map();
-      rotating.forEach((m) => {
-        if (!byDate.has(m.weekOf)) byDate.set(m.weekOf, []);
-        byDate.get(m.weekOf).push(m);
-      });
-      const sortedDates = [...byDate.keys()].sort();
-
-      return { staples, byDate, sortedDates };
     }
 
     function buildMenuHtml(meals, monthValue) {
