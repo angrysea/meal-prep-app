@@ -133,9 +133,10 @@
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #111111; margin: 0; padding: 0; }
     .flyer { display: flex; align-items: flex-start; gap: 2rem; max-width: 800px; margin: 2rem auto; padding: 0 1.5rem 3rem; }
-    .flyer-sidebar { flex-shrink: 0; width: 110px; display: flex; flex-direction: column; align-items: center; }
-    .flyer-month { writing-mode: vertical-rl; text-orientation: upright; font-family: "Anton", sans-serif; color: #d20d0d; font-size: 3rem; letter-spacing: 0.04em; line-height: 0.95; }
-    .flyer-qr { width: 110px; height: 110px; margin-top: 2rem; }
+    .flyer-sidebar { flex-shrink: 0; width: 130px; display: flex; flex-direction: column; align-items: center; }
+    .flyer-month-wrap { height: 480px; width: 130px; display: flex; align-items: center; justify-content: center; }
+    .flyer-month { font-family: "Permanent Marker", cursive; color: #d20d0d; font-size: 4.5rem; white-space: nowrap; transform: rotate(-90deg); }
+    .flyer-qr { width: 110px; height: 110px; margin-top: 1rem; }
     .flyer-scan-caption { font-family: "Anton", sans-serif; font-size: 0.75rem; color: #111111; text-transform: uppercase; letter-spacing: 0.06em; margin-top: 0.5rem; text-align: center; }
     .flyer-content { flex: 1; min-width: 0; }
     h2 { font-family: "Anton", sans-serif; color: #d20d0d; text-transform: uppercase; letter-spacing: 0.02em; font-size: 1.2rem; margin-top: 2rem; }
@@ -153,7 +154,7 @@
 <body>
   <div class="flyer">
     <div class="flyer-sidebar">
-      <div class="flyer-month">${monthName.toUpperCase()}</div>
+      <div class="flyer-month-wrap"><div class="flyer-month">${monthName.toUpperCase()}</div></div>
       <img class="flyer-qr" src="${qrUrl}" alt="QR code to order" />
       <div class="flyer-scan-caption">Scan to order</div>
     </div>
