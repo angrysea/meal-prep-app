@@ -182,17 +182,19 @@
       const monthValue = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
       const html = buildMonthlyMenuPopupHtml(meals, monthValue);
 
-      const popup = window.open("", "_blank");
+      // A real navigation to a blob: URL rather than window.open("") +
+      // document.write() - some browsers don't reliably run external
+      // resource fetches (like the Google Fonts <link>) for a document
+      // synthesized via document.write(), since it was never actually
+      // "loaded" the normal way. A blob URL is a genuine page load.
+      const blobUrl = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+      const popup = window.open(blobUrl, "_blank");
       if (!popup) {
         alert("Please allow pop-ups for this site to view the monthly menu.");
+        URL.revokeObjectURL(blobUrl);
         return;
       }
-      popup.document.write(html);
-      popup.document.close();
-      // Not auto-calling print() here - the "View as PDF" button in the
-      // popup is the only print() call. Having both an auto-trigger and a
-      // button made browsers silently ignore the second call, since
-      // print() only reliably fires once per fresh user gesture.
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
     });
 
     let toastTimeout;
