@@ -104,20 +104,12 @@
         ${staples.map(monthlyMenuItemHtml).join("")}`
         : "";
 
-      // Watermark starts partway through the rotating section (at its
-      // midpoint date group) rather than a fixed pixel offset, so it lands
-      // in roughly the same spot regardless of how many dates are in play.
-      const midDateIndex = Math.floor(sortedDates.length / 2);
-      const watermarkAnchorHtml =
-        '<div class="watermark-anchor"><img class="flyer-watermark" src="https://gtxmeals.com/assets/logo.png" alt="" /></div>';
-
       const rotatingHtml = sortedDates.length
         ? `
         <h2>Rotating meals</h2>
         ${sortedDates
           .map(
-            (isoDate, i) => `
-          ${i === midDateIndex ? watermarkAnchorHtml : ""}
+            (isoDate) => `
           <h3>${formatDateHeading(isoDate)}</h3>
           ${byDate.get(isoDate).map(monthlyMenuItemHtml).join("")}`
           )
@@ -147,8 +139,7 @@
     .flyer-qr { width: 110px; height: 110px; margin-top: 1rem; }
     .flyer-scan-caption { font-family: "Anton", sans-serif; font-size: 0.75rem; color: #111111; text-transform: uppercase; letter-spacing: 0.06em; margin-top: 0.5rem; text-align: center; }
     .flyer-content { flex: 1; min-width: 0; position: relative; }
-    .watermark-anchor { position: relative; height: 0; }
-    .flyer-watermark { position: absolute; top: 0; left: 0; width: 100%; opacity: 0.07; z-index: -1; pointer-events: none; transform: scaleY(1.2); transform-origin: top; }
+    .flyer-watermark { position: absolute; top: 50%; left: 0; width: 100%; opacity: 0.07; z-index: -1; pointer-events: none; transform: translateY(-50%) scaleY(1.2); }
     h2 { font-family: "Cinzel", Georgia, serif; font-weight: 700; color: #8f1a1a; text-transform: uppercase; letter-spacing: 0.01em; font-size: 1.85rem; margin: 2rem 0 0.1rem; }
     h3 { font-family: "Playfair Display", Georgia, serif; font-style: italic; font-weight: 400; color: #8f1a1a; font-size: 1.3rem; margin: 1.25rem 0 0.25rem; }
     .subheading { font-family: "Playfair Display", Georgia, serif; font-style: italic; color: #8f1a1a; font-size: 1.3rem; margin: 0 0 0.6rem; }
@@ -172,6 +163,7 @@
       <div class="flyer-scan-caption">Scan to order</div>
     </div>
     <div class="flyer-content">
+      <img class="flyer-watermark" src="https://gtxmeals.com/assets/logo.png" alt="" />
       ${body}
       <div class="flyer-footer">
         <div class="footer-line1">Order by Friday 2 PM &bull; Prepared Sunday &bull; Monday pickup</div>
