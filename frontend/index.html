@@ -86,7 +86,7 @@
       const macrosText = formatMacros(meal.macros);
       return `
         <div class="item">
-          <div class="item-name">${meal.name}</div>
+          <div class="item-name">${meal.name} - ${formatPrice(meal.priceCents)}</div>
           <div class="item-desc">${meal.description || ""}</div>
           ${macrosText ? `<div class="item-macros">${macrosText}</div>` : ""}
         </div>`;
@@ -135,7 +135,7 @@
     .flyer { display: flex; align-items: flex-start; gap: 2rem; max-width: 800px; margin: 2rem auto; padding: 0 1.5rem 3rem; }
     .flyer-sidebar { flex-shrink: 0; width: 130px; display: flex; flex-direction: column; align-items: center; }
     .flyer-month-wrap { height: 480px; width: 130px; display: flex; align-items: center; justify-content: center; }
-    .flyer-month { font-family: "Permanent Marker", cursive; color: #d20d0d; font-size: 4.5rem; white-space: nowrap; transform: rotate(-90deg); }
+    .flyer-month { font-family: "Permanent Marker", cursive; color: #d20d0d; font-size: 5.175rem; white-space: nowrap; transform: rotate(-90deg); }
     .flyer-qr { width: 110px; height: 110px; margin-top: 1rem; }
     .flyer-scan-caption { font-family: "Anton", sans-serif; font-size: 0.75rem; color: #111111; text-transform: uppercase; letter-spacing: 0.06em; margin-top: 0.5rem; text-align: center; }
     .flyer-content { flex: 1; min-width: 0; }

@@ -52,7 +52,7 @@
 
   <script type="module">
     import { loadConfig } from "/js/config.js";
-    import { apiRequest } from "/js/api.js";
+    import { apiRequest, formatPrice } from "/js/api.js";
     import { getValidSession, isAdmin } from "/js/cognito.js";
     import { renderNav } from "/js/nav.js";
     import { loginUrlWithReturnTo } from "/js/redirect.js";
@@ -65,7 +65,7 @@
       const macrosText = formatMacros(meal.macros);
       return `
         <div class="menu-item">
-          <h4 class="menu-item-name">${meal.name}</h4>
+          <h4 class="menu-item-name">${meal.name} - ${formatPrice(meal.priceCents)}</h4>
           <p class="menu-item-description">${meal.description || ""}</p>
           ${macrosText ? `<p class="menu-item-macros">${macrosText}</p>` : ""}
         </div>`;
@@ -111,7 +111,7 @@
       const macrosText = formatMacros(meal.macros);
       return `
         <div style="margin-bottom:14px;">
-          <div style="font-weight:bold; font-size:15px; margin-bottom:2px;">${meal.name}</div>
+          <div style="font-weight:bold; font-size:15px; margin-bottom:2px;">${meal.name} - ${formatPrice(meal.priceCents)}</div>
           <div style="color:#666666; font-size:13px; margin-bottom:4px;">${meal.description || ""}</div>
           ${macrosText ? `<div style="font-weight:bold; font-size:12px;">${macrosText}</div>` : ""}
         </div>`;
