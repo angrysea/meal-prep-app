@@ -441,18 +441,32 @@ table.customers-table th {
   margin-bottom: 0.5rem;
 }
 
+/* Header/date-line type matches the printed flyer: elegant serif caps for
+   the section headers, serif italic (mixed case, not uppercase) for the
+   subheading and the "October 5th" date lines. */
+.monthly-menu h2 {
+  font-family: "Cinzel", Georgia, serif;
+  font-weight: 700;
+  color: #8f1a1a;
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  font-size: 1.6rem;
+  margin: 1.75rem 0 0.1rem;
+}
+
 .menu-subheading {
+  font-family: "Playfair Display", Georgia, serif;
   font-style: italic;
-  color: var(--color-muted);
-  margin: 0 0 0.75rem;
+  color: #8f1a1a;
+  font-size: 1.15rem;
+  margin: 0 0 0.6rem;
 }
 
 .menu-date {
-  font-family: var(--font-display);
-  color: var(--color-primary-dark);
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-  font-size: 1rem;
+  font-family: "Playfair Display", Georgia, serif;
+  font-style: italic;
+  color: #8f1a1a;
+  font-size: 1.15rem;
   margin: 1.25rem 0 0.25rem;
 }
 
