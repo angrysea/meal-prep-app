@@ -101,6 +101,7 @@
         ? `
         <h2>Staple meals</h2>
         <p class="subheading">Available Weekly for the month of ${monthName}</p>
+        <div class="watermark-anchor"><img class="flyer-watermark" src="https://gtxmeals.com/assets/logo.png" alt="" /></div>
         ${staples.map(monthlyMenuItemHtml).join("")}`
         : "";
 
@@ -135,11 +136,12 @@
     .flyer { display: flex; align-items: flex-start; gap: 2rem; max-width: 800px; margin: 2rem auto; padding: 0 1.5rem 3rem; }
     .flyer-sidebar { flex-shrink: 0; width: 130px; display: flex; flex-direction: column; align-items: center; }
     .flyer-month-wrap { height: 480px; width: 130px; display: flex; align-items: center; justify-content: center; }
-    .flyer-month { font-family: "Permanent Marker", cursive; color: #d20d0d; font-size: 5.175rem; white-space: nowrap; transform: rotate(-90deg); }
+    .flyer-month { font-family: "Permanent Marker", cursive; color: #d20d0d; font-size: 6.21rem; white-space: nowrap; transform: rotate(-90deg); }
     .flyer-qr { width: 110px; height: 110px; margin-top: 1rem; }
     .flyer-scan-caption { font-family: "Anton", sans-serif; font-size: 0.75rem; color: #111111; text-transform: uppercase; letter-spacing: 0.06em; margin-top: 0.5rem; text-align: center; }
     .flyer-content { flex: 1; min-width: 0; position: relative; }
-    .flyer-watermark { position: absolute; top: 2rem; left: 50%; transform: translateX(-50%); width: 420px; max-width: 90%; opacity: 0.07; z-index: -1; pointer-events: none; }
+    .watermark-anchor { position: relative; height: 0; }
+    .flyer-watermark { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 1848px; opacity: 0.07; z-index: -1; pointer-events: none; }
     h2 { font-family: "Cinzel", Georgia, serif; font-weight: 700; color: #8f1a1a; text-transform: uppercase; letter-spacing: 0.01em; font-size: 1.85rem; margin: 2rem 0 0.1rem; }
     h3 { font-family: "Playfair Display", Georgia, serif; font-style: italic; font-weight: 400; color: #8f1a1a; font-size: 1.3rem; margin: 1.25rem 0 0.25rem; }
     .subheading { font-family: "Playfair Display", Georgia, serif; font-style: italic; color: #8f1a1a; font-size: 1.3rem; margin: 0 0 0.6rem; }
@@ -163,7 +165,6 @@
       <div class="flyer-scan-caption">Scan to order</div>
     </div>
     <div class="flyer-content">
-      <img class="flyer-watermark" src="https://gtxmeals.com/assets/logo.png" alt="" />
       ${body}
       <div class="flyer-footer">
         <div class="footer-line1">Order by Friday 2 PM &bull; Prepared Sunday &bull; Monday pickup</div>
@@ -189,14 +190,11 @@
       }
       popup.document.write(html);
       popup.document.close();
-      // Go straight to the browser's native print dialog - "Save as PDF" is
-      // a standard destination there, so there's no need for a separate
-      // button/step just to get a PDF. onload (not an immediate call) so
-      // the Google Fonts stylesheet has a chance to apply before printing.
-      popup.addEventListener("load", () => {
-        popup.focus();
-        popup.print();
-      });
+      // Not auto-triggering window.print() here anymore - calling it
+      // automatically on load, then again from the in-page button, made
+      // browsers silently ignore the second (button-triggered) call, since
+      // print() reliably fires only from a direct user gesture. The button
+      // is the single, dependable way to print/save as PDF now.
     });
 
     let toastTimeout;
