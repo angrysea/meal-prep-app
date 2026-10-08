@@ -142,8 +142,8 @@
         <h2 style="${headerStyle}">Rotating meals</h2>
         ${sortedDates
           .map(
-            (isoDate) => `
-          <h3 style="${italicStyle} margin:16px 0 4px;">${formatDateHeading(isoDate)}</h3>
+            (isoDate, i) => `
+          <h3 style="${italicStyle} margin:${i === 0 ? "0" : "16px"} 0 4px;">${formatDateHeading(isoDate)}</h3>
           ${byDate.get(isoDate).map(emailMealHtml).join("")}`
           )
           .join("")}`

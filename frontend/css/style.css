@@ -470,6 +470,10 @@ table.customers-table th {
   margin: 1.25rem 0 0.25rem;
 }
 
+.monthly-menu h2 + .menu-date {
+  margin-top: 0;
+}
+
 .menu-item {
   margin-bottom: 0.9rem;
 }
