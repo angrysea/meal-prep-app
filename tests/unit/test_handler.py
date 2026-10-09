@@ -1048,113 +1048,85 @@ def test_reminders_fails_cleanly_when_no_admin_is_configured(table):
     assert resp["statusCode"] == 400
 
 
-def test_monthly_menu_email_requires_admin(table):
+def test_menu_send_requires_admin(table):
     from backend.lambda_src import index
 
     resp = index.handler(
-        _event("POST", "/monthly-menu/email", {"subject": "October Menu", "html": "<p>hi</p>"}, claims=CUSTOMER_CLAIMS),
+        _event("POST", "/menu/send", {"subject": "Menu", "message": "Here is our weekly menu"}, claims=CUSTOMER_CLAIMS),
         None,
     )
     assert resp["statusCode"] == 403
 
 
-def test_monthly_menu_email_requires_subject_and_html(table):
+def test_menu_send_requires_subject_and_message(table):
+    from backend.lambda_src import index
+
+    resp = index.handler(_event("POST", "/menu/send", {"message": "hi"}, claims=ADMIN_CLAIMS), None)
+    assert resp["statusCode"] == 400
+
+    resp = index.handler(_event("POST", "/menu/send", {"subject": "Menu"}, claims=ADMIN_CLAIMS), None)
+    assert resp["statusCode"] == 400
+
+
+def test_menu_send_routes_by_preferred_contact(table, monkeypatch):
     import boto3
     from backend.lambda_src import index
 
     cognito, pool_id = _create_test_pool(index)
     _create_admin_cognito_user(cognito, pool_id, "admin@example.com")
     boto3.client("ses", region_name="us-east-1").verify_email_identity(EmailAddress="admin@example.com")
+    _enable_sms(index)
 
-    resp = index.handler(_event("POST", "/monthly-menu/email", {"html": "<p>hi</p>"}, claims=ADMIN_CLAIMS), None)
-    assert resp["statusCode"] == 400
+    text_calls = []
+    monkeypatch.setattr(index, "_send_text_via_twilio", lambda phone, message: text_calls.append((phone, message)))
 
-    resp = index.handler(_event("POST", "/monthly-menu/email", {"subject": "October Menu"}, claims=ADMIN_CLAIMS), None)
-    assert resp["statusCode"] == 400
-
-
-def test_monthly_menu_email_sends_to_subscribed_customers_only(table):
-    import boto3
-    from backend.lambda_src import index
-
-    cognito, pool_id = _create_test_pool(index)
-    _create_admin_cognito_user(cognito, pool_id, "admin@example.com")
-    boto3.client("ses", region_name="us-east-1").verify_email_identity(EmailAddress="admin@example.com")
-
-    _save_profile(index, {"sub": "u1", "email": "u1@example.com"}, email="u1@example.com")
-    _save_profile(index, {"sub": "u2", "email": "u2@example.com"}, email="u2@example.com", unsubscribed=True)
-    _save_profile(index, {"sub": "u3", "email": "u3@example.com"})  # no email on file
+    _save_profile(index, {"sub": "u1", "email": "u1@example.com"}, email="u1@example.com", preferredContact="email")
+    _save_profile(index, {"sub": "u2", "email": "u2@example.com"}, phone="+15551234567", preferredContact="text")
+    _save_profile(index, {"sub": "u3", "email": "u3@example.com"}, email="u3@example.com", unsubscribed=True)
 
     resp = index.handler(
-        _event(
-            "POST", "/monthly-menu/email",
-            {"subject": "October Menu", "html": "<p>Staple meals...</p>"},
-            claims=ADMIN_CLAIMS,
-        ),
-        None,
-    )
-    assert resp["statusCode"] == 200
-    result = json.loads(resp["body"])
-    assert result["sent"] == 1
-    assert result["skippedUnsubscribed"] == 1
-    assert result["skippedNoEmail"] == 1
-    assert result["failed"] == 0
-
-
-def test_menu_text_requires_admin(table):
-    from backend.lambda_src import index
-
-    resp = index.handler(
-        _event("POST", "/menu/text", {"message": "Here is our weekly menu: https://gtxmeals.com/menu-flyer.html"},
-               claims=CUSTOMER_CLAIMS),
-        None,
-    )
-    assert resp["statusCode"] == 403
-
-
-def test_menu_text_requires_message(table):
-    from backend.lambda_src import index
-
-    resp = index.handler(_event("POST", "/menu/text", {}, claims=ADMIN_CLAIMS), None)
-    assert resp["statusCode"] == 400
-
-
-def test_menu_text_requires_sms_enabled(table):
-    from backend.lambda_src import index
-
-    # smsEnabled defaults to False - never turned on in this test.
-    resp = index.handler(
-        _event("POST", "/menu/text", {"message": "Here is our weekly menu"}, claims=ADMIN_CLAIMS), None
-    )
-    assert resp["statusCode"] == 400
-
-
-def test_menu_text_sends_to_subscribed_customers_only(table, monkeypatch):
-    from backend.lambda_src import index
-
-    index.handler(_event("PUT", "/settings", {"smsEnabled": True}, claims=ADMIN_CLAIMS), None)
-
-    publish_calls = []
-    monkeypatch.setattr(index, "_send_text_via_twilio", lambda phone, message: publish_calls.append((phone, message)))
-
-    _save_profile(index, {"sub": "u1", "email": "u1@example.com"}, phone="+15551234567")
-    _save_profile(index, {"sub": "u2", "email": "u2@example.com"}, phone="+15557654321", unsubscribed=True)
-    _save_profile(index, {"sub": "u3", "email": "u3@example.com"})  # no phone on file
-
-    resp = index.handler(
-        _event("POST", "/menu/text", {"message": "Here is our weekly menu: https://gtxmeals.com/menu-flyer.html"},
+        _event("POST", "/menu/send",
+               {"subject": "GTX Meals - This week's menu", "message": "Here is our weekly menu: https://gtxmeals.com/menu-flyer.html"},
                claims=ADMIN_CLAIMS),
         None,
     )
     assert resp["statusCode"] == 200
     result = json.loads(resp["body"])
-    assert result["sent"] == 1
+    assert result["sentEmail"] == 1
+    assert result["sentText"] == 1
     assert result["skippedUnsubscribed"] == 1
-    assert result["skippedNoPhone"] == 1
+    assert result["skippedSmsDisabled"] == 0
+    assert result["skippedNoContact"] == 0
     assert result["failed"] == 0
-    assert len(publish_calls) == 1
-    assert publish_calls[0][0] == "+15551234567"
-    assert publish_calls[0][1] == "Here is our weekly menu: https://gtxmeals.com/menu-flyer.html"
+    assert len(text_calls) == 1
+    assert text_calls[0] == ("+15551234567", "Here is our weekly menu: https://gtxmeals.com/menu-flyer.html")
+
+
+def test_menu_send_skips_text_when_sms_disabled_and_counts_missing_contact(table, monkeypatch):
+    from backend.lambda_src import index
+
+    # send_menu_notification resolves _from_email() up front regardless of
+    # channel mix, same as send_weekly_reminders - needs a real admin.
+    cognito, pool_id = _create_test_pool(index)
+    _create_admin_cognito_user(cognito, pool_id, "admin@example.com")
+
+    # smsEnabled defaults to False - never turned on in this test.
+    text_calls = []
+    monkeypatch.setattr(index, "_send_text_via_twilio", lambda phone, message: text_calls.append((phone, message)))
+
+    _save_profile(index, {"sub": "u1", "email": "u1@example.com"}, preferredContact="text")  # no phone on file
+    _save_profile(index, {"sub": "u2", "email": "u2@example.com"}, phone="+15551234567", preferredContact="text")
+
+    resp = index.handler(
+        _event("POST", "/menu/send", {"subject": "Menu", "message": "Here is our weekly menu"}, claims=ADMIN_CLAIMS),
+        None,
+    )
+    result = json.loads(resp["body"])
+    # Both are gated by smsEnabled being off before the missing-phone check
+    # is ever reached, so neither one calls the webhook.
+    assert result["sentText"] == 0
+    assert result["skippedSmsDisabled"] == 2
+    assert text_calls == []
 
 
 def test_send_text_via_twilio_builds_correct_request(table, monkeypatch):

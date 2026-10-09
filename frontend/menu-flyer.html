@@ -62,15 +62,17 @@
       </div>
       <div class="flyer-actions">
         <button type="button" id="print-button" onclick="window.print()">View as PDF</button>
-        <button type="button" class="secondary" id="text-button" style="display:none;">Text this menu to customers</button>
+        <button type="button" class="secondary" id="text-button" style="display:none;">Send this menu to customers</button>
+        <button type="button" class="secondary" id="cancel-button">Cancel</button>
       </div>
       <p class="text-status" id="text-status" style="display:none;"></p>
     </div>
   </div>
 
   <dialog id="text-preview-dialog">
-    <h2>Preview text</h2>
+    <h2>Preview message</h2>
     <p class="muted" id="text-preview-recipients"></p>
+    <p class="muted">Sent by email or text, based on each customer's preference.</p>
     <textarea id="text-preview-message" readonly></textarea>
     <div class="dialog-actions">
       <button type="button" id="text-send-button">Send</button>
@@ -173,6 +175,7 @@
 
       const link = `${location.origin}/menu-flyer.html?period=${period}`;
       const message = `Here is our ${period} menu: ${link}`;
+      const subject = `GTX Meals - ${period === "weekly" ? "This week's" : "This month's"} menu is up!`;
 
       textButton.addEventListener("click", async () => {
         statusEl.style.display = "none";
@@ -185,8 +188,8 @@
         }
         recipientsEl.textContent =
           customerCount === null
-            ? "Will be sent to every subscribed customer with a phone on file."
-            : `Will be sent to up to ${customerCount} customer${customerCount === 1 ? "" : "s"} (subscribed, with a phone on file).`;
+            ? "Will be sent to every subscribed customer."
+            : `Will be sent to up to ${customerCount} customer${customerCount === 1 ? "" : "s"} (subscribed).`;
         messageEl.value = message;
         dialog.showModal();
       });
@@ -196,17 +199,18 @@
       sendButton.addEventListener("click", async () => {
         sendButton.disabled = true;
         try {
-          const result = await apiRequest(config.apiUrl, "/menu/text", {
+          const result = await apiRequest(config.apiUrl, "/menu/send", {
             method: "POST",
             token,
-            body: { message },
+            body: { subject, message },
           });
           dialog.close();
           statusEl.className = "text-status";
           statusEl.textContent =
-            `Sent to ${result.sent} customer${result.sent === 1 ? "" : "s"}` +
+            `Sent to ${result.sentEmail} by email, ${result.sentText} by text` +
             (result.skippedUnsubscribed ? `, skipped ${result.skippedUnsubscribed} unsubscribed` : "") +
-            (result.skippedNoPhone ? `, skipped ${result.skippedNoPhone} with no phone on file` : "") +
+            (result.skippedSmsDisabled ? `, skipped ${result.skippedSmsDisabled} (SMS off)` : "") +
+            (result.skippedNoContact ? `, skipped ${result.skippedNoContact} with no contact info` : "") +
             (result.failed ? `, ${result.failed} failed` : "") +
             ".";
           statusEl.style.display = "block";
@@ -220,6 +224,14 @@
         }
       });
     }
+
+    document.getElementById("cancel-button").addEventListener("click", () => {
+      if (history.length > 1) {
+        history.back();
+      } else {
+        location.href = "/index.html";
+      }
+    });
 
     loadConfig().then(async (config) => {
       await render(config);

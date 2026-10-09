@@ -82,10 +82,8 @@ def handler(event, context):
             return update_profile(event)
         if path == "/reminders/send" and method == "POST":
             return send_weekly_reminders(event)
-        if path == "/monthly-menu/email" and method == "POST":
-            return send_monthly_menu_email(event)
-        if path == "/menu/text" and method == "POST":
-            return send_menu_text(event)
+        if path == "/menu/send" and method == "POST":
+            return send_menu_notification(event)
         if path == "/customers" and method == "GET":
             return list_customers(event)
         if path.startswith("/customers/") and method == "PUT":
@@ -552,97 +550,71 @@ def send_weekly_reminders(event):
     })
 
 
-def send_monthly_menu_email(event):
-    """Emails the admin-built monthly menu flyer (already rendered to HTML
-    client-side by admin-monthly-menu.html) to every subscribed customer.
-    Respects the same unsubscribed flag as weekly reminders - it's the
-    account's only opt-out of promotional email, and a monthly menu flyer
-    is exactly that, not an order-specific transactional message.
+def send_menu_notification(event):
+    """Sends an admin-written message (e.g. "Here is our weekly menu: <link
+    to menu-flyer.html>") to every subscribed customer, via whichever
+    channel (email/text) each one prefers - same dual-channel pattern as
+    send_weekly_reminders, just with an admin-composed message instead of
+    the fixed weekly one. Used by the "Send this menu to customers" button
+    on menu-flyer.html for both the weekly and monthly menu link.
     """
     _require_admin(event)
     body = _body(event)
     subject = body.get("subject", "").strip()
-    html = body.get("html", "").strip()
+    message = body.get("message", "").strip()
     if not subject:
         raise BadRequest("subject is required")
-    if not html:
-        raise BadRequest("html is required")
-    from_email = _from_email()
-
-    sent = skipped_unsubscribed = skipped_no_email = failed = 0
-    errors = []
-
-    for profile in _scan_all_profiles():
-        if profile.get("unsubscribed"):
-            skipped_unsubscribed += 1
-            continue
-        email = profile.get("email")
-        if not email:
-            skipped_no_email += 1
-            continue
-        try:
-            ses.send_email(
-                Source=from_email,
-                Destination={"ToAddresses": [email]},
-                Message={
-                    "Subject": {"Data": subject},
-                    "Body": {"Html": {"Data": html}},
-                },
-            )
-            sent += 1
-        except Exception as e:  # noqa: BLE001 - one bad recipient shouldn't abort the batch
-            failed += 1
-            errors.append(f"{profile.get('PK')}: {e}")
-
-    return _response(200, {
-        "sent": sent,
-        "skippedUnsubscribed": skipped_unsubscribed,
-        "skippedNoEmail": skipped_no_email,
-        "failed": failed,
-        "errors": errors[:10],
-    })
-
-
-def send_menu_text(event):
-    """Texts an admin-written message (e.g. "Here is our weekly menu: <link
-    to menu-flyer.html>") to every subscribed customer with a phone on file.
-    Used by the "Text this menu to customers" button on menu-flyer.html for
-    both the weekly and monthly menu link. Respects the same unsubscribed
-    flag as email, and additionally requires the smsEnabled global setting -
-    unlike email, texting costs real money per message.
-    """
-    _require_admin(event)
-    body = _body(event)
-    message = body.get("message", "").strip()
     if not message:
         raise BadRequest("message is required")
 
+    from_email = _from_email()
     sms_enabled = bool((table.get_item(Key=SETTINGS_KEY).get("Item") or {}).get("smsEnabled", False))
-    if not sms_enabled:
-        raise BadRequest("SMS is turned off in settings - enable it first")
 
-    sent = skipped_unsubscribed = skipped_no_phone = failed = 0
+    sent_email = sent_text = skipped_unsubscribed = skipped_sms_disabled = skipped_no_contact = failed = 0
     errors = []
 
     for profile in _scan_all_profiles():
         if profile.get("unsubscribed"):
             skipped_unsubscribed += 1
             continue
-        phone = profile.get("phone")
-        if not phone:
-            skipped_no_phone += 1
-            continue
+
+        channel = profile.get("preferredContact", "email")
         try:
-            _send_text_via_twilio(phone, message)
-            sent += 1
+            if channel == "text":
+                if not sms_enabled:
+                    print(f"SMS not sent to {profile.get('PK')}: smsEnabled global setting is off")
+                    skipped_sms_disabled += 1
+                    continue
+                phone = profile.get("phone")
+                if not phone:
+                    skipped_no_contact += 1
+                    continue
+                _send_text_via_twilio(phone, message)
+                sent_text += 1
+            else:
+                email = profile.get("email")
+                if not email:
+                    skipped_no_contact += 1
+                    continue
+                ses.send_email(
+                    Source=from_email,
+                    Destination={"ToAddresses": [email]},
+                    Message={
+                        "Subject": {"Data": subject},
+                        "Body": {"Text": {"Data": message}},
+                    },
+                )
+                sent_email += 1
         except Exception as e:  # noqa: BLE001 - one bad recipient shouldn't abort the batch
             failed += 1
             errors.append(f"{profile.get('PK')}: {e}")
 
     return _response(200, {
-        "sent": sent,
+        "sentEmail": sent_email,
+        "sentText": sent_text,
         "skippedUnsubscribed": skipped_unsubscribed,
-        "skippedNoPhone": skipped_no_phone,
+        "skippedSmsDisabled": skipped_sms_disabled,
+        "skippedNoContact": skipped_no_contact,
         "failed": failed,
         "errors": errors[:10],
     })

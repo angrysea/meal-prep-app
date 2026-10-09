@@ -1,7 +1,6 @@
 // Shared "which meals are on the menu for a given month" logic, used by
-// both the admin Monthly Menu generator (admin-monthly-menu.html) and the
-// customer-facing "View this month's menu" popup (index.html) - one source
-// of truth for the membership rule (staple, or weekOf falls in the picked
+// menu-flyer.html for both the weekly and monthly view - one source of
+// truth for the membership rule (staple, or weekOf falls in the picked
 // month) and the "October 5th" date-heading format.
 
 export const MONTH_NAMES = [
