@@ -83,7 +83,7 @@ change the displayed calories, that'd need its own mechanism; not implemented.
 
 ## Weekly reminders
 
-The "Send weekly reminders" button on `/admin`, and the "Text this menu to
+The "Send weekly reminders" button on `/admin`, and the "Send this menu to
 customers" button on `menu-flyer.html`, email or text every customer who
 hasn't unsubscribed, using their saved `preferredContact` (`email` via SES,
 `text` via Twilio). This **will not actually deliver anything yet** without
@@ -114,7 +114,7 @@ one-time setup:
    the account) - it's never exposed through any API response or the admin
    UI, only reachable by the Lambda's own IAM role.
 
-The endpoints (`POST /reminders/send`, `POST /menu/text`) resolve failures
+The endpoints (`POST /reminders/send`, `POST /menu/send`) resolve failures
 per-recipient, so one bad address/number doesn't block everyone else - check
 the `failed` count and `errors` in the response if something looks off.
 
