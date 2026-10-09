@@ -16,6 +16,7 @@
     <h1>This Week's Menu</h1>
     <p class="muted">Pick your meals, then check out below.</p>
     <button type="button" class="secondary" id="monthly-menu-button">View this month's menu</button>
+    <button type="button" class="secondary" id="weekly-menu-button">View this week's menu</button>
     <p class="muted" id="ready-date-info" style="display:none;"></p>
     <p class="muted" id="login-prompt" style="display:none;"></p>
     <p class="muted" id="edit-notice" style="display:none;">Editing your previous order - update it below and place it again.</p>
@@ -177,25 +178,131 @@
 </html>`;
     }
 
-    document.getElementById("monthly-menu-button").addEventListener("click", async () => {
-      const { meals } = await apiRequest((await loadConfig()).apiUrl, "/meals");
-      const now = new Date();
-      const monthValue = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-      const html = buildMonthlyMenuPopupHtml(meals, monthValue);
+    // Same format as the monthly flyer, but scoped to just the current
+    // ready date instead of a whole month: staples, plus whichever rotating
+    // meals match nextReadyDate exactly. Reuses groupMealsForMonth by
+    // passing the full "YYYY-MM-DD" ready date in place of a "YYYY-MM"
+    // prefix - a rotating meal's weekOf.startsWith(readyDate) only matches
+    // when it's an exact match, since both are full dates of the same
+    // length. A sentinel is used when there's no ready date set yet, so
+    // startsWith("") doesn't accidentally match every rotating meal.
+    function buildWeeklyMenuPopupHtml(meals, readyDate) {
+      const sidebarTitle = "This weeks menu";
+      const hasReadyDate = !!readyDate;
+      const [year, month] = (hasReadyDate ? readyDate : `${new Date().getFullYear()}-${new Date().getMonth() + 1}`)
+        .split("-")
+        .map(Number);
+      const monthName = MONTH_NAMES[month - 1];
+      const { staples, byDate, sortedDates } = groupMealsForMonth(meals, hasReadyDate ? readyDate : "no-ready-date-set");
 
-      // A real navigation to a blob: URL rather than window.open("") +
-      // document.write() - some browsers don't reliably run external
-      // resource fetches (like the Google Fonts <link>) for a document
-      // synthesized via document.write(), since it was never actually
-      // "loaded" the normal way. A blob URL is a genuine page load.
+      const staplesHtml = staples.length
+        ? `
+        <h2>Staple meals</h2>
+        <p class="subheading">Available Weekly for the month of ${monthName}</p>
+        ${staples.map(monthlyMenuItemHtml).join("")}`
+        : "";
+
+      const rotatingHtml = sortedDates.length
+        ? `
+        <h2>Rotating meals</h2>
+        ${sortedDates
+          .map(
+            (isoDate) => `
+          <h3>${formatDateHeading(isoDate)}</h3>
+          ${byDate.get(isoDate).map(monthlyMenuItemHtml).join("")}`
+          )
+          .join("")}`
+        : "";
+
+      const body =
+        staples.length === 0 && sortedDates.length === 0
+          ? `<p class="muted">No menu has been set for this week yet - check back soon.</p>`
+          : `${staplesHtml}${rotatingHtml}`;
+
+      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent("https://gtxmeals.com")}`;
+
+      return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>GTX Meals - This Week's Menu</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Permanent+Marker&family=Cinzel:wght@600;700&family=Playfair+Display:ital@1&display=swap" rel="stylesheet" />
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #111111; margin: 0; padding: 0; }
+    .flyer { display: flex; align-items: flex-start; gap: 2rem; max-width: 800px; margin: 2rem auto; padding: 0 1.5rem 3rem; }
+    .flyer-sidebar { flex-shrink: 0; width: 130px; display: flex; flex-direction: column; align-items: center; }
+    .flyer-month-wrap { height: 600px; width: 130px; display: flex; align-items: center; justify-content: center; }
+    .flyer-month { font-family: "Permanent Marker", cursive; color: #d20d0d; font-size: 3.4rem; white-space: nowrap; transform: rotate(-90deg); }
+    .flyer-qr { width: 110px; height: 110px; margin-top: 1rem; }
+    .flyer-scan-caption { font-family: "Anton", sans-serif; font-size: 0.75rem; color: #111111; text-transform: uppercase; letter-spacing: 0.06em; margin-top: 0.5rem; text-align: center; }
+    .flyer-content { flex: 1; min-width: 0; position: relative; }
+    .flyer-watermark { position: absolute; top: 50%; left: 0; width: 100%; opacity: 0.07; z-index: -1; pointer-events: none; transform: translateY(-50%) scaleY(1.2); }
+    h2 { font-family: "Cinzel", Georgia, serif; font-weight: 700; color: #8f1a1a; text-transform: uppercase; letter-spacing: 0.01em; font-size: 1.85rem; margin: 2rem 0 0.1rem; }
+    h3 { font-family: "Playfair Display", Georgia, serif; font-style: italic; font-weight: 400; color: #8f1a1a; font-size: 1.3rem; margin: 1.25rem 0 0.25rem; }
+    h2 + h3 { margin-top: 0; }
+    .subheading { font-family: "Playfair Display", Georgia, serif; font-style: italic; color: #8f1a1a; font-size: 1.3rem; margin: 0 0 0.6rem; }
+    .item { margin-bottom: 0.9rem; }
+    .item-name { font-weight: bold; margin-bottom: 0.15rem; }
+    .item-desc { color: #666666; font-size: 0.9rem; margin-bottom: 0.25rem; }
+    .item-macros { font-weight: bold; font-size: 0.85rem; }
+    .muted { color: #666666; }
+    .flyer-footer { margin-top: 2.5rem; text-align: center; color: #aa0e0c; }
+    .flyer-footer .footer-line1 { font-weight: bold; text-transform: uppercase; letter-spacing: 0.02em; }
+    .flyer-footer .footer-line2 { font-size: 0.85rem; margin-top: 0.2rem; }
+    #print-button { display: block; margin: 1.5rem auto 0; background: #d20d0d; color: #fff; border: none; border-radius: 6px; padding: 0.6rem 1.1rem; font-size: 0.95rem; cursor: pointer; }
+    @media print { #print-button { display: none; } }
+  </style>
+</head>
+<body>
+  <div class="flyer">
+    <div class="flyer-sidebar">
+      <div class="flyer-month-wrap"><div class="flyer-month">${sidebarTitle.toUpperCase()}</div></div>
+      <img class="flyer-qr" src="${qrUrl}" alt="QR code to order" />
+      <div class="flyer-scan-caption">Scan to order</div>
+    </div>
+    <div class="flyer-content">
+      <img class="flyer-watermark" src="https://gtxmeals.com/assets/watermark.jpg" alt="" />
+      ${body}
+      <div class="flyer-footer">
+        <div class="footer-line1">Order by Friday 2 PM &bull; Prepared Sunday &bull; Monday pickup</div>
+        <div class="footer-line2">Monthly menu is planned in advance and subject to change</div>
+      </div>
+      <button type="button" id="print-button" onclick="window.print()">View as PDF</button>
+    </div>
+  </div>
+</body>
+</html>`;
+    }
+
+    // Shared by both popups - opens generated HTML via a blob: URL (a real
+    // navigation, not document.write()'s synthesized document) so external
+    // resource fetches like the Google Fonts <link> reliably run.
+    function openMenuPopup(html, errorContext) {
       const blobUrl = URL.createObjectURL(new Blob([html], { type: "text/html" }));
       const popup = window.open(blobUrl, "_blank");
       if (!popup) {
-        alert("Please allow pop-ups for this site to view the monthly menu.");
+        alert(`Please allow pop-ups for this site to view ${errorContext}.`);
         URL.revokeObjectURL(blobUrl);
         return;
       }
       setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+    }
+
+    document.getElementById("monthly-menu-button").addEventListener("click", async () => {
+      const { meals } = await apiRequest((await loadConfig()).apiUrl, "/meals");
+      const now = new Date();
+      const monthValue = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+      openMenuPopup(buildMonthlyMenuPopupHtml(meals, monthValue), "the monthly menu");
+    });
+
+    document.getElementById("weekly-menu-button").addEventListener("click", async () => {
+      const config = await loadConfig();
+      const [{ meals }, { nextReadyDate }] = await Promise.all([
+        apiRequest(config.apiUrl, "/meals"),
+        apiRequest(config.apiUrl, "/settings"),
+      ]);
+      openMenuPopup(buildWeeklyMenuPopupHtml(meals, nextReadyDate), "the weekly menu");
     });
 
     let toastTimeout;
