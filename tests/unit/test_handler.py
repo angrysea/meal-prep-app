@@ -839,37 +839,6 @@ def test_admin_update_order_status_rejects_invalid_status(table):
     assert resp["statusCode"] == 400
 
 
-def test_create_order_emails_admins(table, monkeypatch):
-    from backend.lambda_src import index
-
-    cognito, pool_id = _create_test_pool(index)
-    _create_admin_cognito_user(cognito, pool_id, "admin@example.com")
-
-    sent = {}
-    monkeypatch.setattr(index.ses, "send_email", lambda **kwargs: sent.update(kwargs) or {"MessageId": "test"})
-
-    _place_order(index, CUSTOMER_CLAIMS)
-
-    assert sent["Destination"]["ToAddresses"] == ["admin@example.com"]
-    # Sent from the admin's own address, not a hardcoded setting.
-    assert sent["Source"] == "admin@example.com"
-    assert "New order" in sent["Message"]["Subject"]["Data"]
-
-
-def test_create_order_does_not_fail_if_admin_notification_errors(table):
-    from backend.lambda_src import index
-
-    # No Cognito pool/group set up for this test - USER_POOL_ID is the
-    # module-level placeholder, so the admin lookup will fail. The order
-    # must still succeed.
-    resp = index.handler(
-        _event("POST", "/orders", {"items": [{"mealId": _create_meal(index)["mealId"], "quantity": 1}]},
-               claims=CUSTOMER_CLAIMS),
-        None,
-    )
-    assert resp["statusCode"] == 201
-
-
 def test_unknown_route_returns_404(table):
     from backend.lambda_src import index
 

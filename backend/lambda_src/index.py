@@ -661,7 +661,6 @@ def create_order(event):
         "status": "placed",  # stub checkout - no real payment is taken
     }
     table.put_item(Item=item)
-    _notify_admins_of_order(item)
     return _response(201, _order_out(item))
 
 
@@ -766,39 +765,6 @@ def _from_email():
     if not emails:
         raise BadRequest("no admin account is configured to send email from")
     return emails[0]
-
-
-def _notify_admins_of_order(order):
-    """Best-effort - a notification failure (unverified sender, no admins
-    found, SES outage) should never block the order itself from going through.
-    """
-    try:
-        admin_emails = _admin_emails()
-        if not admin_emails:
-            return
-
-        lines = [f"New order from {order.get('deliveryName') or order.get('deliveryEmail')}:", ""]
-        for line_item in order["items"]:
-            addon_text = ", ".join(a["description"] for a in line_item["selectedAddOns"])
-            suffix = f" ({addon_text})" if addon_text else ""
-            if line_item.get("note"):
-                suffix += f" [Note: {line_item['note']}]"
-            lines.append(f"- {line_item['quantity']} x {line_item['name']}{suffix}")
-        lines.append("")
-        lines.append(f"Total: ${order['totalCents'] / 100:.2f}")
-        lines.append(f"Deliver to: {order.get('deliveryAddress', '')}")
-        lines.append(f"Contact: {order.get('deliveryEmail', '')} {order.get('deliveryPhone', '')}".strip())
-
-        ses.send_email(
-            Source=admin_emails[0],
-            Destination={"ToAddresses": admin_emails},
-            Message={
-                "Subject": {"Data": f"New order #{order['orderId']}"},
-                "Body": {"Text": {"Data": "\n".join(lines)}},
-            },
-        )
-    except Exception:  # noqa: BLE001 - notification failures must not fail the order
-        pass
 
 
 def _resolve_addons(requested_addon_ids):
