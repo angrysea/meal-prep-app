@@ -79,6 +79,8 @@ def handler(event, context):
             return send_weekly_reminders(event)
         if path == "/monthly-menu/email" and method == "POST":
             return send_monthly_menu_email(event)
+        if path == "/menu/text" and method == "POST":
+            return send_menu_text(event)
         if path == "/customers" and method == "GET":
             return list_customers(event)
         if path.startswith("/customers/") and method == "PUT":
@@ -562,6 +564,51 @@ def send_monthly_menu_email(event):
         "sent": sent,
         "skippedUnsubscribed": skipped_unsubscribed,
         "skippedNoEmail": skipped_no_email,
+        "failed": failed,
+        "errors": errors[:10],
+    })
+
+
+def send_menu_text(event):
+    """Texts an admin-written message (e.g. "Here is our weekly menu: <link
+    to menu-flyer.html>") to every subscribed customer with a phone on file.
+    Used by the "Text this menu to customers" button on menu-flyer.html for
+    both the weekly and monthly menu link. Respects the same unsubscribed
+    flag as email, and additionally requires the smsEnabled global setting -
+    unlike email, texting costs real money per message.
+    """
+    _require_admin(event)
+    body = _body(event)
+    message = body.get("message", "").strip()
+    if not message:
+        raise BadRequest("message is required")
+
+    sms_enabled = bool((table.get_item(Key=SETTINGS_KEY).get("Item") or {}).get("smsEnabled", False))
+    if not sms_enabled:
+        raise BadRequest("SMS is turned off in settings - enable it first")
+
+    sent = skipped_unsubscribed = skipped_no_phone = failed = 0
+    errors = []
+
+    for profile in _scan_all_profiles():
+        if profile.get("unsubscribed"):
+            skipped_unsubscribed += 1
+            continue
+        phone = profile.get("phone")
+        if not phone:
+            skipped_no_phone += 1
+            continue
+        try:
+            sns.publish(PhoneNumber=phone, Message=message)
+            sent += 1
+        except Exception as e:  # noqa: BLE001 - one bad recipient shouldn't abort the batch
+            failed += 1
+            errors.append(f"{profile.get('PK')}: {e}")
+
+    return _response(200, {
+        "sent": sent,
+        "skippedUnsubscribed": skipped_unsubscribed,
+        "skippedNoPhone": skipped_no_phone,
         "failed": failed,
         "errors": errors[:10],
     })

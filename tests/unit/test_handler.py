@@ -1098,6 +1098,62 @@ def test_monthly_menu_email_sends_to_subscribed_customers_only(table):
     assert result["failed"] == 0
 
 
+def test_menu_text_requires_admin(table):
+    from backend.lambda_src import index
+
+    resp = index.handler(
+        _event("POST", "/menu/text", {"message": "Here is our weekly menu: https://gtxmeals.com/menu-flyer.html"},
+               claims=CUSTOMER_CLAIMS),
+        None,
+    )
+    assert resp["statusCode"] == 403
+
+
+def test_menu_text_requires_message(table):
+    from backend.lambda_src import index
+
+    resp = index.handler(_event("POST", "/menu/text", {}, claims=ADMIN_CLAIMS), None)
+    assert resp["statusCode"] == 400
+
+
+def test_menu_text_requires_sms_enabled(table):
+    from backend.lambda_src import index
+
+    # smsEnabled defaults to False - never turned on in this test.
+    resp = index.handler(
+        _event("POST", "/menu/text", {"message": "Here is our weekly menu"}, claims=ADMIN_CLAIMS), None
+    )
+    assert resp["statusCode"] == 400
+
+
+def test_menu_text_sends_to_subscribed_customers_only(table, monkeypatch):
+    from backend.lambda_src import index
+
+    index.handler(_event("PUT", "/settings", {"smsEnabled": True}, claims=ADMIN_CLAIMS), None)
+
+    publish_calls = []
+    monkeypatch.setattr(index.sns, "publish", lambda **kwargs: publish_calls.append(kwargs))
+
+    _save_profile(index, {"sub": "u1", "email": "u1@example.com"}, phone="+15551234567")
+    _save_profile(index, {"sub": "u2", "email": "u2@example.com"}, phone="+15557654321", unsubscribed=True)
+    _save_profile(index, {"sub": "u3", "email": "u3@example.com"})  # no phone on file
+
+    resp = index.handler(
+        _event("POST", "/menu/text", {"message": "Here is our weekly menu: https://gtxmeals.com/menu-flyer.html"},
+               claims=ADMIN_CLAIMS),
+        None,
+    )
+    assert resp["statusCode"] == 200
+    result = json.loads(resp["body"])
+    assert result["sent"] == 1
+    assert result["skippedUnsubscribed"] == 1
+    assert result["skippedNoPhone"] == 1
+    assert result["failed"] == 0
+    assert len(publish_calls) == 1
+    assert publish_calls[0]["PhoneNumber"] == "+15551234567"
+    assert publish_calls[0]["Message"] == "Here is our weekly menu: https://gtxmeals.com/menu-flyer.html"
+
+
 def _create_test_pool(index):
     cognito = boto3.client("cognito-idp", region_name="us-east-1")
     # UsernameAttributes=["email"] matches the real deployed pool: Cognito then
