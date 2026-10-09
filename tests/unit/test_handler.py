@@ -950,7 +950,7 @@ def _enable_sms(index):
     index.handler(_event("PUT", "/settings", {"smsEnabled": True}, claims=ADMIN_CLAIMS), None)
 
 
-def test_reminders_sends_by_preference_and_skips_unsubscribed(table):
+def test_reminders_sends_by_preference_and_skips_unsubscribed(table, monkeypatch):
     import boto3
     from backend.lambda_src import index
 
@@ -959,6 +959,9 @@ def test_reminders_sends_by_preference_and_skips_unsubscribed(table):
     # moto's SES mock enforces the same verified-sender rule real SES does.
     boto3.client("ses", region_name="us-east-1").verify_email_identity(EmailAddress="admin@example.com")
     _enable_sms(index)
+    # Texting goes through Twilio, not a boto3 client moto can intercept -
+    # stub it out rather than needing real Secrets Manager + network calls.
+    monkeypatch.setattr(index, "_send_text_via_twilio", lambda phone, message: None)
 
     _save_profile(index, {"sub": "u1", "email": "u1@example.com"}, email="u1@example.com", preferredContact="email")
     _save_profile(index, {"sub": "u2", "email": "u2@example.com"}, phone="+15551234567", preferredContact="text")
@@ -1000,7 +1003,7 @@ def test_reminders_skip_sms_when_globally_disabled(table, monkeypatch):
     # smsEnabled defaults to False - never explicitly turned on in this test.
 
     publish_calls = []
-    monkeypatch.setattr(index.sns, "publish", lambda **kwargs: publish_calls.append(kwargs))
+    monkeypatch.setattr(index, "_send_text_via_twilio", lambda phone, message: publish_calls.append((phone, message)))
 
     _save_profile(index, {"sub": "u1", "email": "u1@example.com"}, phone="+15551234567", preferredContact="text")
 
@@ -1021,7 +1024,7 @@ def test_reminders_sends_sms_once_globally_enabled(table, monkeypatch):
     _enable_sms(index)
 
     publish_calls = []
-    monkeypatch.setattr(index.sns, "publish", lambda **kwargs: publish_calls.append(kwargs))
+    monkeypatch.setattr(index, "_send_text_via_twilio", lambda phone, message: publish_calls.append((phone, message)))
 
     _save_profile(index, {"sub": "u1", "email": "u1@example.com"}, phone="+15551234567", preferredContact="text")
 
@@ -1030,7 +1033,7 @@ def test_reminders_sends_sms_once_globally_enabled(table, monkeypatch):
     assert result["sentText"] == 1
     assert result["skippedSmsDisabled"] == 0
     assert len(publish_calls) == 1
-    assert publish_calls[0]["PhoneNumber"] == "+15551234567"
+    assert publish_calls[0][0] == "+15551234567"
 
 
 def test_reminders_fails_cleanly_when_no_admin_is_configured(table):
@@ -1132,7 +1135,7 @@ def test_menu_text_sends_to_subscribed_customers_only(table, monkeypatch):
     index.handler(_event("PUT", "/settings", {"smsEnabled": True}, claims=ADMIN_CLAIMS), None)
 
     publish_calls = []
-    monkeypatch.setattr(index.sns, "publish", lambda **kwargs: publish_calls.append(kwargs))
+    monkeypatch.setattr(index, "_send_text_via_twilio", lambda phone, message: publish_calls.append((phone, message)))
 
     _save_profile(index, {"sub": "u1", "email": "u1@example.com"}, phone="+15551234567")
     _save_profile(index, {"sub": "u2", "email": "u2@example.com"}, phone="+15557654321", unsubscribed=True)
@@ -1150,8 +1153,45 @@ def test_menu_text_sends_to_subscribed_customers_only(table, monkeypatch):
     assert result["skippedNoPhone"] == 1
     assert result["failed"] == 0
     assert len(publish_calls) == 1
-    assert publish_calls[0]["PhoneNumber"] == "+15551234567"
-    assert publish_calls[0]["Message"] == "Here is our weekly menu: https://gtxmeals.com/menu-flyer.html"
+    assert publish_calls[0][0] == "+15551234567"
+    assert publish_calls[0][1] == "Here is our weekly menu: https://gtxmeals.com/menu-flyer.html"
+
+
+def test_send_text_via_twilio_builds_correct_request(table, monkeypatch):
+    import base64
+
+    from backend.lambda_src import index
+
+    secret = boto3.client("secretsmanager", region_name="us-east-1").create_secret(
+        Name="test-twilio-secret",
+        SecretString=json.dumps({"accountSid": "ACxxxx", "authToken": "secret-token", "fromNumber": "+15550001111"}),
+    )
+    monkeypatch.setattr(index, "TWILIO_SECRET_ARN", secret["ARN"])
+
+    captured = {}
+
+    def fake_urlopen(request, timeout=10):
+        captured["url"] = request.full_url
+        captured["auth_header"] = request.get_header("Authorization")
+        captured["body"] = request.data.decode("utf-8")
+
+    monkeypatch.setattr(index.urllib.request, "urlopen", fake_urlopen)
+
+    index._send_text_via_twilio("+15559998888", "Here is our weekly menu")
+
+    assert captured["url"] == "https://api.twilio.com/2010-04-01/Accounts/ACxxxx/Messages.json"
+    decoded = base64.b64decode(captured["auth_header"].split(" ")[1]).decode()
+    assert decoded == "ACxxxx:secret-token"
+    assert "To=%2B15559998888" in captured["body"]
+    assert "From=%2B15550001111" in captured["body"]
+
+
+def test_send_text_via_twilio_raises_when_not_configured(table):
+    from backend.lambda_src import index
+
+    assert index.TWILIO_SECRET_ARN == ""
+    with pytest.raises(RuntimeError):
+        index._send_text_via_twilio("+15559998888", "hi")
 
 
 def _create_test_pool(index):

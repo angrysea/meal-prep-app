@@ -83,10 +83,11 @@ change the displayed calories, that'd need its own mechanism; not implemented.
 
 ## Weekly reminders
 
-The "Send weekly reminders" button on `/admin` emails or texts every
-customer who hasn't unsubscribed, using their saved `preferredContact`
-(`email` via SES, `text` via SNS). This **will not actually deliver
-anything yet** without one-time setup in the AWS console:
+The "Send weekly reminders" button on `/admin`, and the "Text this menu to
+customers" button on `menu-flyer.html`, email or text every customer who
+hasn't unsubscribed, using their saved `preferredContact` (`email` via SES,
+`text` via Twilio). This **will not actually deliver anything yet** without
+one-time setup:
 
 1. **Verify the admin's email as a sender identity in SES** (Console → SES →
    Verified identities → Create identity, using whatever address is
@@ -99,13 +100,23 @@ anything yet** without one-time setup in the AWS console:
    *verified* recipient addresses — fine for testing with your own inbox,
    but you'll need to request production access (Console → SES → Account
    dashboard) before real customers can receive these emails.
-3. SNS text messages don't need sender verification, but a brand-new
-   account's default SMS spend limit is very low (check Console → SNS →
-   Text messaging (SMS) → Text messaging preferences).
+3. **Texting goes through Twilio, not AWS SNS** - this AWS org's SCP blocks
+   `sns:Publish`/`sms-voice:*` entirely, so SNS was never usable here. Sign
+   up at [twilio.com](https://www.twilio.com), buy a phone number capable of
+   SMS, then populate the credentials the Lambda reads from Secrets Manager
+   (the secret starts out empty on a fresh deploy):
+   ```
+   aws secretsmanager put-secret-value --profile gtx-meal-prep \
+     --secret-id <TwilioSecretArn from `cdk deploy` output> \
+     --secret-string '{"accountSid":"AC...","authToken":"...","fromNumber":"+1..."}'
+   ```
+   The Auth Token is a real secret (it can send SMS, and rack up charges, on
+   the account) - it's never exposed through any API response or the admin
+   UI, only reachable by the Lambda's own IAM role.
 
-The endpoint (`POST /reminders/send`) resolves failures per-recipient, so
-one bad address/number doesn't block everyone else — check the `failed`
-count and `errors` in the response if something looks off.
+The endpoints (`POST /reminders/send`, `POST /menu/text`) resolve failures
+per-recipient, so one bad address/number doesn't block everyone else - check
+the `failed` count and `errors` in the response if something looks off.
 
 ## Custom domain (gtxmeals.com)
 

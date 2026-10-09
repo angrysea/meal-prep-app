@@ -1,6 +1,8 @@
 import base64
 import json
 import os
+import urllib.parse
+import urllib.request
 import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
@@ -11,6 +13,9 @@ TABLE_NAME = os.environ["TABLE_NAME"]
 USER_POOL_ID = os.environ["USER_POOL_ID"]
 ADMINS_GROUP_NAME = os.environ.get("ADMINS_GROUP_NAME", "Admins")
 SITE_URL = os.environ.get("SITE_URL", "")
+# Secrets Manager ARN holding {"accountSid", "authToken", "fromNumber"} - see
+# _send_text_via_twilio. Populated after deploy; see README.
+TWILIO_SECRET_ARN = os.environ.get("TWILIO_SECRET_ARN", "")
 
 # DYNAMODB_ENDPOINT_OVERRIDE lets this run against DynamoDB Local
 # (docker-compose) instead of real AWS when testing outside of SAM.
@@ -18,7 +23,7 @@ _endpoint = os.environ.get("DYNAMODB_ENDPOINT_OVERRIDE")
 _dynamodb = boto3.resource("dynamodb", endpoint_url=_endpoint) if _endpoint else boto3.resource("dynamodb")
 table = _dynamodb.Table(TABLE_NAME)
 ses = boto3.client("ses")
-sns = boto3.client("sns")
+secretsmanager = boto3.client("secretsmanager")
 cognito_idp = boto3.client("cognito-idp")
 
 MACRO_FIELDS = ("calories", "proteinG", "carbsG", "fatG")
@@ -465,6 +470,35 @@ def _reminder_message():
     return base
 
 
+def _send_text_via_twilio(phone, message):
+    """Texts via Twilio rather than AWS SNS - this AWS org's SCP blocks
+    sns:Publish/sms-voice:* entirely (see README), and Twilio is a separate
+    vendor unaffected by that restriction. Credentials live in Secrets
+    Manager, not DynamoDB/the app's own settings, since the Auth Token is a
+    real secret (it can send SMS - and rack up charges - on the account),
+    never exposed through any API response. Raises on missing config or a
+    non-2xx response; the caller's try/except treats that like any other
+    per-recipient failure.
+    """
+    if not TWILIO_SECRET_ARN:
+        raise RuntimeError("Twilio isn't configured - no TWILIO_SECRET_ARN")
+    secret = json.loads(secretsmanager.get_secret_value(SecretId=TWILIO_SECRET_ARN)["SecretString"])
+    account_sid = secret["accountSid"]
+
+    body = urllib.parse.urlencode({"To": phone, "From": secret["fromNumber"], "Body": message}).encode("utf-8")
+    credentials = base64.b64encode(f"{account_sid}:{secret['authToken']}".encode()).decode()
+    request = urllib.request.Request(
+        f"https://api.twilio.com/2010-04-01/Accounts/{account_sid}/Messages.json",
+        data=body,
+        headers={
+            "Authorization": f"Basic {credentials}",
+            "Content-Type": "application/x-www-form-urlencoded",
+        },
+        method="POST",
+    )
+    urllib.request.urlopen(request, timeout=10)
+
+
 def send_weekly_reminders(event):
     _require_admin(event)
     message = _reminder_message()
@@ -489,7 +523,7 @@ def send_weekly_reminders(event):
                 phone = profile.get("phone")
                 if not phone:
                     raise ValueError("no phone number on file")
-                sns.publish(PhoneNumber=phone, Message=message)
+                _send_text_via_twilio(phone, message)
                 sent_text += 1
             else:
                 email = profile.get("email")
@@ -599,7 +633,7 @@ def send_menu_text(event):
             skipped_no_phone += 1
             continue
         try:
-            sns.publish(PhoneNumber=phone, Message=message)
+            _send_text_via_twilio(phone, message)
             sent += 1
         except Exception as e:  # noqa: BLE001 - one bad recipient shouldn't abort the batch
             failed += 1

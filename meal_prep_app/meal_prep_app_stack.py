@@ -15,6 +15,7 @@ from aws_cdk import (
     aws_cloudfront_origins as origins,
     aws_s3_deployment as s3_deployment,
     aws_certificatemanager as acm,
+    aws_secretsmanager as secretsmanager,
 )
 from constructs import Construct
 
@@ -82,6 +83,20 @@ class MealPrepAppStack(Stack):
             description="Users who can manage the meal menu",
         )
 
+        # Twilio Account SID / Auth Token / From number - a real secret (the
+        # Auth Token can send SMS on the account and rack up charges), so it
+        # lives in Secrets Manager rather than DynamoDB settings or an env
+        # var, and is never exposed through any API response. Starts empty;
+        # populate it after deploying with:
+        #   aws secretsmanager put-secret-value --profile gtx-meal-prep \
+        #     --secret-id <arn from stack output> \
+        #     --secret-string '{"accountSid":"AC...","authToken":"...","fromNumber":"+1..."}'
+        twilio_secret = secretsmanager.Secret(
+            self, "TwilioCredentials",
+            description="Twilio Account SID, Auth Token, and From number for sending customer SMS",
+            removal_policy=RemovalPolicy.DESTROY,
+        )
+
         # ---------- Lambda ----------
         api_fn = lambda_.Function(
             self, "ApiFunction",
@@ -94,6 +109,7 @@ class MealPrepAppStack(Stack):
                 "TABLE_NAME": table_name,
                 "USER_POOL_ID": user_pool.user_pool_id,
                 "ADMINS_GROUP_NAME": ADMINS_GROUP_NAME,
+                "TWILIO_SECRET_ARN": twilio_secret.secret_arn,
                 # No FROM_EMAIL setting - the Lambda resolves the sender
                 # identity at send time from whoever is actually in the
                 # Admins group (see _from_email() in index.py), rather than
@@ -106,16 +122,14 @@ class MealPrepAppStack(Stack):
             },
         )
         table.grant_read_write_data(api_fn)
+        twilio_secret.grant_read(api_fn)
 
-        # Weekly reminders: SES for email, SNS for text. Neither service
-        # supports per-resource scoping for sending, so these are account-wide
-        # grants, standard practice for this kind of send permission.
+        # Weekly reminders: SES for email, Twilio (not SNS - this AWS org's
+        # SCP blocks sns:Publish/sms-voice:* entirely, see README) for text.
+        # SES doesn't support per-resource scoping for sending, so this is
+        # an account-wide grant, standard practice for this permission.
         api_fn.add_to_role_policy(iam.PolicyStatement(
             actions=["ses:SendEmail", "ses:SendRawEmail"],
-            resources=["*"],
-        ))
-        api_fn.add_to_role_policy(iam.PolicyStatement(
-            actions=["sns:Publish"],
             resources=["*"],
         ))
 
@@ -325,5 +339,6 @@ class MealPrepAppStack(Stack):
         CfnOutput(self, "TableName", value=table.table_name)
         CfnOutput(self, "UserPoolId", value=user_pool.user_pool_id)
         CfnOutput(self, "UserPoolClientId", value=user_pool_client.user_pool_client_id)
+        CfnOutput(self, "TwilioSecretArn", value=twilio_secret.secret_arn)
         if domain_name:
             CfnOutput(self, "SiteDomain", value=f"https://{domain_name}")
