@@ -97,6 +97,15 @@ class MealPrepAppStack(Stack):
             removal_policy=RemovalPolicy.DESTROY,
         )
 
+        # HMAC signing key for one-click unsubscribe links (see
+        # _unsubscribe_token in index.py). Unlike TwilioCredentials, this one
+        # needs no manual setup - CDK auto-generates the random secret value.
+        unsubscribe_secret = secretsmanager.Secret(
+            self, "UnsubscribeSigningSecret",
+            description="HMAC key used to sign one-click unsubscribe links",
+            removal_policy=RemovalPolicy.DESTROY,
+        )
+
         # ---------- Lambda ----------
         api_fn = lambda_.Function(
             self, "ApiFunction",
@@ -110,6 +119,7 @@ class MealPrepAppStack(Stack):
                 "USER_POOL_ID": user_pool.user_pool_id,
                 "ADMINS_GROUP_NAME": ADMINS_GROUP_NAME,
                 "TWILIO_SECRET_ARN": twilio_secret.secret_arn,
+                "UNSUBSCRIBE_SECRET_ARN": unsubscribe_secret.secret_arn,
                 # No FROM_EMAIL setting - the Lambda resolves the sender
                 # identity at send time from whoever is actually in the
                 # Admins group (see _from_email() in index.py), rather than
@@ -123,6 +133,7 @@ class MealPrepAppStack(Stack):
         )
         table.grant_read_write_data(api_fn)
         twilio_secret.grant_read(api_fn)
+        unsubscribe_secret.grant_read(api_fn)
 
         # Weekly reminders: SES for email, Twilio (not SNS - this AWS org's
         # SCP blocks sns:Publish/sms-voice:* entirely, see README) for text.
@@ -302,6 +313,27 @@ class MealPrepAppStack(Stack):
             path="/customers/{username}", methods=[apigwv2.HttpMethod.PUT, apigwv2.HttpMethod.DELETE],
             integration=integration, authorizer=jwt_authorizer,
         )
+
+        # Admin-composed broadcast (weekly/monthly menu link) to every
+        # subscribed customer - admin-only, checked in the Lambda.
+        http_api.add_routes(
+            path="/menu/send", methods=[apigwv2.HttpMethod.POST],
+            integration=integration, authorizer=jwt_authorizer,
+        )
+
+        # One-click unsubscribe link at the bottom of every customer email -
+        # deliberately public (no authorizer): it's clicked straight out of
+        # an email client with no login session. Authorization instead comes
+        # from the HMAC token embedded in the link itself (see
+        # _unsubscribe_token in index.py), not from being signed in.
+        http_api.add_routes(
+            path="/unsubscribe", methods=[apigwv2.HttpMethod.GET], integration=integration,
+        )
+
+        # The Lambda needs its own API's base URL to build unsubscribe links
+        # (SITE_URL points at the static site, not this API) - only known
+        # once http_api exists, so this is set after the fact like SITE_URL.
+        api_fn.add_environment("API_URL", http_api.api_endpoint)
 
         # Resolved resource values (API URL, Cognito IDs) aren't known until this
         # deploy runs, so they're written into config.json alongside the static

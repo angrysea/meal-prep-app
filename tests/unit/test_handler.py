@@ -302,7 +302,7 @@ def test_get_settings_defaults_to_empty_ready_date_and_sms_off(table):
 
     resp = index.handler(_event("GET", "/settings"), None)
     assert resp["statusCode"] == 200
-    assert json.loads(resp["body"]) == {"nextReadyDate": "", "smsEnabled": False}
+    assert json.loads(resp["body"]) == {"nextReadyDate": "", "smsEnabled": False, "contactEmail": ""}
 
 
 def test_update_settings_requires_admin(table):
@@ -324,7 +324,17 @@ def test_admin_can_update_settings(table):
     assert json.loads(resp["body"]) == {"nextReadyDate": "2026-12-01", "smsEnabled": True}
 
     get_resp = index.handler(_event("GET", "/settings"), None)
-    assert json.loads(get_resp["body"]) == {"nextReadyDate": "2026-12-01", "smsEnabled": True}
+    assert json.loads(get_resp["body"]) == {"nextReadyDate": "2026-12-01", "smsEnabled": True, "contactEmail": ""}
+
+
+def test_get_settings_reports_the_admin_email_as_contact_email(table):
+    from backend.lambda_src import index
+
+    cognito, pool_id = _create_test_pool(index)
+    _create_admin_cognito_user(cognito, pool_id, "admin@example.com")
+
+    resp = index.handler(_event("GET", "/settings"), None)
+    assert json.loads(resp["body"])["contactEmail"] == "admin@example.com"
 
 
 def test_update_settings_defaults_sms_enabled_to_false_when_omitted(table):
@@ -1164,6 +1174,84 @@ def test_send_text_via_twilio_raises_when_not_configured(table):
     assert index.TWILIO_SECRET_ARN == ""
     with pytest.raises(RuntimeError):
         index._send_text_via_twilio("+15559998888", "hi")
+
+
+def _configure_unsubscribe_secret(index, monkeypatch):
+    secret = boto3.client("secretsmanager", region_name="us-east-1").create_secret(
+        Name="test-unsubscribe-secret", SecretString="test-signing-key",
+    )
+    monkeypatch.setattr(index, "UNSUBSCRIBE_SECRET_ARN", secret["ARN"])
+
+
+def test_unsubscribe_rejects_missing_or_wrong_token(table, monkeypatch):
+    from backend.lambda_src import index
+
+    _configure_unsubscribe_secret(index, monkeypatch)
+
+    # No token at all.
+    resp = index.handler(_event("GET", "/unsubscribe", query={"email": "u1@example.com"}), None)
+    assert resp["statusCode"] == 403
+
+    # Wrong token - e.g. a guess, or one signed for a different email.
+    resp = index.handler(
+        _event("GET", "/unsubscribe", query={"email": "u1@example.com", "token": "not-the-real-token"}), None,
+    )
+    assert resp["statusCode"] == 403
+
+
+def test_unsubscribe_sets_flag_for_matching_profile(table, monkeypatch):
+    from backend.lambda_src import index
+
+    _configure_unsubscribe_secret(index, monkeypatch)
+    _save_profile(index, {"sub": "u1", "email": "u1@example.com"}, email="u1@example.com", preferredContact="email")
+
+    token = index._unsubscribe_token("u1@example.com")
+    resp = index.handler(
+        _event("GET", "/unsubscribe", query={"email": "u1@example.com", "token": token}), None,
+    )
+    assert resp["statusCode"] == 200
+    assert "unsubscribed" in resp["body"]
+
+    profile_resp = index.handler(_event("GET", "/profile", claims={"sub": "u1", "email": "u1@example.com"}), None)
+    assert json.loads(profile_resp["body"])["unsubscribed"] is True
+
+
+def test_unsubscribe_is_safe_when_no_matching_profile(table, monkeypatch):
+    from backend.lambda_src import index
+
+    _configure_unsubscribe_secret(index, monkeypatch)
+
+    token = index._unsubscribe_token("nobody@example.com")
+    resp = index.handler(
+        _event("GET", "/unsubscribe", query={"email": "nobody@example.com", "token": token}), None,
+    )
+    # Doesn't leak whether the address is a real customer - just confirms no more mail.
+    assert resp["statusCode"] == 200
+
+
+def test_menu_send_appends_unsubscribe_link_to_email_body(table, monkeypatch):
+    from backend.lambda_src import index
+
+    cognito, pool_id = _create_test_pool(index)
+    _create_admin_cognito_user(cognito, pool_id, "admin@example.com")
+    boto3.client("ses", region_name="us-east-1").verify_email_identity(EmailAddress="admin@example.com")
+    _configure_unsubscribe_secret(index, monkeypatch)
+
+    _save_profile(index, {"sub": "u1", "email": "u1@example.com"}, email="u1@example.com", preferredContact="email")
+
+    sent = []
+    monkeypatch.setattr(index.ses, "send_email", lambda **kwargs: sent.append(kwargs))
+
+    resp = index.handler(
+        _event("POST", "/menu/send", {"subject": "Menu", "message": "Here is our menu"}, claims=ADMIN_CLAIMS), None,
+    )
+    assert resp["statusCode"] == 200
+    assert len(sent) == 1
+    body_text = sent[0]["Message"]["Body"]["Text"]["Data"]
+    assert "Here is our menu" in body_text
+    assert "/unsubscribe?" in body_text
+    assert "email=u1%40example.com" in body_text
+    assert f"token={index._unsubscribe_token('u1@example.com')}" in body_text
 
 
 def _create_test_pool(index):

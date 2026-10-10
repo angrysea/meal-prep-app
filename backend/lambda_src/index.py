@@ -1,4 +1,6 @@
 import base64
+import hashlib
+import hmac
 import json
 import os
 import urllib.parse
@@ -16,6 +18,14 @@ SITE_URL = os.environ.get("SITE_URL", "")
 # Secrets Manager ARN holding {"accountSid", "authToken", "fromNumber"} - see
 # _send_text_via_twilio. Populated after deploy; see README.
 TWILIO_SECRET_ARN = os.environ.get("TWILIO_SECRET_ARN", "")
+# Secrets Manager ARN holding a plain, auto-generated random string used as
+# an HMAC key to sign unsubscribe links (see _unsubscribe_token) - no manual
+# setup needed, unlike TWILIO_SECRET_ARN.
+UNSUBSCRIBE_SECRET_ARN = os.environ.get("UNSUBSCRIBE_SECRET_ARN", "")
+# The API Gateway's own base URL - unsubscribe links are clicked straight out
+# of an email client with no JS session, so they have to hit this API
+# directly rather than the static site's domain (SITE_URL).
+API_URL = os.environ.get("API_URL", "")
 
 # DYNAMODB_ENDPOINT_OVERRIDE lets this run against DynamoDB Local
 # (docker-compose) instead of real AWS when testing outside of SAM.
@@ -84,6 +94,8 @@ def handler(event, context):
             return send_weekly_reminders(event)
         if path == "/menu/send" and method == "POST":
             return send_menu_notification(event)
+        if path == "/unsubscribe" and method == "GET":
+            return unsubscribe(event)
         if path == "/customers" and method == "GET":
             return list_customers(event)
         if path.startswith("/customers/") and method == "PUT":
@@ -108,12 +120,23 @@ def handler(event, context):
 
 def get_settings():
     item = table.get_item(Key=SETTINGS_KEY).get("Item") or {}
+    try:
+        emails = _admin_emails()
+        contact_email = emails[0] if emails else ""
+    except Exception:  # noqa: BLE001 - this is public and loaded on every page view;
+        # a Cognito hiccup should leave the About page's contact line blank,
+        # not break menu browsing for every customer.
+        contact_email = ""
     return _response(200, {
         "nextReadyDate": item.get("nextReadyDate", ""),
         # Off by default - SMS costs real money per message and this
         # account's SNS access is currently blocked at the AWS org level
         # (see README), so there's nothing to accidentally send to yet.
         "smsEnabled": bool(item.get("smsEnabled", False)),
+        # Shown on the About Us page's "contact us" line - the admin's own
+        # address, same source as _from_email(), so it never drifts out of
+        # sync with whoever actually holds the Admins-group account.
+        "contactEmail": contact_email,
     })
 
 
@@ -532,7 +555,7 @@ def send_weekly_reminders(event):
                     Destination={"ToAddresses": [email]},
                     Message={
                         "Subject": {"Data": REMINDER_SUBJECT},
-                        "Body": {"Text": {"Data": message}},
+                        "Body": {"Text": {"Data": _with_unsubscribe_footer(message, email)}},
                     },
                 )
                 sent_email += 1
@@ -601,7 +624,7 @@ def send_menu_notification(event):
                     Destination={"ToAddresses": [email]},
                     Message={
                         "Subject": {"Data": subject},
-                        "Body": {"Text": {"Data": message}},
+                        "Body": {"Text": {"Data": _with_unsubscribe_footer(message, email)}},
                     },
                 )
                 sent_email += 1
@@ -639,6 +662,65 @@ def _scan_all_profiles():
             break
         scan_kwargs["ExclusiveStartKey"] = last_key
     return profiles
+
+
+# ---------- unsubscribe ----------
+# A public, unauthenticated link added to the bottom of every customer email
+# (see _with_unsubscribe_footer) so a customer can opt out without having to
+# sign in. The email address alone isn't enough to authorize this - anyone
+# who merely knows a customer's address could otherwise unsubscribe them -
+# so the link also carries an HMAC token (keyed by a secret only this Lambda
+# can read) that proves the link actually came from a message this system
+# sent, not a guess.
+
+def _unsubscribe_signing_key():
+    return secretsmanager.get_secret_value(SecretId=UNSUBSCRIBE_SECRET_ARN)["SecretString"]
+
+
+def _unsubscribe_token(email):
+    return hmac.new(_unsubscribe_signing_key().encode(), email.encode(), hashlib.sha256).hexdigest()
+
+
+def _unsubscribe_url(email):
+    query = urllib.parse.urlencode({"email": email, "token": _unsubscribe_token(email)})
+    return f"{API_URL}/unsubscribe?{query}"
+
+
+def _with_unsubscribe_footer(message, email):
+    if not UNSUBSCRIBE_SECRET_ARN:
+        return message
+    return f"{message}\n\n---\nDon't want these emails? Unsubscribe: {_unsubscribe_url(email)}"
+
+
+def _html_response(status_code, body_html):
+    return {
+        "statusCode": status_code,
+        "headers": {"Content-Type": "text/html; charset=utf-8"},
+        "body": (
+            "<!doctype html><html><body style=\"font-family:sans-serif;"
+            "max-width:480px;margin:80px auto;text-align:center;\">"
+            f"<h1>GTX Meals</h1>{body_html}</body></html>"
+        ),
+    }
+
+
+def unsubscribe(event):
+    params = event.get("queryStringParameters") or {}
+    email = params.get("email", "")
+    token = params.get("token", "")
+    if not email or not token or not hmac.compare_digest(_unsubscribe_token(email), token):
+        return _html_response(403, "<p>This unsubscribe link is invalid.</p>")
+
+    found = False
+    for profile in _scan_all_profiles():
+        if profile.get("email") == email:
+            profile["unsubscribed"] = True
+            table.put_item(Item=profile)
+            found = True
+
+    if found:
+        return _html_response(200, "<p>You've been unsubscribed and won't receive any more emails or texts from us.</p>")
+    return _html_response(200, "<p>No account was found for that email, but you won't receive any messages from us.</p>")
 
 
 # ---------- orders ----------
