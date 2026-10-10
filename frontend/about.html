@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>About Us - GTX Meals</title>
+  <link rel="icon" href="data:," />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Permanent+Marker&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <header id="nav"></header>
+
+  <main>
+    <h1>About Us</h1>
+
+    <section class="card">
+      <p>
+        GTX Meals is a small, local meal-prep company - not a factory, not a
+        chain. Every meal is made in small batches from fresh ingredients,
+        prepared by our own in-house chefs rather than shipped in from some
+        outside supplier.
+      </p>
+      <p>
+        We believe eating well shouldn't mean sacrificing flavor. That's why
+        we focus on fresh, healthy ingredients in every meal we prep, so you
+        can eat clean without giving up taste - made fresh, picked up fresh,
+        and ready when you need it.
+      </p>
+      <p class="muted">
+        Questions, help, or support? Contact us at
+        <a id="about-contact-email" href="#"></a>.
+      </p>
+    </section>
+  </main>
+
+  <script type="module">
+    import { loadConfig } from "/js/config.js";
+    import { apiRequest } from "/js/api.js";
+    import { getValidSession } from "/js/cognito.js";
+    import { renderNav } from "/js/nav.js";
+    import { loginUrlWithReturnTo } from "/js/redirect.js";
+
+    renderNav();
+
+    loadConfig().then(async (config) => {
+      const session = await getValidSession({ region: config.region, clientId: config.userPoolClientId });
+      if (!session) {
+        window.location.href = loginUrlWithReturnTo();
+        return;
+      }
+
+      const { contactEmail } = await apiRequest(config.apiUrl, "/settings").catch(() => ({ contactEmail: "" }));
+      const contactLink = document.getElementById("about-contact-email");
+      if (contactEmail) {
+        contactLink.href = `mailto:${contactEmail}`;
+        contactLink.textContent = contactEmail;
+      } else {
+        contactLink.closest("p").style.display = "none";
+      }
+    });
+  </script>
+</body>
+</html>

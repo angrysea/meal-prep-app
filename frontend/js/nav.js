@@ -23,6 +23,7 @@ export function renderNav(targetId = "nav") {
   } else if (session) {
     links.push(`<a href="/orders.html">My Orders</a>`);
     links.push(`<a href="/account.html">My Account</a>`);
+    links.push(`<a href="/about.html">About Us</a>`);
     links.push(`<a href="#" id="nav-logout">Log out</a>`);
   } else {
     links.push(`<a href="/login.html">Log in / Sign up</a>`);
