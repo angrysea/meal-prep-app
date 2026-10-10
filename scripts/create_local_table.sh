@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # Creates the MealPrepTable schema against DynamoDB Local (docker-compose).
 # DynamoDB Local doesn't check credentials, but the AWS CLI still requires
-# *something* to be configured, so we pass dummy values.
+# *something* in the right shape to be configured - generated fresh each run
+# rather than a fixed literal, so there's never a static credential-shaped
+# string sitting in source control for a scanner (e.g. GitGuardian) to flag.
 set -euo pipefail
 
-export AWS_ACCESS_KEY_ID="AKIAIOSFODNN7EXAMPLE"
-export AWS_SECRET_ACCESS_KEY="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+export AWS_ACCESS_KEY_ID="AKIA$(LC_ALL=C tr -dc 'A-Z0-9' </dev/urandom | head -c16)"
+export AWS_SECRET_ACCESS_KEY="$(LC_ALL=C tr -dc 'A-Za-z0-9+/' </dev/urandom | head -c40)"
 export AWS_DEFAULT_REGION="us-east-1"
 export AWS_PAGER=""
 

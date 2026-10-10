@@ -7,19 +7,32 @@ the env-vars file SAM needs to point boto3 at DynamoDB Local.
 """
 import json
 import pathlib
+import random
+import string
 import sys
 
 STACK_NAME = "MealPrepAppStack"
 TEMPLATE_PATH = pathlib.Path(f"cdk.out/{STACK_NAME}.template.json")
 
-LOCAL_ENV = {
-    "DYNAMODB_ENDPOINT_OVERRIDE": "http://host.docker.internal:8000",
+
+def _fake_access_key_id():
     # DynamoDB Local checks the access key *looks* like a real one (format,
     # not signature) and rejects arbitrary strings like "local" with
-    # UnrecognizedClientException - these are AWS's own documented example
-    # credentials, not a real account.
-    "AWS_ACCESS_KEY_ID": "AKIAIOSFODNN7EXAMPLE",
-    "AWS_SECRET_ACCESS_KEY": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+    # UnrecognizedClientException - any correctly-shaped value works, so
+    # this is generated fresh each run rather than a fixed literal, which
+    # would otherwise be a static credential-shaped string sitting in
+    # source control for a scanner (e.g. GitGuardian) to flag.
+    return "AKIA" + "".join(random.choices(string.ascii_uppercase + string.digits, k=16))
+
+
+def _fake_secret_access_key():
+    return "".join(random.choices(string.ascii_letters + string.digits + "+/", k=40))
+
+
+LOCAL_ENV = {
+    "DYNAMODB_ENDPOINT_OVERRIDE": "http://host.docker.internal:8000",
+    "AWS_ACCESS_KEY_ID": _fake_access_key_id(),
+    "AWS_SECRET_ACCESS_KEY": _fake_secret_access_key(),
     "AWS_DEFAULT_REGION": "us-east-1",
     # SAM's Lambda containers default to a dummy session token; clear it so
     # it doesn't get combined with the access key above into an invalid
