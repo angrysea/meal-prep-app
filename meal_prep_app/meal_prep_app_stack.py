@@ -111,7 +111,12 @@ class MealPrepAppStack(Stack):
             self, "ApiFunction",
             runtime=lambda_.Runtime.PYTHON_3_12,
             handler="index.handler",
-            code=lambda_.Code.from_asset("backend/lambda_src"),
+            # Exclude bytecode caches that running the tests writes into
+            # lambda_src - otherwise they get zipped into the deployment
+            # package and change its hash between machines.
+            code=lambda_.Code.from_asset(
+                "backend/lambda_src", exclude=["__pycache__", "*.pyc"]
+            ),
             timeout=Duration.seconds(10),
             memory_size=256,
             environment={
