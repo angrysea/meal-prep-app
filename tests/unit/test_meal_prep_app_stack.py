@@ -80,3 +80,16 @@ def test_api_routes_have_expected_authorization():
     assert routes_by_key["PUT /orders/{orderId}"]["AuthorizationType"] == "JWT"
     assert routes_by_key["GET /admin/orders"]["AuthorizationType"] == "JWT"
     assert routes_by_key["PUT /admin/orders/{sub}/{orderId}"]["AuthorizationType"] == "JWT"
+
+
+def test_customer_emails_are_sent_from_the_site_domain():
+    app = core.App()
+    stack = MealPrepAppStack(app, "meal-prep-app", domain_name="example.com")
+    template = assertions.Template.from_stack(stack)
+
+    template.has_resource_properties("AWS::Lambda::Function", {
+        "Handler": "index.handler",
+        "Environment": {"Variables": assertions.Match.object_like({
+            "FROM_EMAIL": "GTX Meals <menu@example.com>",
+        })},
+    })

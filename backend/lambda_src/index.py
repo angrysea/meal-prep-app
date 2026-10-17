@@ -26,6 +26,10 @@ UNSUBSCRIBE_SECRET_ARN = os.environ.get("UNSUBSCRIBE_SECRET_ARN", "")
 # of an email client with no JS session, so they have to hit this API
 # directly rather than the static site's domain (SITE_URL).
 API_URL = os.environ.get("API_URL", "")
+# Sender for customer emails, e.g. "GTX Meals <menu@gtxmeals.com>" - an
+# address on the site's SES-verified domain. Empty when the stack has no
+# custom domain; sending email then fails up front (see _from_email).
+FROM_EMAIL = os.environ.get("FROM_EMAIL", "")
 
 # DYNAMODB_ENDPOINT_OVERRIDE lets this run against DynamoDB Local
 # (docker-compose) instead of real AWS when testing outside of SAM.
@@ -134,7 +138,7 @@ def get_settings():
         # (see README), so there's nothing to accidentally send to yet.
         "smsEnabled": bool(item.get("smsEnabled", False)),
         # Shown on the About Us page's "contact us" line - the admin's own
-        # address, same source as _from_email(), so it never drifts out of
+        # address, same source as _reply_to(), so it never drifts out of
         # sync with whoever actually holds the Admins-group account.
         "contactEmail": contact_email,
     })
@@ -524,6 +528,7 @@ def send_weekly_reminders(event):
     _require_admin(event)
     message = _reminder_message()
     from_email = _from_email()
+    reply_to = _reply_to()
     sms_enabled = bool((table.get_item(Key=SETTINGS_KEY).get("Item") or {}).get("smsEnabled", False))
 
     sent_email = sent_text = skipped_unsubscribed = skipped_sms_disabled = failed = 0
@@ -553,6 +558,7 @@ def send_weekly_reminders(event):
                 ses.send_email(
                     Source=from_email,
                     Destination={"ToAddresses": [email]},
+                    ReplyToAddresses=reply_to,
                     Message={
                         "Subject": {"Data": REMINDER_SUBJECT},
                         "Body": {"Text": {"Data": _with_unsubscribe_footer(message, email)}},
@@ -591,6 +597,7 @@ def send_menu_notification(event):
         raise BadRequest("message is required")
 
     from_email = _from_email()
+    reply_to = _reply_to()
     sms_enabled = bool((table.get_item(Key=SETTINGS_KEY).get("Item") or {}).get("smsEnabled", False))
 
     sent_email = sent_text = skipped_unsubscribed = skipped_sms_disabled = skipped_no_contact = failed = 0
@@ -622,6 +629,7 @@ def send_menu_notification(event):
                 ses.send_email(
                     Source=from_email,
                     Destination={"ToAddresses": [email]},
+                    ReplyToAddresses=reply_to,
                     Message={
                         "Subject": {"Data": subject},
                         "Body": {"Text": {"Data": _with_unsubscribe_footer(message, email)}},
@@ -889,17 +897,24 @@ def _admin_emails():
 
 
 def _from_email():
-    """The sender identity for every outbound email (weekly reminders,
-    new-order notifications) - the admin's own address, resolved from
+    """The sender for customer emails (weekly reminders, menu
+    notifications): a fixed address on the site's SES-verified domain, so
+    messages are DKIM-signed by that domain and pass DMARC - see README.
+    """
+    if not FROM_EMAIL:
+        raise BadRequest("no sender address is configured (FROM_EMAIL is empty)")
+    return FROM_EMAIL
+
+
+def _reply_to():
+    """Reply-To for customer emails: the admin's own address, resolved from
     Cognito rather than a hardcoded setting, so it always matches whoever
-    actually holds the Admins-group account instead of needing to be kept
-    in sync by hand. It also has to be a verified SES identity, same as
-    before - see README.
+    actually holds the Admins-group account. The sending domain has no
+    mailbox, so without this, customer replies would bounce. With no admin
+    configured the email still sends, just without a Reply-To.
     """
     emails = _admin_emails()
-    if not emails:
-        raise BadRequest("no admin account is configured to send email from")
-    return emails[0]
+    return emails[:1]
 
 
 def _resolve_addons(requested_addon_ids):

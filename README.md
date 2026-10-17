@@ -89,13 +89,28 @@ hasn't unsubscribed, using their saved `preferredContact` (`email` via SES,
 `text` via Twilio). This **will not actually deliver anything yet** without
 one-time setup:
 
-1. **Verify the admin's email as a sender identity in SES** (Console → SES →
-   Verified identities → Create identity, using whatever address is
-   currently in the Admins group — e.g. `gtxmeals@gmail.com`). The Lambda
-   sends from this address automatically (resolved from Cognito at send
-   time, not a hardcoded setting - see `_from_email()` in `index.py`), so
-   if the admin account's email ever changes, just verify the new address
-   in SES; no code change or redeploy needed.
+1. **Sender domain (done).** Emails are sent from `GTX Meals
+   <menu@gtxmeals.com>` (the stack's `FROM_EMAIL`, built from
+   `domain_name`). `gtxmeals.com` is a verified domain identity in SES
+   (us-east-2) with Easy DKIM, so messages are signed by the domain and pass
+   DMARC - unlike sending "from" a `@gmail.com` address through SES, which
+   fails Gmail's/Yahoo's checks. The DKIM records live in **Cloudflare**
+   (where the domain's DNS is hosted, not Route 53), so this was set up
+   outside CDK:
+   - Identity: `aws sesv2 create-email-identity --email-identity gtxmeals.com
+     --profile gtx-meal-prep --region us-east-2`
+   - DNS: the three `<token>._domainkey` CNAMEs it returns, pointing at
+     `<token>.dkim.amazonses.com`, set to **DNS only** (not proxied) in
+     Cloudflare, plus a `_dmarc` TXT record `v=DMARC1; p=none;`
+   - Check: `aws sesv2 get-email-identity --email-identity gtxmeals.com
+     --profile gtx-meal-prep --region us-east-2`
+
+   `gtxmeals.com` has no mailbox (no MX record), so **replies go to the
+   admin's own address** via Reply-To, resolved from the Admins group in
+   Cognito at send time (see `_reply_to()` in `index.py`) - if the admin
+   account's email changes, replies follow it automatically, with no SES
+   change or redeploy needed. With no admin configured, emails still send,
+   just without a Reply-To.
 2. New accounts start in the **SES sandbox**, which only allows sending to
    *verified* recipient addresses — fine for testing with your own inbox,
    but you'll need to request production access (Console → SES → Account

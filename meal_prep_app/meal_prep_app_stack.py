@@ -125,12 +125,14 @@ class MealPrepAppStack(Stack):
                 "ADMINS_GROUP_NAME": ADMINS_GROUP_NAME,
                 "TWILIO_SECRET_ARN": twilio_secret.secret_arn,
                 "UNSUBSCRIBE_SECRET_ARN": unsubscribe_secret.secret_arn,
-                # No FROM_EMAIL setting - the Lambda resolves the sender
-                # identity at send time from whoever is actually in the
-                # Admins group (see _from_email() in index.py), rather than
-                # a hardcoded address that has to be kept in sync by hand.
-                # Whatever that address is must still be verified in SES
-                # before any email actually sends - see README.
+                # Customer emails are sent from the site's own domain, which
+                # is verified in SES with DKIM (see README), so they pass
+                # DMARC instead of claiming to be from a gmail.com address.
+                # Replies go to the admin's address instead (Reply-To,
+                # resolved at send time - see _reply_to() in index.py),
+                # since the domain itself has no mailbox. Empty when the
+                # stack has no custom domain, which disables email sending.
+                "FROM_EMAIL": f"GTX Meals <menu@{domain_name}>" if domain_name else "",
                 # Empty by default (real Lambda uses the real AWS endpoint);
                 # local-env.json overrides this for `sam local` / testing.
                 "DYNAMODB_ENDPOINT_OVERRIDE": "",

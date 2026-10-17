@@ -13,6 +13,9 @@ os.environ.setdefault("ADMINS_GROUP_NAME", "Admins")
 # exists; this placeholder just satisfies the required os.environ[...] read
 # at module import time.
 os.environ.setdefault("USER_POOL_ID", "placeholder")
+# Mirrors the deployed stack's sender on the site's verified domain; tests
+# that send email verify example.com in moto's SES (see _verify_sender_domain).
+os.environ.setdefault("FROM_EMAIL", "GTX Meals <menu@example.com>")
 
 
 @pytest.fixture
@@ -967,7 +970,7 @@ def test_reminders_sends_by_preference_and_skips_unsubscribed(table, monkeypatch
     cognito, pool_id = _create_test_pool(index)
     _create_admin_cognito_user(cognito, pool_id, "admin@example.com")
     # moto's SES mock enforces the same verified-sender rule real SES does.
-    boto3.client("ses", region_name="us-east-1").verify_email_identity(EmailAddress="admin@example.com")
+    _verify_sender_domain()
     _enable_sms(index)
     # Texting goes through Twilio, not a boto3 client moto can intercept -
     # stub it out rather than needing real Secrets Manager + network calls.
@@ -993,7 +996,7 @@ def test_reminders_counts_failure_when_contact_detail_missing(table):
 
     cognito, pool_id = _create_test_pool(index)
     _create_admin_cognito_user(cognito, pool_id, "admin@example.com")
-    boto3.client("ses", region_name="us-east-1").verify_email_identity(EmailAddress="admin@example.com")
+    _verify_sender_domain()
     _enable_sms(index)
 
     # preferredContact=text but no phone on file
@@ -1046,13 +1049,32 @@ def test_reminders_sends_sms_once_globally_enabled(table, monkeypatch):
     assert publish_calls[0][0] == "+15551234567"
 
 
-def test_reminders_fails_cleanly_when_no_admin_is_configured(table):
+def test_reminders_send_without_reply_to_when_no_admin_is_configured(table, monkeypatch):
     from backend.lambda_src import index
 
-    # A real pool with an Admins group that has no members - _from_email()
-    # has nothing to resolve, and should fail the whole request up front
-    # rather than fail every single recipient one at a time.
-    _create_test_pool(index)
+    # A real pool with an Admins group that has no members - the sender is a
+    # fixed address, so email still goes out, just without a Reply-To.
+    cognito, pool_id = _create_test_pool(index)
+    u1 = _create_cognito_user(cognito, pool_id, "u1@example.com")
+    _save_profile(index, {"sub": u1, "email": "u1@example.com"}, email="u1@example.com", preferredContact="email")
+
+    sent = []
+    monkeypatch.setattr(index.ses, "send_email", lambda **kwargs: sent.append(kwargs))
+
+    resp = index.handler(_event("POST", "/reminders/send", claims=ADMIN_CLAIMS), None)
+    assert resp["statusCode"] == 200
+    assert len(sent) == 1
+    assert sent[0]["ReplyToAddresses"] == []
+
+
+def test_reminders_fail_cleanly_when_no_sender_is_configured(table, monkeypatch):
+    from backend.lambda_src import index
+
+    # FROM_EMAIL is empty when the stack has no custom domain - fail the whole
+    # request up front rather than fail every single recipient one at a time.
+    cognito, pool_id = _create_test_pool(index)
+    _create_admin_cognito_user(cognito, pool_id, "admin@example.com")
+    monkeypatch.setattr(index, "FROM_EMAIL", "")
 
     resp = index.handler(_event("POST", "/reminders/send", claims=ADMIN_CLAIMS), None)
     assert resp["statusCode"] == 400
@@ -1084,7 +1106,7 @@ def test_menu_send_routes_by_preferred_contact(table, monkeypatch):
 
     cognito, pool_id = _create_test_pool(index)
     _create_admin_cognito_user(cognito, pool_id, "admin@example.com")
-    boto3.client("ses", region_name="us-east-1").verify_email_identity(EmailAddress="admin@example.com")
+    _verify_sender_domain()
     _enable_sms(index)
 
     text_calls = []
@@ -1115,8 +1137,8 @@ def test_menu_send_routes_by_preferred_contact(table, monkeypatch):
 def test_menu_send_skips_text_when_sms_disabled_and_counts_missing_contact(table, monkeypatch):
     from backend.lambda_src import index
 
-    # send_menu_notification resolves _from_email() up front regardless of
-    # channel mix, same as send_weekly_reminders - needs a real admin.
+    # send_menu_notification resolves the sender and Reply-To up front
+    # regardless of channel mix, same as send_weekly_reminders.
     cognito, pool_id = _create_test_pool(index)
     _create_admin_cognito_user(cognito, pool_id, "admin@example.com")
 
@@ -1234,7 +1256,7 @@ def test_menu_send_appends_unsubscribe_link_to_email_body(table, monkeypatch):
 
     cognito, pool_id = _create_test_pool(index)
     _create_admin_cognito_user(cognito, pool_id, "admin@example.com")
-    boto3.client("ses", region_name="us-east-1").verify_email_identity(EmailAddress="admin@example.com")
+    _verify_sender_domain()
     _configure_unsubscribe_secret(index, monkeypatch)
 
     _save_profile(index, {"sub": "u1", "email": "u1@example.com"}, email="u1@example.com", preferredContact="email")
@@ -1252,6 +1274,13 @@ def test_menu_send_appends_unsubscribe_link_to_email_body(table, monkeypatch):
     assert "/unsubscribe?" in body_text
     assert "email=u1%40example.com" in body_text
     assert f"token={index._unsubscribe_token('u1@example.com')}" in body_text
+    # Sent from the site's own domain, with replies going to the admin.
+    assert sent[0]["Source"] == "GTX Meals <menu@example.com>"
+    assert sent[0]["ReplyToAddresses"] == ["admin@example.com"]
+
+
+def _verify_sender_domain():
+    boto3.client("ses", region_name="us-east-1").verify_domain_identity(Domain="example.com")
 
 
 def _create_test_pool(index):
