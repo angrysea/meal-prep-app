@@ -325,21 +325,35 @@ label {
 }
 
 .password-field input {
-  padding-right: 4.5rem;
+  padding-right: 2.75rem;
 }
 
 button.password-toggle {
   position: absolute;
   top: 0.3rem;
   right: 0.35rem;
+  display: flex;
+  align-items: center;
   background: transparent;
-  color: var(--color-primary-dark);
-  padding: 0.25rem 0.55rem;
-  font-size: 0.75rem;
+  color: var(--color-muted);
+  padding: 0.25rem 0.4rem;
+  line-height: 0;
 }
 
 button.password-toggle:hover {
+  color: var(--color-text);
   background: var(--color-bg);
+}
+
+/* Open eye while the password is hidden (click to show); crossed-out eye
+   while it's shown (click to hide). */
+button.password-toggle .icon-eye-off,
+button.password-toggle[aria-pressed="true"] .icon-eye {
+  display: none;
+}
+
+button.password-toggle[aria-pressed="true"] .icon-eye-off {
+  display: block;
 }
 
 .checkout-customer {

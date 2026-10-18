@@ -285,24 +285,40 @@ def test_password_match_feedback_updates_as_you_type(signup_page):
     expect(match).to_have_text("Passwords don't match.")
 
 
-def test_show_button_reveals_password_in_plain_text(signup_page):
+def test_eye_button_reveals_password_in_plain_text(signup_page):
     page = signup_page
     password = page.locator("#signup-password")
     toggle = page.locator('button.password-toggle[aria-controls="signup-password"]')
     password.fill("s3cret-pass")
     expect(password).to_have_attribute("type", "password")
-    expect(toggle).to_have_text("Show")
+    # An icon, not a text label - open eye while hidden.
+    expect(toggle).to_have_text("")
+    expect(toggle.locator(".icon-eye")).to_be_visible()
+    expect(toggle.locator(".icon-eye-off")).to_be_hidden()
+    expect(toggle).to_have_accessible_name("Show password")
 
     toggle.click()
     expect(password).to_have_attribute("type", "text")
     expect(password).to_have_value("s3cret-pass")
-    expect(toggle).to_have_text("Hide")
+    expect(toggle.locator(".icon-eye-off")).to_be_visible()
+    expect(toggle.locator(".icon-eye")).to_be_hidden()
     expect(toggle).to_have_attribute("aria-pressed", "true")
+    expect(toggle).to_have_accessible_name("Hide password")
+    expect(toggle).to_have_attribute("title", "Hide password")
 
     toggle.click()
     expect(password).to_have_attribute("type", "password")
-    expect(toggle).to_have_text("Show")
+    expect(toggle.locator(".icon-eye")).to_be_visible()
     expect(toggle).to_have_attribute("aria-pressed", "false")
+    expect(toggle).to_have_accessible_name("Show password")
+
+
+def test_eye_button_works_from_the_keyboard(signup_page):
+    page = signup_page
+    page.focus('button.password-toggle[aria-controls="signup-password-confirm"]')
+    page.keyboard.press("Space")
+
+    expect(page.locator("#signup-password-confirm")).to_have_attribute("type", "text")
 
 
 def test_each_password_box_toggles_independently(signup_page):
@@ -332,3 +348,47 @@ def test_signup_works_with_passwords_shown(signup_page, mock_api):
     expect(page.locator("#confirm-form")).to_be_visible()
     action, body = page.cognito.calls[0]
     assert (action, body["Password"]) == ("SignUp", "s3cret-pass")
+
+
+# ---------- Login password eye button ----------
+
+
+def test_login_eye_button_shows_password_in_plain_text(signup_page):
+    page = signup_page
+    page.click("#tab-login")
+    password = page.locator("#login-password")
+    toggle = page.locator('button.password-toggle[aria-controls="login-password"]')
+    password.fill("pw-12345678")
+
+    expect(toggle.locator(".icon-eye")).to_be_visible()
+    expect(toggle).to_have_accessible_name("Show password")
+    toggle.click()
+    expect(password).to_have_attribute("type", "text")
+    expect(password).to_have_value("pw-12345678")
+    expect(toggle.locator(".icon-eye-off")).to_be_visible()
+    expect(toggle).to_have_accessible_name("Hide password")
+
+    toggle.click()
+    expect(password).to_have_attribute("type", "password")
+
+
+def test_login_works_with_password_shown(signup_page):
+    page = signup_page
+    page.cognito.registered["old@example.com"] = "pw-12345678"
+    page.click("#tab-login")
+    page.fill("#login-email", "old@example.com")
+    page.fill("#login-password", "pw-12345678")
+    page.click('button.password-toggle[aria-controls="login-password"]')
+    page.click("#login-button")
+
+    page.wait_for_url("**/index.html")
+    assert ("InitiateAuth", "pw-12345678") in [
+        (a, b.get("AuthParameters", {}).get("PASSWORD")) for a, b in page.cognito.calls
+    ]
+
+
+def test_every_password_box_gets_an_eye_button(signup_page):
+    page = signup_page
+    for target in ("login-password", "signup-password", "signup-password-confirm"):
+        toggle = page.locator(f'button.password-toggle[aria-controls="{target}"]')
+        expect(toggle.locator("svg")).to_have_count(2)

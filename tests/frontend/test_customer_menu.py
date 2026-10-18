@@ -84,7 +84,8 @@ def test_checkout_shows_profile_name_and_prefills_phone(customer_page):
     page = customer_page
     _start_checkout(page)
 
-    expect(page.locator("#checkout-customer")).to_contain_text("Ordering as Test Customer")
+    expect(page.locator("#checkout-customer")).to_have_text("Ordering as Test Customer")
+    expect(page.locator("#checkout-customer a")).to_have_count(0)
     expect(page.locator("#contact-phone")).to_have_value("(555) 222-3333")
     expect(page.locator("#pickup-name")).to_have_value("")
 
@@ -198,3 +199,35 @@ def test_customer_pages_say_address_not_delivery_address(customer_page, path):
     page.open(path)
 
     assert "Delivery address" not in page.content()
+
+
+# ---------- Menu flyer links ----------
+
+
+def test_menu_page_has_no_flyer_buttons_for_customers(customer_page):
+    page = customer_page
+    page.open("/index.html")
+
+    expect(page.get_by_role("link", name="View this week's menu")).to_be_hidden()
+    expect(page.get_by_role("link", name="View this month's menu")).to_be_hidden()
+
+
+def test_monthly_menu_is_a_nav_item_after_my_orders(customer_page):
+    page = customer_page
+    page.open("/index.html")
+
+    links = page.locator("#nav-links a").all_inner_texts()
+    assert links[links.index("My Orders") + 1] == "Monthly Menu"
+    page.click('#nav-links a:has-text("Monthly Menu")')
+    page.wait_for_url("**/menu-flyer.html?period=monthly")
+
+
+def test_admin_keeps_flyer_buttons_to_send_menus(admin_page):
+    # The flyer pages are where the admin's "Send this menu to customers"
+    # button lives - without these the admin couldn't reach it.
+    page = admin_page
+    page.open("/index.html")
+
+    expect(page.get_by_role("link", name="View this week's menu")).to_be_visible()
+    expect(page.get_by_role("link", name="View this month's menu")).to_be_visible()
+    expect(page.locator("#nav-links a", has_text="Monthly Menu")).to_have_count(0)

@@ -15,8 +15,13 @@
   <main>
     <h1>This Week's Menu</h1>
     <p class="muted">Pick your meals, then check out below.</p>
-    <a class="button-link secondary" href="/menu-flyer.html?period=monthly">View this month's menu</a>
-    <a class="button-link secondary" href="/menu-flyer.html?period=weekly">View this week's menu</a>
+    <!-- Admin only: the flyer pages are where the admin sends the weekly or
+         monthly menu to customers. Customers reach the monthly menu from
+         the nav instead (see nav.js). -->
+    <div id="admin-flyer-links" style="display:none;">
+      <a class="button-link secondary" href="/menu-flyer.html?period=monthly">View this month's menu</a>
+      <a class="button-link secondary" href="/menu-flyer.html?period=weekly">View this week's menu</a>
+    </div>
     <p class="muted" id="ready-date-info" style="display:none;"></p>
     <p class="muted" id="login-prompt" style="display:none;"></p>
     <p class="muted" id="edit-notice" style="display:none;">Editing your previous order - update it below and place it again.</p>
@@ -43,7 +48,6 @@
              per order (the API sets it from the profile too). -->
         <p class="checkout-customer" id="checkout-customer" style="display:none;">
           Ordering as <strong id="checkout-customer-name"></strong>
-          <span class="muted">- <a href="/account.html">change on My Account</a></span>
         </p>
         <p class="error" id="checkout-no-name" style="display:none;">
           Please <a href="/account.html">add your name on My Account</a> before placing an order.
@@ -407,6 +411,7 @@
     loadConfig().then(async (config) => {
       const session = await getValidSession({ region: config.region, clientId: config.userPoolClientId });
       const admin = isAdmin(session);
+      document.getElementById("admin-flyer-links").style.display = admin ? "block" : "none";
       const { nextReadyDate } = await apiRequest(config.apiUrl, "/settings").catch(() => ({ nextReadyDate: "" }));
 
       const readyInfo = document.getElementById("ready-date-info");
