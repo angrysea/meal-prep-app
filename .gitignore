@@ -11,3 +11,6 @@ cdk.out
 # local dev artifacts
 local-env.json
 .DS_Store
+
+# Screenshots from failed frontend tests (tests/frontend)
+test-results/

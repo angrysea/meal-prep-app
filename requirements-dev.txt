@@ -7,3 +7,6 @@ boto3==1.43.108
 # resolve it and fails with "Unable to locate credentials".
 botocore[crt]==1.43.108
 
+# Frontend tests (tests/frontend) drive the system's installed Google Chrome
+# (channel="chrome") - no `playwright install` browser download needed.
+playwright==1.63.0

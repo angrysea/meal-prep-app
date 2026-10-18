@@ -1,4 +1,4 @@
-.PHONY: install synth test dynamodb-up dynamodb-down dynamodb-table local-api clean
+.PHONY: install synth test test-unit test-frontend dynamodb-up dynamodb-down dynamodb-table local-api clean
 
 VENV := .venv/bin
 
@@ -10,6 +10,13 @@ synth:
 
 test:
 	$(VENV)/pytest
+
+test-unit:
+	$(VENV)/pytest tests/unit
+
+# Admin pages in headless Chrome (system install) against a mock API.
+test-frontend:
+	$(VENV)/pytest tests/frontend
 
 dynamodb-up:
 	docker compose up -d dynamodb-local

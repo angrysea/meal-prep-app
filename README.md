@@ -180,10 +180,17 @@ make install
    make dynamodb-up
    make dynamodb-table
    ```
-2. Run unit tests (CDK assertions + Lambda logic mocked with moto, no Docker needed):
+2. Run the tests (no Docker or AWS needed):
    ```bash
-   make test
+   make test            # everything
+   make test-unit       # CDK assertions + Lambda logic mocked with moto
+   make test-frontend   # admin pages in headless Chrome
    ```
+   The frontend tests (`tests/frontend/`) drive your installed Google Chrome
+   through Playwright against an in-process mock API (`mock_api.py`) - no
+   `playwright install` browser download needed. Without Chrome installed
+   they're skipped. A failed frontend test saves a screenshot to
+   `test-results/`.
 3. Run the full local stack — synthesizes the CDK app to CloudFormation and
    serves it through SAM's local API Gateway + Lambda emulator, wired to
    DynamoDB Local:
