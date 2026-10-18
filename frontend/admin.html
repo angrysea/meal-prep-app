@@ -9,7 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Anton&family=Permanent+Marker&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/css/style.css" />
 </head>
-<body>
+<body class="admin-page">
   <header id="nav"></header>
 
   <main>
@@ -17,167 +17,180 @@
     <div id="admin-guard"></div>
 
     <div id="admin-content" style="display:none;">
-      <section class="card form-narrow">
-        <h2>Next ready date</h2>
-        <p class="muted">
-          The next date meals will be ready for pickup. Orders placed between
-          now and then are prepped for this date; customers can't order within
-          2 days of it.
-        </p>
-        <label for="next-ready-date">Next ready date</label>
-        <input id="next-ready-date" type="date" />
-        <p class="error" id="ready-date-error" style="display:none;"></p>
-        <button id="ready-date-save-button">Save</button>
+      <div class="settings-row">
+        <form class="card" id="ready-date-form">
+          <h2>Next ready date</h2>
+          <p class="muted">
+            The next date meals will be ready for pickup. Orders placed between
+            now and then are prepped for this date; customers can't order within
+            2 days of it.
+          </p>
+          <label for="next-ready-date">Next ready date</label>
+          <input id="next-ready-date" type="date" required style="max-width:220px;" />
+          <p class="error" style="display:none;"></p>
+          <div class="form-actions">
+            <button type="submit">Save</button>
+          </div>
+        </form>
+
+        <form class="card" id="sms-form">
+          <h2>SMS reminders</h2>
+          <p class="muted">
+            Off by default. While off, weekly reminders due to a customer's
+            texting preference are skipped (and logged) instead of sent.
+          </p>
+          <label class="option-choice">
+            <input type="checkbox" id="sms-enabled" /> Send weekly reminders by text
+          </label>
+          <p class="error" style="display:none;"></p>
+          <div class="form-actions">
+            <button type="submit">Save</button>
+          </div>
+        </form>
+      </div>
+
+      <section class="admin-section">
+        <h2>Meals</h2>
+        <div class="admin-split">
+          <form class="card" id="meal-create-form">
+            <h2>Add a meal</h2>
+            <label for="new-name">Name</label>
+            <input id="new-name" type="text" required />
+            <label for="new-description">Description</label>
+            <input id="new-description" type="text" />
+            <label for="new-price">Base price (USD)</label>
+            <input id="new-price" type="number" step="0.01" min="0" required />
+
+            <h3>Macros</h3>
+            <div class="field-grid">
+              <div><label for="new-calories">Calories</label><input id="new-calories" type="number" min="0" /></div>
+              <div><label for="new-protein">Protein (g)</label><input id="new-protein" type="number" min="0" /></div>
+              <div><label for="new-carbs">Carbs (g)</label><input id="new-carbs" type="number" min="0" /></div>
+              <div><label for="new-fat">Fat (g)</label><input id="new-fat" type="number" min="0" /></div>
+            </div>
+
+            <h3>Availability</h3>
+            <label class="option-choice">
+              <input type="checkbox" id="new-staple" /> Staple (always on the menu)
+            </label>
+            <label for="new-week-of">Or only for this ready date</label>
+            <input id="new-week-of" type="date" />
+
+            <p class="error" style="display:none;"></p>
+            <div class="form-actions">
+              <button type="submit">Add meal</button>
+            </div>
+          </form>
+
+          <div class="table-card">
+            <table class="data-table" id="meals-table">
+              <thead>
+                <tr><th>Name</th><th class="num">Price</th><th>Macros</th><th>Ready date</th><th>Available</th><th></th></tr>
+              </thead>
+              <tbody id="meals-body"></tbody>
+            </table>
+          </div>
+        </div>
       </section>
 
-      <section class="card form-narrow">
-        <h2>SMS reminders</h2>
-        <p class="muted">
-          Off by default. While off, weekly reminders due to a customer's
-          texting preference are skipped (and logged) instead of sent.
-        </p>
-        <label class="option-choice">
-          <input type="checkbox" id="sms-enabled" /> Send weekly reminders by text
-        </label>
-        <p class="error" id="sms-enabled-error" style="display:none;"></p>
-        <button id="sms-enabled-save-button">Save</button>
+      <section class="admin-section">
+        <h2>Add-ons <span class="muted" style="font-family:inherit; font-size:0.9rem; text-transform:none; letter-spacing:0;">(offered on every meal)</span></h2>
+        <div class="admin-split">
+          <form class="card" id="addon-create-form">
+            <h2>Add an add-on</h2>
+            <label for="addon-description">Description</label>
+            <input id="addon-description" type="text" placeholder="e.g. Large, Extra Protein" required />
+            <label for="addon-price">Price (USD)</label>
+            <input id="addon-price" type="number" step="0.01" min="0" required />
+
+            <h3>Macros</h3>
+            <div class="field-grid">
+              <div><label for="addon-calories">Calories</label><input id="addon-calories" type="number" min="0" /></div>
+              <div><label for="addon-protein">Protein (g)</label><input id="addon-protein" type="number" min="0" /></div>
+              <div><label for="addon-carbs">Carbs (g)</label><input id="addon-carbs" type="number" min="0" /></div>
+              <div><label for="addon-fat">Fat (g)</label><input id="addon-fat" type="number" min="0" /></div>
+            </div>
+
+            <p class="error" style="display:none;"></p>
+            <div class="form-actions">
+              <button type="submit">Add add-on</button>
+            </div>
+          </form>
+
+          <div class="table-card">
+            <table class="data-table" id="addons-table">
+              <thead>
+                <tr><th>Description</th><th class="num">Price</th><th>Macros</th><th>Available</th><th></th></tr>
+              </thead>
+              <tbody id="addons-body"></tbody>
+            </table>
+          </div>
+        </div>
       </section>
-
-      <section class="card form-narrow">
-        <h2>Add a meal</h2>
-        <label for="new-name">Name</label>
-        <input id="new-name" type="text" />
-        <label for="new-description">Description</label>
-        <input id="new-description" type="text" />
-        <label for="new-price">Base price (USD)</label>
-        <input id="new-price" type="number" step="0.01" min="0" />
-
-        <h3>Macros</h3>
-        <label for="new-calories">Calories</label>
-        <input id="new-calories" type="number" min="0" />
-        <label for="new-protein">Protein (g)</label>
-        <input id="new-protein" type="number" min="0" />
-        <label for="new-carbs">Carbs (g)</label>
-        <input id="new-carbs" type="number" min="0" />
-        <label for="new-fat">Fat (g)</label>
-        <input id="new-fat" type="number" min="0" />
-
-        <h3>Availability</h3>
-        <label class="option-choice">
-          <input type="checkbox" id="new-staple" /> Staple (always on the menu)
-        </label>
-        <label for="new-week-of">Or only for this ready date</label>
-        <input id="new-week-of" type="date" />
-
-        <p class="error" id="create-error" style="display:none;"></p>
-        <button id="create-button">Add meal</button>
-      </section>
-
-      <h2>Current menu</h2>
-      <table id="meals-table">
-        <thead>
-          <tr><th></th><th>Name</th><th>Price</th><th>Macros</th><th>Ready date</th><th>Available</th><th></th></tr>
-        </thead>
-        <tbody id="meals-body"></tbody>
-      </table>
-
-      <section class="card form-narrow">
-        <h2>Add-ons <span class="muted" style="font-weight:normal;">(offered on every meal)</span></h2>
-        <label for="addon-description">Description</label>
-        <input id="addon-description" type="text" placeholder="e.g. Large, Extra Protein" />
-        <label for="addon-price">Price (USD)</label>
-        <input id="addon-price" type="number" step="0.01" min="0" />
-
-        <h3>Macros</h3>
-        <label for="addon-calories">Calories</label>
-        <input id="addon-calories" type="number" min="0" />
-        <label for="addon-protein">Protein (g)</label>
-        <input id="addon-protein" type="number" min="0" />
-        <label for="addon-carbs">Carbs (g)</label>
-        <input id="addon-carbs" type="number" min="0" />
-        <label for="addon-fat">Fat (g)</label>
-        <input id="addon-fat" type="number" min="0" />
-
-        <p class="error" id="addon-error" style="display:none;"></p>
-        <button id="addon-create-button">Add add-on</button>
-      </section>
-
-      <h2>Current add-ons</h2>
-      <table id="addons-table">
-        <thead>
-          <tr><th></th><th>Description</th><th>Price</th><th>Macros</th><th>Available</th><th></th></tr>
-        </thead>
-        <tbody id="addons-body"></tbody>
-      </table>
     </div>
 
     <dialog id="meal-edit-dialog">
-      <h2>Edit meal</h2>
-      <label for="edit-meal-name">Name</label>
-      <input id="edit-meal-name" type="text" />
+      <form id="meal-edit-form">
+        <h2>Edit meal</h2>
+        <label for="edit-meal-name">Name</label>
+        <input id="edit-meal-name" type="text" required />
 
-      <label for="edit-meal-description">Description</label>
-      <input id="edit-meal-description" type="text" />
+        <label for="edit-meal-description">Description</label>
+        <input id="edit-meal-description" type="text" />
 
-      <label for="edit-meal-price">Base price (USD)</label>
-      <input id="edit-meal-price" type="number" step="0.01" min="0" />
+        <label for="edit-meal-price">Base price (USD)</label>
+        <input id="edit-meal-price" type="number" step="0.01" min="0" required style="max-width:160px;" />
 
-      <h3>Macros</h3>
-      <label for="edit-meal-calories">Calories</label>
-      <input id="edit-meal-calories" type="number" min="0" />
-      <label for="edit-meal-protein">Protein (g)</label>
-      <input id="edit-meal-protein" type="number" min="0" />
-      <label for="edit-meal-carbs">Carbs (g)</label>
-      <input id="edit-meal-carbs" type="number" min="0" />
-      <label for="edit-meal-fat">Fat (g)</label>
-      <input id="edit-meal-fat" type="number" min="0" />
+        <h3>Macros</h3>
+        <div class="field-grid">
+          <div><label for="edit-meal-calories">Calories</label><input id="edit-meal-calories" type="number" min="0" /></div>
+          <div><label for="edit-meal-protein">Protein (g)</label><input id="edit-meal-protein" type="number" min="0" /></div>
+          <div><label for="edit-meal-carbs">Carbs (g)</label><input id="edit-meal-carbs" type="number" min="0" /></div>
+          <div><label for="edit-meal-fat">Fat (g)</label><input id="edit-meal-fat" type="number" min="0" /></div>
+        </div>
 
-      <h3>Availability</h3>
-      <label class="option-choice">
-        <input type="checkbox" id="edit-meal-staple" /> Staple (always on the menu)
-      </label>
-      <label for="edit-meal-week-of">Or only for this ready date</label>
-      <input id="edit-meal-week-of" type="date" />
+        <h3>Availability</h3>
+        <div class="field-grid-2" style="align-items:end;">
+          <label class="option-choice" style="margin-bottom:0.75rem;">
+            <input type="checkbox" id="edit-meal-staple" /> Staple (always on the menu)
+          </label>
+          <div>
+            <label for="edit-meal-week-of">Or only for this ready date</label>
+            <input id="edit-meal-week-of" type="date" />
+          </div>
+        </div>
 
-      <p class="error" id="meal-edit-error" style="display:none;"></p>
-      <div style="display:flex; gap:0.5rem; margin-top:1rem;">
-        <button type="button" id="meal-edit-save-button">Save</button>
-        <button type="button" class="secondary" id="meal-edit-cancel-button">Cancel</button>
-      </div>
-    </dialog>
-
-    <dialog id="confirm-dialog">
-      <h2>Please confirm</h2>
-      <p id="confirm-dialog-message"></p>
-      <div style="display:flex; gap:0.5rem; margin-top:1rem;">
-        <button type="button" id="confirm-dialog-ok-button">Delete</button>
-        <button type="button" class="secondary" id="confirm-dialog-cancel-button">Cancel</button>
-      </div>
+        <p class="error" style="display:none;"></p>
+        <div class="dialog-actions">
+          <button type="button" class="secondary" id="meal-edit-cancel-button">Cancel</button>
+          <button type="submit">Save</button>
+        </div>
+      </form>
     </dialog>
 
     <dialog id="addon-edit-dialog">
-      <h2>Edit add-on</h2>
-      <label for="edit-addon-description">Description</label>
-      <input id="edit-addon-description" type="text" />
+      <form id="addon-edit-form">
+        <h2>Edit add-on</h2>
+        <label for="edit-addon-description">Description</label>
+        <input id="edit-addon-description" type="text" required />
 
-      <label for="edit-addon-price">Price (USD)</label>
-      <input id="edit-addon-price" type="number" step="0.01" min="0" />
+        <label for="edit-addon-price">Price (USD)</label>
+        <input id="edit-addon-price" type="number" step="0.01" min="0" required style="max-width:160px;" />
 
-      <h3>Macros</h3>
-      <label for="edit-addon-calories">Calories</label>
-      <input id="edit-addon-calories" type="number" min="0" />
-      <label for="edit-addon-protein">Protein (g)</label>
-      <input id="edit-addon-protein" type="number" min="0" />
-      <label for="edit-addon-carbs">Carbs (g)</label>
-      <input id="edit-addon-carbs" type="number" min="0" />
-      <label for="edit-addon-fat">Fat (g)</label>
-      <input id="edit-addon-fat" type="number" min="0" />
+        <h3>Macros</h3>
+        <div class="field-grid">
+          <div><label for="edit-addon-calories">Calories</label><input id="edit-addon-calories" type="number" min="0" /></div>
+          <div><label for="edit-addon-protein">Protein (g)</label><input id="edit-addon-protein" type="number" min="0" /></div>
+          <div><label for="edit-addon-carbs">Carbs (g)</label><input id="edit-addon-carbs" type="number" min="0" /></div>
+          <div><label for="edit-addon-fat">Fat (g)</label><input id="edit-addon-fat" type="number" min="0" /></div>
+        </div>
 
-      <p class="error" id="addon-edit-error" style="display:none;"></p>
-      <div style="display:flex; gap:0.5rem; margin-top:1rem;">
-        <button type="button" id="addon-edit-save-button">Save</button>
-        <button type="button" class="secondary" id="addon-edit-cancel-button">Cancel</button>
-      </div>
+        <p class="error" style="display:none;"></p>
+        <div class="dialog-actions">
+          <button type="button" class="secondary" id="addon-edit-cancel-button">Cancel</button>
+          <button type="submit">Save</button>
+        </div>
+      </form>
     </dialog>
   </main>
 
@@ -188,8 +201,11 @@
     import { renderNav } from "/js/nav.js";
     import { loginUrlWithReturnTo } from "/js/redirect.js";
     import { formatMacros } from "/js/pricing.js";
+    import { showToast } from "/js/toast.js";
+    import { confirmAction, enableEnterToSubmit, escapeHtml, handleSubmit } from "/js/admin.js";
 
     renderNav();
+    enableEnterToSubmit();
 
     loadConfig().then(async (config) => {
       const session = await getValidSession({ region: config.region, clientId: config.userPoolClientId });
@@ -205,122 +221,116 @@
       }
     });
 
+    const value = (id) => document.getElementById(id).value;
+    const priceCentsFrom = (id) => Math.round(parseFloat(value(id)) * 100);
+    // Every macros block on this page uses <prefix>-calories/-protein/-carbs/-fat.
+    const macrosFrom = (prefix) => ({
+      calories: parseInt(value(`${prefix}-calories`), 10) || 0,
+      proteinG: parseInt(value(`${prefix}-protein`), 10) || 0,
+      carbsG: parseInt(value(`${prefix}-carbs`), 10) || 0,
+      fatG: parseInt(value(`${prefix}-fat`), 10) || 0,
+    });
+    const setMacros = (prefix, macros) => {
+      document.getElementById(`${prefix}-calories`).value = macros.calories || "";
+      document.getElementById(`${prefix}-protein`).value = macros.proteinG || "";
+      document.getElementById(`${prefix}-carbs`).value = macros.carbsG || "";
+      document.getElementById(`${prefix}-fat`).value = macros.fatG || "";
+    };
+
+    // Row buttons (Hide/Show, Delete) have no form to show an error in -
+    // report the outcome either way as a toast.
+    async function rowAction(button, action) {
+      button.disabled = true;
+      try {
+        await action();
+      } catch (err) {
+        showToast(err.message, { error: true });
+        button.disabled = false;
+      }
+    }
+
+    function openDialog(dialog) {
+      dialog.querySelector(".error").style.display = "none";
+      dialog.showModal();
+    }
+
     async function initAdmin(config, token) {
       let editingAddOnId = null;
       let editingMealId = null;
 
-      // A centered, consistently-styled stand-in for window.confirm() -
-      // native confirm() dialogs are positioned and styled by the browser
-      // itself, not by this page's CSS.
-      function confirmDialog(message) {
-        return new Promise((resolve) => {
-          const dialog = document.getElementById("confirm-dialog");
-          const okButton = document.getElementById("confirm-dialog-ok-button");
-          const cancelButton = document.getElementById("confirm-dialog-cancel-button");
-          document.getElementById("confirm-dialog-message").textContent = message;
-
-          function cleanup(result) {
-            okButton.removeEventListener("click", onOk);
-            cancelButton.removeEventListener("click", onCancel);
-            dialog.close();
-            resolve(result);
-          }
-          function onOk() {
-            cleanup(true);
-          }
-          function onCancel() {
-            cleanup(false);
-          }
-          okButton.addEventListener("click", onOk);
-          cancelButton.addEventListener("click", onCancel);
-          dialog.showModal();
-        });
-      }
-
-      async function refreshReadyDate() {
+      async function refreshSettings() {
         const { nextReadyDate, smsEnabled } = await apiRequest(config.apiUrl, "/settings");
         document.getElementById("next-ready-date").value = nextReadyDate;
         document.getElementById("sms-enabled").checked = smsEnabled;
       }
 
-      document.getElementById("ready-date-save-button").addEventListener("click", async () => {
-        const errorEl = document.getElementById("ready-date-error");
-        errorEl.style.display = "none";
-        try {
-          await apiRequest(config.apiUrl, "/settings", {
-            method: "PUT",
-            token,
-            body: { nextReadyDate: document.getElementById("next-ready-date").value },
-          });
-        } catch (err) {
-          errorEl.textContent = err.message;
-          errorEl.style.display = "block";
-        }
+      handleSubmit(document.getElementById("ready-date-form"), async () => {
+        const nextReadyDate = value("next-ready-date");
+        await apiRequest(config.apiUrl, "/settings", { method: "PUT", token, body: { nextReadyDate } });
+        showToast(`Next ready date set to ${nextReadyDate}`);
       });
 
-      document.getElementById("sms-enabled-save-button").addEventListener("click", async () => {
-        const errorEl = document.getElementById("sms-enabled-error");
-        errorEl.style.display = "none";
-        try {
-          await apiRequest(config.apiUrl, "/settings", {
-            method: "PUT",
-            token,
-            body: { smsEnabled: document.getElementById("sms-enabled").checked },
-          });
-        } catch (err) {
-          errorEl.textContent = err.message;
-          errorEl.style.display = "block";
-        }
+      handleSubmit(document.getElementById("sms-form"), async () => {
+        const smsEnabled = document.getElementById("sms-enabled").checked;
+        await apiRequest(config.apiUrl, "/settings", { method: "PUT", token, body: { smsEnabled } });
+        showToast(smsEnabled ? "SMS reminders turned on" : "SMS reminders turned off");
       });
 
       async function refreshMeals() {
         const { meals } = await apiRequest(config.apiUrl, "/meals");
         const body = document.getElementById("meals-body");
+        if (meals.length === 0) {
+          body.innerHTML = `<tr class="empty-row"><td colspan="6">No meals yet - add one on the left.</td></tr>`;
+          return;
+        }
         body.innerHTML = meals
           .map(
             (meal) => `
-          <tr data-meal-id="${meal.mealId}">
-            <td><button class="secondary edit-meal">Edit</button></td>
-            <td>${meal.name}</td>
-            <td>${formatPrice(meal.priceCents)}</td>
+          <tr data-meal-id="${escapeHtml(meal.mealId)}">
+            <td><strong>${escapeHtml(meal.name)}</strong>${meal.description ? `<div class="cell-sub">${escapeHtml(meal.description)}</div>` : ""}</td>
+            <td class="num">${formatPrice(meal.priceCents)}</td>
             <td>${formatMacros(meal.macros) || "-"}</td>
-            <td>${meal.staple ? "Always" : meal.weekOf || "-"}</td>
+            <td class="nowrap">${meal.staple ? "Always" : escapeHtml(meal.weekOf) || "-"}</td>
             <td>${meal.available ? "Yes" : "No"}</td>
-            <td>
-              <button class="secondary table-action toggle-available">${meal.available ? "Hide" : "Show"}</button>
-              <button class="secondary table-action delete-meal">Delete</button>
+            <td class="actions">
+              <button type="button" class="secondary edit-meal">Edit</button>
+              <button type="button" class="secondary table-action toggle-available">${meal.available ? "Hide" : "Show"}</button>
+              <button type="button" class="secondary table-action delete-meal">Delete</button>
             </td>
           </tr>`
           )
           .join("");
 
+        const mealFor = (btn) => meals.find((m) => m.mealId === btn.closest("tr").dataset.mealId);
+
         body.querySelectorAll(".edit-meal").forEach((btn) => {
-          btn.addEventListener("click", (e) => {
-            const mealId = e.target.closest("tr").dataset.mealId;
-            openMealEditDialog(meals.find((m) => m.mealId === mealId));
-          });
+          btn.addEventListener("click", () => openMealEditDialog(mealFor(btn)));
         });
 
         body.querySelectorAll(".toggle-available").forEach((btn) => {
-          btn.addEventListener("click", async (e) => {
-            const row = e.target.closest("tr");
-            const mealId = row.dataset.mealId;
-            const meal = meals.find((m) => m.mealId === mealId);
-            await apiRequest(config.apiUrl, `/meals/${mealId}`, {
-              method: "PUT",
-              token,
-              body: { available: !meal.available },
-            });
-            refreshMeals();
-          });
+          btn.addEventListener("click", () =>
+            rowAction(btn, async () => {
+              const meal = mealFor(btn);
+              await apiRequest(config.apiUrl, `/meals/${meal.mealId}`, {
+                method: "PUT",
+                token,
+                body: { available: !meal.available },
+              });
+              showToast(meal.available ? `"${meal.name}" is now hidden from the menu` : `"${meal.name}" is now shown on the menu`);
+              await refreshMeals();
+            })
+          );
         });
 
         body.querySelectorAll(".delete-meal").forEach((btn) => {
-          btn.addEventListener("click", async (e) => {
-            const mealId = e.target.closest("tr").dataset.mealId;
-            if (!(await confirmDialog("Delete this meal?"))) return;
-            await apiRequest(config.apiUrl, `/meals/${mealId}`, { method: "DELETE", token });
-            refreshMeals();
+          btn.addEventListener("click", async () => {
+            const meal = mealFor(btn);
+            if (!(await confirmAction(`Delete "${meal.name}"?`))) return;
+            await rowAction(btn, async () => {
+              await apiRequest(config.apiUrl, `/meals/${meal.mealId}`, { method: "DELETE", token });
+              showToast(`Deleted "${meal.name}"`);
+              await refreshMeals();
+            });
           });
         });
       }
@@ -328,216 +338,162 @@
       async function refreshAddOns() {
         const { addOns } = await apiRequest(config.apiUrl, "/addons");
         const body = document.getElementById("addons-body");
+        if (addOns.length === 0) {
+          body.innerHTML = `<tr class="empty-row"><td colspan="5">No add-ons yet - add one on the left.</td></tr>`;
+          return;
+        }
         body.innerHTML = addOns
           .map(
             (addOn) => `
-          <tr data-addon-id="${addOn.addOnId}">
-            <td><button class="secondary edit-addon">Edit</button></td>
-            <td>${addOn.description}</td>
-            <td>${formatPrice(addOn.priceCents)}</td>
+          <tr data-addon-id="${escapeHtml(addOn.addOnId)}">
+            <td><strong>${escapeHtml(addOn.description)}</strong></td>
+            <td class="num">${formatPrice(addOn.priceCents)}</td>
             <td>${formatMacros(addOn.macros) || "-"}</td>
             <td>${addOn.available ? "Yes" : "No"}</td>
-            <td>
-              <button class="secondary table-action toggle-addon-available">${addOn.available ? "Hide" : "Show"}</button>
-              <button class="secondary table-action delete-addon">Delete</button>
+            <td class="actions">
+              <button type="button" class="secondary edit-addon">Edit</button>
+              <button type="button" class="secondary table-action toggle-addon-available">${addOn.available ? "Hide" : "Show"}</button>
+              <button type="button" class="secondary table-action delete-addon">Delete</button>
             </td>
           </tr>`
           )
           .join("");
 
+        const addOnFor = (btn) => addOns.find((a) => a.addOnId === btn.closest("tr").dataset.addonId);
+
         body.querySelectorAll(".edit-addon").forEach((btn) => {
-          btn.addEventListener("click", (e) => {
-            const addOnId = e.target.closest("tr").dataset.addonId;
-            openAddOnEditDialog(addOns.find((a) => a.addOnId === addOnId));
-          });
+          btn.addEventListener("click", () => openAddOnEditDialog(addOnFor(btn)));
         });
 
         body.querySelectorAll(".toggle-addon-available").forEach((btn) => {
-          btn.addEventListener("click", async (e) => {
-            const addOnId = e.target.closest("tr").dataset.addonId;
-            const addOn = addOns.find((a) => a.addOnId === addOnId);
-            await apiRequest(config.apiUrl, `/addons/${addOnId}`, {
-              method: "PUT",
-              token,
-              body: { available: !addOn.available },
-            });
-            refreshAddOns();
-          });
+          btn.addEventListener("click", () =>
+            rowAction(btn, async () => {
+              const addOn = addOnFor(btn);
+              await apiRequest(config.apiUrl, `/addons/${addOn.addOnId}`, {
+                method: "PUT",
+                token,
+                body: { available: !addOn.available },
+              });
+              showToast(addOn.available ? `"${addOn.description}" is now hidden` : `"${addOn.description}" is now offered`);
+              await refreshAddOns();
+            })
+          );
         });
 
         body.querySelectorAll(".delete-addon").forEach((btn) => {
-          btn.addEventListener("click", async (e) => {
-            const addOnId = e.target.closest("tr").dataset.addonId;
-            if (!confirm("Delete this add-on?")) return;
-            await apiRequest(config.apiUrl, `/addons/${addOnId}`, { method: "DELETE", token });
-            refreshAddOns();
+          btn.addEventListener("click", async () => {
+            const addOn = addOnFor(btn);
+            if (!(await confirmAction(`Delete the "${addOn.description}" add-on?`))) return;
+            await rowAction(btn, async () => {
+              await apiRequest(config.apiUrl, `/addons/${addOn.addOnId}`, { method: "DELETE", token });
+              showToast(`Deleted "${addOn.description}"`);
+              await refreshAddOns();
+            });
           });
         });
       }
+
+      const mealEditDialog = document.getElementById("meal-edit-dialog");
+      const addOnEditDialog = document.getElementById("addon-edit-dialog");
 
       function openMealEditDialog(meal) {
         editingMealId = meal.mealId;
         document.getElementById("edit-meal-name").value = meal.name;
         document.getElementById("edit-meal-description").value = meal.description || "";
         document.getElementById("edit-meal-price").value = (meal.priceCents / 100).toFixed(2);
-        document.getElementById("edit-meal-calories").value = meal.macros.calories || "";
-        document.getElementById("edit-meal-protein").value = meal.macros.proteinG || "";
-        document.getElementById("edit-meal-carbs").value = meal.macros.carbsG || "";
-        document.getElementById("edit-meal-fat").value = meal.macros.fatG || "";
+        setMacros("edit-meal", meal.macros);
         document.getElementById("edit-meal-staple").checked = !!meal.staple;
         document.getElementById("edit-meal-week-of").value = meal.weekOf || "";
-        document.getElementById("meal-edit-error").style.display = "none";
-        document.getElementById("meal-edit-dialog").showModal();
+        openDialog(mealEditDialog);
       }
 
-      document.getElementById("meal-edit-cancel-button").addEventListener("click", () => {
-        document.getElementById("meal-edit-dialog").close();
-      });
+      document.getElementById("meal-edit-cancel-button").addEventListener("click", () => mealEditDialog.close());
 
-      document.getElementById("meal-edit-save-button").addEventListener("click", async () => {
-        const errorEl = document.getElementById("meal-edit-error");
-        errorEl.style.display = "none";
-        try {
-          const priceCents = Math.round(parseFloat(document.getElementById("edit-meal-price").value) * 100);
-          await apiRequest(config.apiUrl, `/meals/${editingMealId}`, {
-            method: "PUT",
-            token,
-            body: {
-              name: document.getElementById("edit-meal-name").value,
-              description: document.getElementById("edit-meal-description").value,
-              priceCents,
-              macros: {
-                calories: parseInt(document.getElementById("edit-meal-calories").value, 10) || 0,
-                proteinG: parseInt(document.getElementById("edit-meal-protein").value, 10) || 0,
-                carbsG: parseInt(document.getElementById("edit-meal-carbs").value, 10) || 0,
-                fatG: parseInt(document.getElementById("edit-meal-fat").value, 10) || 0,
-              },
-              staple: document.getElementById("edit-meal-staple").checked,
-              weekOf: document.getElementById("edit-meal-week-of").value,
-            },
-          });
-          document.getElementById("meal-edit-dialog").close();
-          refreshMeals();
-        } catch (err) {
-          errorEl.textContent = err.message;
-          errorEl.style.display = "block";
-        }
+      handleSubmit(document.getElementById("meal-edit-form"), async () => {
+        const name = value("edit-meal-name");
+        await apiRequest(config.apiUrl, `/meals/${editingMealId}`, {
+          method: "PUT",
+          token,
+          body: {
+            name,
+            description: value("edit-meal-description"),
+            priceCents: priceCentsFrom("edit-meal-price"),
+            macros: macrosFrom("edit-meal"),
+            staple: document.getElementById("edit-meal-staple").checked,
+            weekOf: value("edit-meal-week-of"),
+          },
+        });
+        mealEditDialog.close();
+        showToast(`Saved changes to "${name}"`);
+        refreshMeals();
       });
 
       function openAddOnEditDialog(addOn) {
         editingAddOnId = addOn.addOnId;
         document.getElementById("edit-addon-description").value = addOn.description;
         document.getElementById("edit-addon-price").value = (addOn.priceCents / 100).toFixed(2);
-        document.getElementById("edit-addon-calories").value = addOn.macros.calories || "";
-        document.getElementById("edit-addon-protein").value = addOn.macros.proteinG || "";
-        document.getElementById("edit-addon-carbs").value = addOn.macros.carbsG || "";
-        document.getElementById("edit-addon-fat").value = addOn.macros.fatG || "";
-        document.getElementById("addon-edit-error").style.display = "none";
-        document.getElementById("addon-edit-dialog").showModal();
+        setMacros("edit-addon", addOn.macros);
+        openDialog(addOnEditDialog);
       }
 
-      document.getElementById("addon-edit-cancel-button").addEventListener("click", () => {
-        document.getElementById("addon-edit-dialog").close();
+      document.getElementById("addon-edit-cancel-button").addEventListener("click", () => addOnEditDialog.close());
+
+      handleSubmit(document.getElementById("addon-edit-form"), async () => {
+        const description = value("edit-addon-description");
+        await apiRequest(config.apiUrl, `/addons/${editingAddOnId}`, {
+          method: "PUT",
+          token,
+          body: {
+            description,
+            priceCents: priceCentsFrom("edit-addon-price"),
+            macros: macrosFrom("edit-addon"),
+          },
+        });
+        addOnEditDialog.close();
+        showToast(`Saved changes to "${description}"`);
+        refreshAddOns();
       });
 
-      document.getElementById("addon-edit-save-button").addEventListener("click", async () => {
-        const errorEl = document.getElementById("addon-edit-error");
-        errorEl.style.display = "none";
-        try {
-          const priceCents = Math.round(parseFloat(document.getElementById("edit-addon-price").value) * 100);
-          await apiRequest(config.apiUrl, `/addons/${editingAddOnId}`, {
-            method: "PUT",
-            token,
-            body: {
-              description: document.getElementById("edit-addon-description").value,
-              priceCents,
-              macros: {
-                calories: parseInt(document.getElementById("edit-addon-calories").value, 10) || 0,
-                proteinG: parseInt(document.getElementById("edit-addon-protein").value, 10) || 0,
-                carbsG: parseInt(document.getElementById("edit-addon-carbs").value, 10) || 0,
-                fatG: parseInt(document.getElementById("edit-addon-fat").value, 10) || 0,
-              },
-            },
-          });
-          document.getElementById("addon-edit-dialog").close();
-          refreshAddOns();
-        } catch (err) {
-          errorEl.textContent = err.message;
-          errorEl.style.display = "block";
-        }
+      const mealCreateForm = document.getElementById("meal-create-form");
+      handleSubmit(mealCreateForm, async () => {
+        const name = value("new-name");
+        await apiRequest(config.apiUrl, "/meals", {
+          method: "POST",
+          token,
+          body: {
+            name,
+            description: value("new-description"),
+            priceCents: priceCentsFrom("new-price"),
+            macros: macrosFrom("new"),
+            staple: document.getElementById("new-staple").checked,
+            weekOf: value("new-week-of"),
+          },
+        });
+        mealCreateForm.reset();
+        document.getElementById("new-name").focus();
+        showToast(`Added "${name}" to the menu`);
+        refreshMeals();
       });
 
-      document.getElementById("create-button").addEventListener("click", async () => {
-        const errorEl = document.getElementById("create-error");
-        errorEl.style.display = "none";
-        try {
-          const priceCents = Math.round(parseFloat(document.getElementById("new-price").value) * 100);
-          await apiRequest(config.apiUrl, "/meals", {
-            method: "POST",
-            token,
-            body: {
-              name: document.getElementById("new-name").value,
-              description: document.getElementById("new-description").value,
-              priceCents,
-              macros: {
-                calories: parseInt(document.getElementById("new-calories").value, 10) || 0,
-                proteinG: parseInt(document.getElementById("new-protein").value, 10) || 0,
-                carbsG: parseInt(document.getElementById("new-carbs").value, 10) || 0,
-                fatG: parseInt(document.getElementById("new-fat").value, 10) || 0,
-              },
-              staple: document.getElementById("new-staple").checked,
-              weekOf: document.getElementById("new-week-of").value,
-            },
-          });
-          document.getElementById("new-name").value = "";
-          document.getElementById("new-description").value = "";
-          document.getElementById("new-price").value = "";
-          document.getElementById("new-calories").value = "";
-          document.getElementById("new-protein").value = "";
-          document.getElementById("new-carbs").value = "";
-          document.getElementById("new-fat").value = "";
-          document.getElementById("new-staple").checked = false;
-          document.getElementById("new-week-of").value = "";
-          refreshMeals();
-        } catch (err) {
-          errorEl.textContent = err.message;
-          errorEl.style.display = "block";
-        }
+      const addOnCreateForm = document.getElementById("addon-create-form");
+      handleSubmit(addOnCreateForm, async () => {
+        const description = value("addon-description");
+        await apiRequest(config.apiUrl, "/addons", {
+          method: "POST",
+          token,
+          body: {
+            description,
+            priceCents: priceCentsFrom("addon-price"),
+            macros: macrosFrom("addon"),
+          },
+        });
+        addOnCreateForm.reset();
+        document.getElementById("addon-description").focus();
+        showToast(`Added the "${description}" add-on`);
+        refreshAddOns();
       });
 
-      document.getElementById("addon-create-button").addEventListener("click", async () => {
-        const errorEl = document.getElementById("addon-error");
-        errorEl.style.display = "none";
-        try {
-          const priceCents = Math.round(parseFloat(document.getElementById("addon-price").value) * 100);
-          await apiRequest(config.apiUrl, "/addons", {
-            method: "POST",
-            token,
-            body: {
-              description: document.getElementById("addon-description").value,
-              priceCents,
-              macros: {
-                calories: parseInt(document.getElementById("addon-calories").value, 10) || 0,
-                proteinG: parseInt(document.getElementById("addon-protein").value, 10) || 0,
-                carbsG: parseInt(document.getElementById("addon-carbs").value, 10) || 0,
-                fatG: parseInt(document.getElementById("addon-fat").value, 10) || 0,
-              },
-            },
-          });
-          document.getElementById("addon-description").value = "";
-          document.getElementById("addon-price").value = "";
-          document.getElementById("addon-calories").value = "";
-          document.getElementById("addon-protein").value = "";
-          document.getElementById("addon-carbs").value = "";
-          document.getElementById("addon-fat").value = "";
-          refreshAddOns();
-        } catch (err) {
-          errorEl.textContent = err.message;
-          errorEl.style.display = "block";
-        }
-      });
-
-      refreshReadyDate();
+      refreshSettings();
       refreshMeals();
       refreshAddOns();
     }

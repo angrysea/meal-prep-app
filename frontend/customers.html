@@ -9,7 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Anton&family=Permanent+Marker&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/css/style.css" />
 </head>
-<body>
+<body class="admin-page">
   <header id="nav"></header>
 
   <main>
@@ -17,55 +17,63 @@
     <div id="admin-guard"></div>
 
     <div id="admin-content" style="display:none;">
-      <table id="customers-table" class="customers-table">
-        <thead>
-          <tr>
-            <th></th><th></th>
-            <th>Email</th><th>Name</th><th>Phone</th><th>Address</th>
-            <th>Contact via</th><th>Unsubscribed</th>
-          </tr>
-        </thead>
-        <tbody id="customers-body"></tbody>
-      </table>
+      <div class="toolbar">
+        <span class="muted" id="customers-count"></span>
+        <span class="toolbar-spacer"></span>
+        <span class="muted">Emails or texts every customer who hasn't unsubscribed, by their preferred contact method.</span>
+        <button type="button" id="send-reminders-button">Send weekly reminders</button>
+      </div>
+      <p class="error" id="reminders-error" style="display:none;"></p>
+      <p class="muted" id="reminders-result" style="display:none;"></p>
 
-      <section class="card form-narrow">
-        <h2>Weekly reminders</h2>
-        <p class="muted">
-          Emails or texts every customer who hasn't unsubscribed, using
-          whichever contact method they prefer.
-        </p>
-        <button id="send-reminders-button">Send weekly reminders</button>
-        <p class="error" id="reminders-error" style="display:none;"></p>
-        <p class="muted" id="reminders-result" style="display:none;"></p>
-      </section>
+      <div class="table-card">
+        <table id="customers-table" class="data-table customers-table">
+          <thead>
+            <tr>
+              <th>Email</th><th>Name</th><th>Phone</th><th>Address</th>
+              <th>Contact via</th><th>Unsubscribed</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="customers-body"></tbody>
+        </table>
+      </div>
     </div>
 
     <dialog id="edit-dialog">
-      <h2>Edit customer</h2>
-      <label for="edit-name">Name</label>
-      <input id="edit-name" type="text" />
+      <form id="edit-form">
+        <h2>Edit customer</h2>
+        <div class="field-grid-2">
+          <div>
+            <label for="edit-name">Name</label>
+            <input id="edit-name" type="text" />
+          </div>
+          <div>
+            <label for="edit-email">Email</label>
+            <input id="edit-email" type="email" required />
+          </div>
+          <div>
+            <label for="edit-phone">Phone</label>
+            <input id="edit-phone" type="tel" />
+          </div>
+          <div>
+            <label for="edit-address">Delivery address</label>
+            <input id="edit-address" type="text" />
+          </div>
+        </div>
 
-      <label for="edit-email">Email</label>
-      <input id="edit-email" type="email" />
+        <h3>Notifications</h3>
+        <label class="option-choice"><input type="radio" name="edit-preferred-contact" id="edit-contact-email" value="email" /> Email</label>
+        <label class="option-choice"><input type="radio" name="edit-preferred-contact" id="edit-contact-text" value="text" /> Text</label>
+        <label class="option-choice" style="margin-top:0.5rem;">
+          <input type="checkbox" id="edit-unsubscribed" /> Unsubscribed from weekly reminders
+        </label>
 
-      <label for="edit-phone">Phone</label>
-      <input id="edit-phone" type="tel" />
-
-      <label for="edit-address">Delivery address</label>
-      <input id="edit-address" type="text" />
-
-      <h3>Notifications</h3>
-      <label class="option-choice"><input type="radio" name="edit-preferred-contact" id="edit-contact-email" value="email" /> Email</label>
-      <label class="option-choice"><input type="radio" name="edit-preferred-contact" id="edit-contact-text" value="text" /> Text</label>
-      <label class="option-choice" style="margin-top:0.5rem;">
-        <input type="checkbox" id="edit-unsubscribed" /> Unsubscribed from weekly reminders
-      </label>
-
-      <p class="error" id="edit-error" style="display:none;"></p>
-      <div style="display:flex; gap:0.5rem; margin-top:1rem;">
-        <button type="button" id="edit-save-button">Save</button>
-        <button type="button" class="secondary" id="edit-cancel-button">Cancel</button>
-      </div>
+        <p class="error" style="display:none;"></p>
+        <div class="dialog-actions">
+          <button type="button" class="secondary" id="edit-cancel-button">Cancel</button>
+          <button type="submit">Save</button>
+        </div>
+      </form>
     </dialog>
   </main>
 
@@ -76,8 +84,11 @@
     import { renderNav } from "/js/nav.js";
     import { loginUrlWithReturnTo } from "/js/redirect.js";
     import { formatPhone } from "/js/pricing.js";
+    import { showToast } from "/js/toast.js";
+    import { confirmAction, enableEnterToSubmit, escapeHtml, handleSubmit } from "/js/admin.js";
 
     renderNav();
+    enableEnterToSubmit();
 
     const editPhoneInput = document.getElementById("edit-phone");
     editPhoneInput.addEventListener("input", () => {
@@ -101,44 +112,58 @@
     function initCustomers(config, token) {
       let customers = [];
       let editingUsername = null;
+      const editDialog = document.getElementById("edit-dialog");
 
       async function refresh() {
         const data = await apiRequest(config.apiUrl, "/customers", { token });
         customers = data.customers;
+        document.getElementById("customers-count").textContent =
+          `${customers.length} customer${customers.length === 1 ? "" : "s"}`;
         const body = document.getElementById("customers-body");
+        if (customers.length === 0) {
+          body.innerHTML = `<tr class="empty-row"><td colspan="7">No customers yet.</td></tr>`;
+          return;
+        }
         body.innerHTML = customers
           .map(
             (c) => `
-          <tr data-username="${c.username}">
-            <td><button class="secondary edit-customer">Edit</button></td>
-            <td><button class="secondary delete-customer">Delete</button></td>
-            <td>${c.email}</td>
-            <td>${c.name}</td>
-            <td>${c.phone}</td>
-            <td>${c.address}</td>
-            <td>${c.preferredContact}</td>
+          <tr data-username="${escapeHtml(c.username)}">
+            <td>${escapeHtml(c.email)}</td>
+            <td>${escapeHtml(c.name)}</td>
+            <td class="nowrap">${escapeHtml(formatPhone(c.phone || ""))}</td>
+            <td>${escapeHtml(c.address)}</td>
+            <td>${escapeHtml(c.preferredContact)}</td>
             <td>${c.unsubscribed ? "Yes" : "No"}</td>
+            <td class="actions">
+              <button type="button" class="secondary edit-customer">Edit</button>
+              <button type="button" class="secondary delete-customer">Delete</button>
+            </td>
           </tr>`
           )
           .join("");
 
+        const customerFor = (btn) => customers.find((c) => c.username === btn.closest("tr").dataset.username);
+
         body.querySelectorAll(".edit-customer").forEach((btn) => {
-          btn.addEventListener("click", (e) => {
-            const username = e.target.closest("tr").dataset.username;
-            openEditDialog(customers.find((c) => c.username === username));
-          });
+          btn.addEventListener("click", () => openEditDialog(customerFor(btn)));
         });
 
         body.querySelectorAll(".delete-customer").forEach((btn) => {
-          btn.addEventListener("click", async (e) => {
-            const username = e.target.closest("tr").dataset.username;
-            const customer = customers.find((c) => c.username === username);
-            if (!confirm(`Delete ${customer.email}'s account? This cannot be undone.`)) return;
-            await apiRequest(config.apiUrl, `/customers/${encodeURIComponent(username)}`, {
-              method: "DELETE",
-              token,
-            });
-            refresh();
+          btn.addEventListener("click", async () => {
+            const customer = customerFor(btn);
+            if (!(await confirmAction(`Delete ${customer.email}'s account? This cannot be undone.`))) return;
+            btn.disabled = true;
+            try {
+              await apiRequest(config.apiUrl, `/customers/${encodeURIComponent(customer.username)}`, {
+                method: "DELETE",
+                token,
+              });
+              showToast(`Deleted ${customer.email}'s account`);
+              refresh();
+            } catch (err) {
+              btn.disabled = false;
+              showToast(err.message, { error: true });
+            }
           });
         });
       }
@@ -151,54 +176,58 @@
         document.getElementById("edit-address").value = customer.address;
         document.getElementById(customer.preferredContact === "text" ? "edit-contact-text" : "edit-contact-email").checked = true;
         document.getElementById("edit-unsubscribed").checked = customer.unsubscribed;
-        document.getElementById("edit-error").style.display = "none";
-        document.getElementById("edit-dialog").showModal();
+        editDialog.querySelector(".error").style.display = "none";
+        editDialog.showModal();
       }
 
-      document.getElementById("edit-cancel-button").addEventListener("click", () => {
-        document.getElementById("edit-dialog").close();
+      document.getElementById("edit-cancel-button").addEventListener("click", () => editDialog.close());
+
+      handleSubmit(document.getElementById("edit-form"), async () => {
+        const email = document.getElementById("edit-email").value;
+        await apiRequest(config.apiUrl, `/customers/${encodeURIComponent(editingUsername)}`, {
+          method: "PUT",
+          token,
+          body: {
+            name: document.getElementById("edit-name").value,
+            email,
+            phone: document.getElementById("edit-phone").value,
+            address: document.getElementById("edit-address").value,
+            preferredContact: document.getElementById("edit-contact-text").checked ? "text" : "email",
+            unsubscribed: document.getElementById("edit-unsubscribed").checked,
+          },
+        });
+        editDialog.close();
+        showToast(`Saved changes to ${email}`);
+        refresh();
       });
 
-      document.getElementById("edit-save-button").addEventListener("click", async () => {
-        const errorEl = document.getElementById("edit-error");
-        errorEl.style.display = "none";
-        try {
-          await apiRequest(config.apiUrl, `/customers/${encodeURIComponent(editingUsername)}`, {
-            method: "PUT",
-            token,
-            body: {
-              name: document.getElementById("edit-name").value,
-              email: document.getElementById("edit-email").value,
-              phone: document.getElementById("edit-phone").value,
-              address: document.getElementById("edit-address").value,
-              preferredContact: document.getElementById("edit-contact-text").checked ? "text" : "email",
-              unsubscribed: document.getElementById("edit-unsubscribed").checked,
-            },
-          });
-          document.getElementById("edit-dialog").close();
-          refresh();
-        } catch (err) {
-          errorEl.textContent = err.message;
-          errorEl.style.display = "block";
-        }
-      });
-
-      document.getElementById("send-reminders-button").addEventListener("click", async () => {
+      const remindersButton = document.getElementById("send-reminders-button");
+      remindersButton.addEventListener("click", async () => {
         const errorEl = document.getElementById("reminders-error");
         const resultEl = document.getElementById("reminders-result");
         errorEl.style.display = "none";
         resultEl.style.display = "none";
-        if (!confirm("Send a weekly reminder to every subscribed customer now?")) return;
+        const confirmed = await confirmAction("Send a weekly reminder to every subscribed customer now?", {
+          confirmLabel: "Send reminders",
+        });
+        if (!confirmed) return;
+        remindersButton.disabled = true;
         try {
           const result = await apiRequest(config.apiUrl, "/reminders/send", { method: "POST", token });
-          resultEl.textContent =
+          const summary =
             `Sent ${result.sentEmail} email(s), ${result.sentText} text(s). ` +
-            `Skipped ${result.skippedUnsubscribed} unsubscribed. ${result.failed} failed.` +
-            (result.errors.length ? ` First error: ${result.errors[0]}` : "");
+            `Skipped ${result.skippedUnsubscribed} unsubscribed. ${result.failed} failed.`;
+          showToast(summary, { error: result.failed > 0 });
+          // Keep the full result (including the first error) on the page
+          // after the toast fades.
+          resultEl.textContent = summary + (result.errors.length ? ` First error: ${result.errors[0]}` : "");
           resultEl.style.display = "block";
         } catch (err) {
           errorEl.textContent = err.message;
           errorEl.style.display = "block";
+          showToast(err.message, { error: true });
+        } finally {
+          remindersButton.disabled = false;
         }
       });
 

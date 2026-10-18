@@ -9,7 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Anton&family=Permanent+Marker&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/css/style.css" />
 </head>
-<body>
+<body class="admin-page">
   <header id="nav"></header>
 
   <main>
@@ -18,19 +18,23 @@
     <div id="admin-guard"></div>
 
     <div id="admin-content" style="display:none;">
-      <label for="ready-date-filter">Ready date</label>
-      <select id="ready-date-filter" style="max-width:220px;"></select>
-      <button type="button" class="secondary" id="print-labels-button" style="margin-left:0.5rem;">Print labels</button>
-      <p class="muted" id="print-labels-hint">
-        One label per meal, sized for a standard 3&quot; wide x 2&quot; high label printer.
-      </p>
+      <form class="toolbar" id="print-labels-form">
+        <label for="ready-date-filter">Ready date</label>
+        <select id="ready-date-filter"></select>
+        <button type="submit" id="print-labels-button">Print labels</button>
+        <span class="muted" id="print-labels-hint">
+          One label per meal, sized for a standard 3&quot; wide x 2&quot; high label printer.
+        </span>
+      </form>
 
-      <table id="prep-table">
-        <thead>
-          <tr><th>Meal</th><th>Add-ons</th><th>Note</th><th>Quantity</th></tr>
-        </thead>
-        <tbody id="prep-body"></tbody>
-      </table>
+      <div class="table-card">
+        <table class="data-table" id="prep-table">
+          <thead>
+            <tr><th>Meal</th><th>Add-ons</th><th>Note</th><th class="num">Quantity</th></tr>
+          </thead>
+          <tbody id="prep-body"></tbody>
+        </table>
+      </div>
     </div>
   </main>
 
@@ -44,8 +48,11 @@
     import { renderNav } from "/js/nav.js";
     import { loginUrlWithReturnTo } from "/js/redirect.js";
     import { formatMacros } from "/js/pricing.js";
+    import { showToast } from "/js/toast.js";
+    import { enableEnterToSubmit, escapeHtml } from "/js/admin.js";
 
     renderNav();
+    enableEnterToSubmit();
 
     loadConfig().then(async (config) => {
       const session = await getValidSession({ region: config.region, clientId: config.userPoolClientId });
@@ -126,7 +133,8 @@
       if (m.proteinG) parts.push(`${m.proteinG}g Protein`);
       if (m.carbsG) parts.push(`${m.carbsG}g Carbs`);
       if (m.fatG) parts.push(`${m.fatG}g Fat`);
-      const text = parts.length ? `${addOn.description}: ${parts.join(" | ")}` : addOn.description;
+      const description = escapeHtml(addOn.description);
+      const text = parts.length ? `${description}: ${parts.join(" | ")}` : description;
       return `<div class="label-addon-line">${text}</div>`;
     }
 
@@ -165,14 +173,14 @@
       const labelsHtml = labels.map(
         (row) => `
         <div class="label">
-          <div class="label-meal">${row.name}</div>
-          ${row.customerName ? `<div class="label-customer">${row.customerName}</div>` : ""}
+          <div class="label-meal">${escapeHtml(row.name)}</div>
+          ${row.customerName ? `<div class="label-customer">${escapeHtml(row.customerName)}</div>` : ""}
           <div class="label-body">
             <img class="label-logo-img" src="/assets/logo.png" alt="GTX Meals" />
             ${macroGridHtml(row.macros)}
           </div>
           ${row.addOns.map(addOnLineHtml).join("")}
-          ${row.note ? `<div class="label-note">Note: ${row.note}</div>` : ""}
+          ${row.note ? `<div class="label-note">Note: ${escapeHtml(row.note)}</div>` : ""}
         </div>`
       );
 
@@ -185,9 +193,11 @@
       for (let i = 0; i < labelsHtml.length; i += LABELS_PER_SHEET) {
         sheets.push(labelsHtml.slice(i, i + LABELS_PER_SHEET));
       }
-      return sheets
-        .map((sheetLabels) => `<div class="label-sheet">${sheetLabels.join("")}</div>`)
-        .join("");
+      return {
+        html: sheets.map((sheetLabels) => `<div class="label-sheet">${sheetLabels.join("")}</div>`).join(""),
+        labelCount: labelsHtml.length,
+        sheetCount: sheets.length,
+      };
     }
 
     async function initPrepList(config, token) {
@@ -196,9 +206,15 @@
       const printButton = document.getElementById("print-labels-button");
       let currentOrders = [];
 
-      printButton.addEventListener("click", () => {
-        document.getElementById("print-labels").innerHTML = buildLabelsHtml(currentOrders, mealsById);
+      // The Print labels button is the toolbar form's default, so Enter on
+      // the ready-date picker prints too.
+      document.getElementById("print-labels-form").addEventListener("submit", (e) => {
+        e.preventDefault();
+        if (printButton.disabled) return;
+        const { html, labelCount, sheetCount } = buildLabelsHtml(currentOrders, mealsById);
+        document.getElementById("print-labels").innerHTML = html;
         window.print();
+        showToast(`Sent ${labelCount} label${labelCount === 1 ? "" : "s"} (${sheetCount} sheet${sheetCount === 1 ? "" : "s"}) for ${select.value} to print`);
       });
 
       const [{ orders }, { nextReadyDate }, { meals }, { addOns }] = await Promise.all([
@@ -222,12 +238,12 @@
         document.querySelector('label[for="ready-date-filter"]').style.display = "none";
         printButton.style.display = "none";
         document.getElementById("print-labels-hint").style.display = "none";
-        body.innerHTML = `<tr><td colspan="4" class="muted">No ready date has been set yet - set one on the Builder page.</td></tr>`;
+        body.innerHTML = `<tr class="empty-row"><td colspan="4">No ready date has been set yet - set one on the Builder page.</td></tr>`;
         return;
       }
 
       select.innerHTML = sortedDates
-        .map((d) => `<option value="${d}" ${d === nextReadyDate ? "selected" : ""}>${d}</option>`)
+        .map((d) => `<option value="${escapeHtml(d)}" ${d === nextReadyDate ? "selected" : ""}>${escapeHtml(d)}</option>`)
         .join("");
 
       function renderForSelectedDate() {
@@ -235,7 +251,7 @@
         currentOrders = filtered;
         if (filtered.length === 0) {
           printButton.disabled = true;
-          body.innerHTML = `<tr><td colspan="4" class="muted">No placed orders for this date.</td></tr>`;
+          body.innerHTML = `<tr class="empty-row"><td colspan="4">No placed orders for this date.</td></tr>`;
           return;
         }
         const rows = aggregateByMeal(filtered, mealsById, addOnsById);
@@ -244,19 +260,19 @@
           .map(
             (row) => `
           <tr>
-            <td>${row.name}</td>
+            <td><strong>${escapeHtml(row.name)}</strong></td>
             <td>${
               row.addOns.length
                 ? row.addOns
                     .map((a) => {
                       const m = formatMacros(a.macros);
-                      return `<div>${a.description}${m ? `<div class="muted" style="font-size:0.75rem;">${m}</div>` : ""}</div>`;
+                      return `<div>${escapeHtml(a.description)}${m ? `<div class="muted" style="font-size:0.75rem;">${m}</div>` : ""}</div>`;
                     })
                     .join("")
                 : "-"
             }</td>
-            <td>${row.note || "-"}</td>
-            <td>${row.quantity}</td>
+            <td>${escapeHtml(row.note) || "-"}</td>
+            <td class="num"><strong>${row.quantity}</strong></td>
           </tr>`
           )
           .join("");

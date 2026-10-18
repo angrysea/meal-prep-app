@@ -41,8 +41,11 @@
     dialog .dialog-actions { display: flex; gap: 0.5rem; margin-top: 1rem; }
     dialog .dialog-actions button { background: #d20d0d; color: #fff; border: none; border-radius: 6px; padding: 0.6rem 1.1rem; font-size: 0.95rem; cursor: pointer; }
     dialog .dialog-actions button.secondary { background: transparent; color: #d20d0d; border: 1px solid #d20d0d; }
+    .toast { position: fixed; bottom: 1.5rem; right: 1.5rem; max-width: 480px; background: #111111; color: #fff; padding: 0.75rem 1.25rem; border-radius: 8px; font-weight: 500; opacity: 0; pointer-events: none; transform: translateY(20px); transition: opacity 0.2s ease, transform 0.2s ease; z-index: 1000; box-shadow: 0 4px 16px rgba(0,0,0,0.3); }
+    .toast.visible { opacity: 1; transform: translateY(0); }
+    .toast.toast-error { background: #aa0e0c; }
     @media print {
-      .flyer-actions, .text-status { display: none !important; }
+      .flyer-actions, .text-status, .toast { display: none !important; }
     }
   </style>
 </head>
@@ -70,14 +73,16 @@
   </div>
 
   <dialog id="text-preview-dialog">
-    <h2>Preview message</h2>
-    <p class="muted" id="text-preview-recipients"></p>
-    <p class="muted">Sent by email or text, based on each customer's preference.</p>
-    <textarea id="text-preview-message" readonly></textarea>
-    <div class="dialog-actions">
-      <button type="button" id="text-send-button">Send</button>
-      <button type="button" class="secondary" id="text-cancel-button">Cancel</button>
-    </div>
+    <form id="text-preview-form">
+      <h2>Preview message</h2>
+      <p class="muted" id="text-preview-recipients"></p>
+      <p class="muted">Sent by email or text, based on each customer's preference.</p>
+      <textarea id="text-preview-message" readonly></textarea>
+      <div class="dialog-actions">
+        <button type="submit" id="text-send-button">Send</button>
+        <button type="button" class="secondary" id="text-cancel-button">Cancel</button>
+      </div>
+    </form>
   </dialog>
 
   <script type="module">
@@ -86,6 +91,7 @@
     import { getValidSession, isAdmin } from "/js/cognito.js";
     import { formatMacros } from "/js/pricing.js";
     import { MONTH_NAMES, formatDateHeading, groupMealsForMonth } from "/js/monthlyMenu.js";
+    import { showToast } from "/js/toast.js";
 
     const params = new URLSearchParams(location.search);
     const period = params.get("period") === "weekly" ? "weekly" : "monthly";
@@ -192,11 +198,15 @@
             : `Will be sent to up to ${customerCount} customer${customerCount === 1 ? "" : "s"} (subscribed).`;
         messageEl.value = message;
         dialog.showModal();
+        // Send is the dialog's default button - focus it so Enter sends.
+        sendButton.focus();
       });
 
       cancelButton.addEventListener("click", () => dialog.close());
 
-      sendButton.addEventListener("click", async () => {
+      document.getElementById("text-preview-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        if (sendButton.disabled) return;
         sendButton.disabled = true;
         try {
           const result = await apiRequest(config.apiUrl, "/menu/send", {
@@ -214,11 +224,15 @@
             (result.failed ? `, ${result.failed} failed` : "") +
             ".";
           statusEl.style.display = "block";
+          showToast(`Menu ${statusEl.textContent.charAt(0).toLowerCase()}${statusEl.textContent.slice(1)}`, {
+            error: result.failed > 0,
+          });
         } catch (err) {
           dialog.close();
           statusEl.className = "text-status error";
           statusEl.textContent = err.message;
           statusEl.style.display = "block";
+          showToast(err.message, { error: true });
         } finally {
           sendButton.disabled = false;
         }

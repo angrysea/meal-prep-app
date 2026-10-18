@@ -67,6 +67,7 @@
     import { renderNav } from "/js/nav.js";
     import { loginUrlWithReturnTo } from "/js/redirect.js";
     import { computeUnitPriceCents, selectionsKey, formatMacros, formatPhone } from "/js/pricing.js";
+    import { showToast } from "/js/toast.js";
 
     renderNav();
 
@@ -78,15 +79,6 @@
     deliveryPhoneInput.addEventListener("input", () => {
       deliveryPhoneInput.value = formatPhone(deliveryPhoneInput.value);
     });
-
-    let toastTimeout;
-    function showToast(message) {
-      const toast = document.getElementById("toast");
-      toast.textContent = message;
-      toast.classList.add("visible");
-      clearTimeout(toastTimeout);
-      toastTimeout = setTimeout(() => toast.classList.remove("visible"), 2500);
-    }
 
     function renderCart() {
       const section = document.getElementById("cart-section");

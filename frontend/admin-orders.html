@@ -9,7 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Anton&family=Permanent+Marker&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/css/style.css" />
 </head>
-<body>
+<body class="admin-page">
   <header id="nav"></header>
 
   <main>
@@ -17,16 +17,30 @@
     <div id="admin-guard"></div>
 
     <div id="admin-content" style="display:none;">
-      <label for="status-filter">Show</label>
-      <select id="status-filter" style="max-width:220px;">
-        <option value="all">All</option>
-        <option value="placed" selected>Placed</option>
-        <option value="prepared">Prepared</option>
-        <option value="delivered">Delivered</option>
-        <option value="cancelled">Cancelled</option>
-      </select>
+      <div class="toolbar">
+        <label for="status-filter">Show</label>
+        <select id="status-filter">
+          <option value="all">All</option>
+          <option value="placed" selected>Placed</option>
+          <option value="prepared">Prepared</option>
+          <option value="delivered">Delivered</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+        <span class="toolbar-spacer"></span>
+        <span class="muted" id="orders-count"></span>
+      </div>
 
-      <div class="scroll-list" id="orders-list"></div>
+      <div class="table-card">
+        <table class="data-table" id="orders-table">
+          <thead>
+            <tr>
+              <th>Placed</th><th>Customer</th><th>Contact</th><th>Ready date</th>
+              <th>Items</th><th class="num">Total</th><th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="orders-body"></tbody>
+        </table>
+      </div>
     </div>
   </main>
 
@@ -37,6 +51,8 @@
     import { renderNav } from "/js/nav.js";
     import { loginUrlWithReturnTo } from "/js/redirect.js";
     import { formatMacros } from "/js/pricing.js";
+    import { showToast } from "/js/toast.js";
+    import { escapeHtml } from "/js/admin.js";
 
     renderNav();
 
@@ -56,63 +72,79 @@
       }
     });
 
+    function itemsHtml(items) {
+      return `<ul>${items
+        .map((i) => {
+          const addOnParts = (i.selectedAddOns || []).map((a) => {
+            const macrosText = formatMacros(a.macros);
+            return `${escapeHtml(a.description)}${macrosText ? ` [${macrosText}]` : ""}`;
+          });
+          const addOnText = addOnParts.length ? ` <span class="muted">(${addOnParts.join(", ")})</span>` : "";
+          const noteText = i.note ? ` <span class="muted">- Note: ${escapeHtml(i.note)}</span>` : "";
+          return `<li>${i.quantity} x ${escapeHtml(i.name)}${addOnText} - ${formatPrice(i.unitPriceCents * i.quantity)}${noteText}</li>`;
+        })
+        .join("")}</ul>`;
+    }
+
     function initOrders(config, token) {
       const filterSelect = document.getElementById("status-filter");
+      const body = document.getElementById("orders-body");
+      const countEl = document.getElementById("orders-count");
 
       async function refresh() {
-        const list = document.getElementById("orders-list");
         const filter = filterSelect.value;
         const { orders } = await apiRequest(config.apiUrl, `/admin/orders?status=${encodeURIComponent(filter)}`, { token });
+        countEl.textContent = `${orders.length} order${orders.length === 1 ? "" : "s"}`;
 
         if (orders.length === 0) {
-          list.innerHTML = `<p class="muted">${
-            filter === "all" ? "No orders yet." : `No orders in ${filter} status right now.`
-          }</p>`;
+          body.innerHTML = `<tr class="empty-row"><td colspan="7">${
+            filter === "all" ? "No orders yet." : `No orders in ${escapeHtml(filter)} status right now.`
+          }</td></tr>`;
           return;
         }
 
-        list.innerHTML = orders
+        body.innerHTML = orders
           .map((order) => {
             const createdAt = new Date(order.createdAt).toLocaleString();
             return `
-          <div class="card order-card" data-order-id="${order.orderId}" data-customer-sub="${order.customerSub}">
-            <p>
-              <strong>${createdAt}</strong>
-              &nbsp;<select class="status-select" name="status-${order.orderId}" aria-label="Status for order placed ${createdAt}">
+          <tr data-order-id="${escapeHtml(order.orderId)}" data-customer-sub="${escapeHtml(order.customerSub)}">
+            <td style="white-space:nowrap;">${escapeHtml(createdAt)}</td>
+            <td><strong>${escapeHtml(order.deliveryName)}</strong><div class="cell-sub">${escapeHtml(order.deliveryAddress)}</div></td>
+            <td>${escapeHtml(order.deliveryEmail)}${order.deliveryPhone ? `<div class="cell-sub">${escapeHtml(order.deliveryPhone)}</div>` : ""}</td>
+            <td style="white-space:nowrap;">${escapeHtml(order.readyDate) || "-"}</td>
+            <td>${itemsHtml(order.items)}</td>
+            <td class="num"><strong>${formatPrice(order.totalCents)}</strong></td>
+            <td>
+              <select class="status-select" aria-label="Status for ${escapeHtml(order.deliveryName)}'s order placed ${escapeHtml(createdAt)}">
                 ${STATUSES.map((s) => `<option value="${s}" ${s === order.status ? "selected" : ""}>${s}</option>`).join("")}
               </select>
-            </p>
-            <p class="muted">${order.deliveryName} - ${order.deliveryAddress}</p>
-            <p class="muted">${order.deliveryEmail}${order.deliveryPhone ? ` - ${order.deliveryPhone}` : ""}</p>
-            ${order.readyDate ? `<p class="muted">Ready for pickup: ${order.readyDate}</p>` : ""}
-            <p>Total: <strong>${formatPrice(order.totalCents)}</strong></p>
-            <ul>
-              ${order.items
-                .map((i) => {
-                  const addOnParts = (i.selectedAddOns || []).map((a) => {
-                    const macrosText = formatMacros(a.macros);
-                    return `${a.description}${macrosText ? ` [${macrosText}]` : ""}`;
-                  });
-                  const addOnText = addOnParts.length ? ` <span class="muted">(${addOnParts.join(", ")})</span>` : "";
-                  const noteText = i.note ? ` <span class="muted">- Note: ${i.note}</span>` : "";
-                  return `<li>${i.quantity} x ${i.name}${addOnText} - ${formatPrice(i.unitPriceCents * i.quantity)}${noteText}</li>`;
-                })
-                .join("")}
-            </ul>
-          </div>`;
+            </td>
+          </tr>`;
           })
           .join("");
 
-        list.querySelectorAll(".status-select").forEach((select) => {
+        body.querySelectorAll(".status-select").forEach((select) => {
+          const original = select.value;
           select.addEventListener("change", async (e) => {
-            const card = e.target.closest(".order-card");
-            const { orderId, customerSub } = card.dataset;
-            await apiRequest(config.apiUrl, `/admin/orders/${customerSub}/${orderId}`, {
-              method: "PUT",
-              token,
-              body: { status: select.value },
-            });
-            refresh();
+            const row = e.target.closest("tr");
+            const { orderId, customerSub } = row.dataset;
+            const order = orders.find((o) => o.orderId === orderId);
+            const status = select.value;
+            select.disabled = true;
+            try {
+              await apiRequest(config.apiUrl, `/admin/orders/${customerSub}/${orderId}`, {
+                method: "PUT",
+                token,
+                body: { status },
+              });
+              showToast(`Order for ${order.deliveryName || order.deliveryEmail} marked ${status}`);
+              refresh();
+            } catch (err) {
+              // Put the dropdown back so it doesn't show a status that never saved.
+              select.value = original;
+              select.disabled = false;
+              showToast(err.message, { error: true });
+            }
           });
         });
       }
