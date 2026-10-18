@@ -52,7 +52,11 @@ def _event(method, path, body=None, path_params=None, claims=None, query=None):
     return event
 
 
-CUSTOMER_CLAIMS = {"sub": "user-1", "email": "customer@example.com"}
+# "name" is the sign-up name Cognito puts in the ID token - orders fall
+# back to it for the customer's name when they haven't saved a profile.
+CUSTOMER_CLAIMS = {"sub": "user-1", "email": "customer@example.com", "name": "Casey Customer"}
+# Every order needs a contact phone.
+PHONE = "(555) 555-1234"
 ADMIN_CLAIMS = {"sub": "admin-1", "email": "admin@example.com", "cognito:groups": "[Admins]"}
 
 
@@ -431,7 +435,7 @@ def test_create_order_recomputes_total_from_current_menu(table):
     resp = index.handler(
         _event(
             "POST", "/orders",
-            {"items": [{"mealId": meal["mealId"], "quantity": 2, "priceCents": 1}],
+            {"contactPhone": PHONE, "items": [{"mealId": meal["mealId"], "quantity": 2, "priceCents": 1}],
              "deliveryName": "Ada Lovelace", "deliveryAddress": "123 Main St"},
             claims=CUSTOMER_CLAIMS,
         ),
@@ -452,7 +456,7 @@ def test_create_order_adds_global_addon_price(table):
     resp = index.handler(
         _event(
             "POST", "/orders",
-            {"items": [{"mealId": meal["mealId"], "quantity": 1, "selectedAddOnIds": [large["addOnId"]]}]},
+            {"contactPhone": PHONE, "items": [{"mealId": meal["mealId"], "quantity": 1, "selectedAddOnIds": [large["addOnId"]]}]},
             claims=CUSTOMER_CLAIMS,
         ),
         None,
@@ -486,7 +490,7 @@ def test_create_order_snapshots_addon_macros(table):
     resp = index.handler(
         _event(
             "POST", "/orders",
-            {"items": [{"mealId": meal["mealId"], "quantity": 1, "selectedAddOnIds": [cauli["addOnId"]]}]},
+            {"contactPhone": PHONE, "items": [{"mealId": meal["mealId"], "quantity": 1, "selectedAddOnIds": [cauli["addOnId"]]}]},
             claims=CUSTOMER_CLAIMS,
         ),
         None,
@@ -520,7 +524,7 @@ def test_create_order_sums_multiple_addons(table):
     resp = index.handler(
         _event(
             "POST", "/orders",
-            {"items": [{
+            {"contactPhone": PHONE, "items": [{
                 "mealId": meal["mealId"], "quantity": 2,
                 "selectedAddOnIds": [large["addOnId"], extra_protein["addOnId"]],
             }]},
@@ -542,7 +546,7 @@ def test_create_order_with_no_addons_selected(table):
     _create_addon(index)  # exists but not selected - shouldn't affect price
 
     resp = index.handler(
-        _event("POST", "/orders", {"items": [{"mealId": meal["mealId"], "quantity": 1}]}, claims=CUSTOMER_CLAIMS),
+        _event("POST", "/orders", {"contactPhone": PHONE, "items": [{"mealId": meal["mealId"], "quantity": 1}]}, claims=CUSTOMER_CLAIMS),
         None,
     )
     assert resp["statusCode"] == 201
@@ -558,7 +562,7 @@ def test_create_order_stores_item_notes(table):
     resp = index.handler(
         _event(
             "POST", "/orders",
-            {"items": [{"mealId": meal["mealId"], "quantity": 1, "note": "  hold the cheese  "}]},
+            {"contactPhone": PHONE, "items": [{"mealId": meal["mealId"], "quantity": 1, "note": "  hold the cheese  "}]},
             claims=CUSTOMER_CLAIMS,
         ),
         None,
@@ -573,11 +577,39 @@ def test_create_order_defaults_note_to_empty_string(table):
 
     meal = _create_meal(index)
     resp = index.handler(
-        _event("POST", "/orders", {"items": [{"mealId": meal["mealId"], "quantity": 1}]}, claims=CUSTOMER_CLAIMS),
+        _event("POST", "/orders", {"contactPhone": PHONE, "items": [{"mealId": meal["mealId"], "quantity": 1}]}, claims=CUSTOMER_CLAIMS),
         None,
     )
     order = json.loads(resp["body"])
     assert order["items"][0]["note"] == ""
+
+
+def test_create_order_stores_optional_pickup_name(table):
+    from backend.lambda_src import index
+
+    meal = _create_meal(index)
+    resp = index.handler(
+        _event(
+            "POST", "/orders",
+            {"contactPhone": PHONE, "items": [{"mealId": meal["mealId"], "quantity": 1}], "pickupName": "  Sam Lee  "},
+            claims=CUSTOMER_CLAIMS,
+        ),
+        None,
+    )
+    assert json.loads(resp["body"])["pickupName"] == "Sam Lee"
+    listed = json.loads(index.handler(_event("GET", "/orders", claims=CUSTOMER_CLAIMS), None)["body"])
+    assert listed["orders"][0]["pickupName"] == "Sam Lee"
+
+
+def test_create_order_defaults_pickup_name_to_empty_string(table):
+    from backend.lambda_src import index
+
+    meal = _create_meal(index)
+    resp = index.handler(
+        _event("POST", "/orders", {"contactPhone": PHONE, "items": [{"mealId": meal["mealId"], "quantity": 1}]}, claims=CUSTOMER_CLAIMS),
+        None,
+    )
+    assert json.loads(resp["body"])["pickupName"] == ""
 
 
 def test_create_order_fails_for_unknown_addon(table):
@@ -587,7 +619,7 @@ def test_create_order_fails_for_unknown_addon(table):
     resp = index.handler(
         _event(
             "POST", "/orders",
-            {"items": [{"mealId": meal["mealId"], "quantity": 1, "selectedAddOnIds": ["does-not-exist"]}]},
+            {"contactPhone": PHONE, "items": [{"mealId": meal["mealId"], "quantity": 1, "selectedAddOnIds": ["does-not-exist"]}]},
             claims=CUSTOMER_CLAIMS,
         ),
         None,
@@ -599,7 +631,7 @@ def test_create_order_rejects_unknown_meal(table):
     from backend.lambda_src import index
 
     resp = index.handler(
-        _event("POST", "/orders", {"items": [{"mealId": "does-not-exist", "quantity": 1}]}, claims=CUSTOMER_CLAIMS),
+        _event("POST", "/orders", {"contactPhone": PHONE, "items": [{"mealId": "does-not-exist", "quantity": 1}]}, claims=CUSTOMER_CLAIMS),
         None,
     )
     assert resp["statusCode"] == 400
@@ -611,7 +643,7 @@ def test_create_order_stores_the_current_ready_date(table):
     index.handler(_event("PUT", "/settings", {"nextReadyDate": "2026-12-25"}, claims=ADMIN_CLAIMS), None)
     meal = _create_meal(index)
     resp = index.handler(
-        _event("POST", "/orders", {"items": [{"mealId": meal["mealId"], "quantity": 1}]}, claims=CUSTOMER_CLAIMS),
+        _event("POST", "/orders", {"contactPhone": PHONE, "items": [{"mealId": meal["mealId"], "quantity": 1}]}, claims=CUSTOMER_CLAIMS),
         None,
     )
     assert resp["statusCode"] == 201
@@ -623,7 +655,7 @@ def test_create_order_allowed_when_no_ready_date_is_set(table):
 
     meal = _create_meal(index)
     resp = index.handler(
-        _event("POST", "/orders", {"items": [{"mealId": meal["mealId"], "quantity": 1}]}, claims=CUSTOMER_CLAIMS),
+        _event("POST", "/orders", {"contactPhone": PHONE, "items": [{"mealId": meal["mealId"], "quantity": 1}]}, claims=CUSTOMER_CLAIMS),
         None,
     )
     assert resp["statusCode"] == 201
@@ -637,7 +669,7 @@ def test_create_order_allowed_exactly_at_the_cutoff(table):
     index.handler(_event("PUT", "/settings", {"nextReadyDate": ready_date}, claims=ADMIN_CLAIMS), None)
     meal = _create_meal(index)
     resp = index.handler(
-        _event("POST", "/orders", {"items": [{"mealId": meal["mealId"], "quantity": 1}]}, claims=CUSTOMER_CLAIMS),
+        _event("POST", "/orders", {"contactPhone": PHONE, "items": [{"mealId": meal["mealId"], "quantity": 1}]}, claims=CUSTOMER_CLAIMS),
         None,
     )
     assert resp["statusCode"] == 201
@@ -650,7 +682,7 @@ def test_create_order_rejected_inside_the_cutoff(table):
     index.handler(_event("PUT", "/settings", {"nextReadyDate": ready_date}, claims=ADMIN_CLAIMS), None)
     meal = _create_meal(index)
     resp = index.handler(
-        _event("POST", "/orders", {"items": [{"mealId": meal["mealId"], "quantity": 1}]}, claims=CUSTOMER_CLAIMS),
+        _event("POST", "/orders", {"contactPhone": PHONE, "items": [{"mealId": meal["mealId"], "quantity": 1}]}, claims=CUSTOMER_CLAIMS),
         None,
     )
     assert resp["statusCode"] == 400
@@ -663,7 +695,7 @@ def test_create_order_rejected_after_the_ready_date_has_passed(table):
     index.handler(_event("PUT", "/settings", {"nextReadyDate": ready_date}, claims=ADMIN_CLAIMS), None)
     meal = _create_meal(index)
     resp = index.handler(
-        _event("POST", "/orders", {"items": [{"mealId": meal["mealId"], "quantity": 1}]}, claims=CUSTOMER_CLAIMS),
+        _event("POST", "/orders", {"contactPhone": PHONE, "items": [{"mealId": meal["mealId"], "quantity": 1}]}, claims=CUSTOMER_CLAIMS),
         None,
     )
     assert resp["statusCode"] == 400
@@ -674,7 +706,7 @@ def test_admin_cannot_place_an_order(table):
 
     meal = _create_meal(index)
     resp = index.handler(
-        _event("POST", "/orders", {"items": [{"mealId": meal["mealId"], "quantity": 1}]}, claims=ADMIN_CLAIMS),
+        _event("POST", "/orders", {"contactPhone": PHONE, "items": [{"mealId": meal["mealId"], "quantity": 1}]}, claims=ADMIN_CLAIMS),
         None,
     )
     assert resp["statusCode"] == 400
@@ -685,12 +717,12 @@ def test_list_orders_is_scoped_to_the_caller(table):
 
     meal = _create_meal(index)
     index.handler(
-        _event("POST", "/orders", {"items": [{"mealId": meal["mealId"], "quantity": 1}]}, claims=CUSTOMER_CLAIMS),
+        _event("POST", "/orders", {"contactPhone": PHONE, "items": [{"mealId": meal["mealId"], "quantity": 1}]}, claims=CUSTOMER_CLAIMS),
         None,
     )
-    other_claims = {"sub": "user-2", "email": "other@example.com"}
+    other_claims = {"sub": "user-2", "email": "other@example.com", "name": "Olive Other"}
     index.handler(
-        _event("POST", "/orders", {"items": [{"mealId": meal["mealId"], "quantity": 3}]}, claims=other_claims),
+        _event("POST", "/orders", {"contactPhone": PHONE, "items": [{"mealId": meal["mealId"], "quantity": 3}]}, claims=other_claims),
         None,
     )
 
@@ -703,7 +735,7 @@ def test_list_orders_is_scoped_to_the_caller(table):
 def _place_order(index, claims, quantity=1):
     meal = _create_meal(index)
     resp = index.handler(
-        _event("POST", "/orders", {"items": [{"mealId": meal["mealId"], "quantity": quantity}]}, claims=claims),
+        _event("POST", "/orders", {"contactPhone": PHONE, "items": [{"mealId": meal["mealId"], "quantity": quantity}]}, claims=claims),
         None,
     )
     return json.loads(resp["body"])
@@ -743,7 +775,7 @@ def test_customer_cannot_cancel_someone_elses_order(table):
     from backend.lambda_src import index
 
     order = _place_order(index, CUSTOMER_CLAIMS)
-    other_claims = {"sub": "user-2", "email": "other@example.com"}
+    other_claims = {"sub": "user-2", "email": "other@example.com", "name": "Olive Other"}
     resp = index.handler(
         _event("PUT", f"/orders/{order['orderId']}", {"status": "cancelled"},
                path_params={"orderId": order["orderId"]}, claims=other_claims),
@@ -763,7 +795,7 @@ def test_admin_can_list_placed_orders_across_customers(table):
     from backend.lambda_src import index
 
     order1 = _place_order(index, CUSTOMER_CLAIMS)
-    other_claims = {"sub": "user-2", "email": "other@example.com"}
+    other_claims = {"sub": "user-2", "email": "other@example.com", "name": "Olive Other"}
     order2 = _place_order(index, other_claims, quantity=2)
 
     resp = index.handler(_event("GET", "/admin/orders", claims=ADMIN_CLAIMS), None)
@@ -869,7 +901,8 @@ def test_profile_requires_auth(table):
 def test_get_profile_defaults_to_empty_with_email_from_claims(table):
     from backend.lambda_src import index
 
-    resp = index.handler(_event("GET", "/profile", claims=CUSTOMER_CLAIMS), None)
+    no_name_claims = {"sub": "user-1", "email": "customer@example.com"}
+    resp = index.handler(_event("GET", "/profile", claims=no_name_claims), None)
     assert resp["statusCode"] == 200
     profile = json.loads(resp["body"])
     assert profile == {
@@ -903,6 +936,61 @@ def test_update_and_get_profile_roundtrip(table):
     }
 
 
+def test_partial_profile_update_keeps_notification_settings(table):
+    # Checkout saves only name/email/phone/address back after an order -
+    # that must not reset a texting customer to email or re-subscribe
+    # someone who opted out.
+    from backend.lambda_src import index
+
+    index.handler(
+        _event("PUT", "/profile", {"name": "Ada", "preferredContact": "text", "unsubscribed": True},
+               claims=CUSTOMER_CLAIMS),
+        None,
+    )
+    index.handler(
+        _event("PUT", "/profile",
+               {"name": "Ada L", "email": "ada@example.com", "phone": "555-1234", "address": "1 Main St"},
+               claims=CUSTOMER_CLAIMS),
+        None,
+    )
+    profile = json.loads(index.handler(_event("GET", "/profile", claims=CUSTOMER_CLAIMS), None)["body"])
+    assert profile == {
+        "name": "Ada L", "email": "ada@example.com", "phone": "555-1234", "address": "1 Main St",
+        "preferredContact": "text", "unsubscribed": True,
+    }
+
+
+def test_partial_profile_update_keeps_other_text_fields(table):
+    from backend.lambda_src import index
+
+    index.handler(
+        _event("PUT", "/profile", {"name": "Ada", "phone": "555-1234", "address": "1 Main St"},
+               claims=CUSTOMER_CLAIMS),
+        None,
+    )
+    index.handler(_event("PUT", "/profile", {"unsubscribed": True}, claims=CUSTOMER_CLAIMS), None)
+    profile = json.loads(index.handler(_event("GET", "/profile", claims=CUSTOMER_CLAIMS), None)["body"])
+    assert (profile["name"], profile["phone"], profile["address"]) == ("Ada", "555-1234", "1 Main St")
+    assert profile["unsubscribed"] is True
+
+
+def test_profile_can_still_clear_a_field_explicitly(table):
+    from backend.lambda_src import index
+
+    index.handler(_event("PUT", "/profile", {"phone": "555-1234"}, claims=CUSTOMER_CLAIMS), None)
+    index.handler(_event("PUT", "/profile", {"phone": ""}, claims=CUSTOMER_CLAIMS), None)
+    profile = json.loads(index.handler(_event("GET", "/profile", claims=CUSTOMER_CLAIMS), None)["body"])
+    assert profile["phone"] == ""
+
+
+def test_get_profile_falls_back_to_sign_up_name(table):
+    from backend.lambda_src import index
+
+    claims = {**CUSTOMER_CLAIMS, "name": "Pat Lee"}
+    profile = json.loads(index.handler(_event("GET", "/profile", claims=claims), None)["body"])
+    assert profile["name"] == "Pat Lee"
+
+
 def test_update_profile_rejects_invalid_preferred_contact(table):
     from backend.lambda_src import index
 
@@ -923,27 +1011,91 @@ def test_profile_is_scoped_to_the_caller(table):
     assert json.loads(resp["body"])["name"] == ""
 
 
-def test_create_order_stores_delivery_contact_details(table):
-    from backend.lambda_src import index
-
+def _order(index, claims=CUSTOMER_CLAIMS, **body):
     meal = _create_meal(index)
-    resp = index.handler(
-        _event(
-            "POST", "/orders",
-            {
-                "items": [{"mealId": meal["mealId"], "quantity": 1}],
-                "deliveryName": "Ada Lovelace",
-                "deliveryEmail": "ada@example.com",
-                "deliveryPhone": "555-1234",
-                "deliveryAddress": "123 Main St",
-            },
-            claims=CUSTOMER_CLAIMS,
-        ),
+    return index.handler(
+        _event("POST", "/orders", {"items": [{"mealId": meal["mealId"], "quantity": 1}], **body}, claims=claims),
         None,
     )
+
+
+def test_order_takes_customer_name_from_profile_not_the_request(table):
+    from backend.lambda_src import index
+
+    _save_profile(index, CUSTOMER_CLAIMS, name="Ada Lovelace")
+    resp = _order(index, contactPhone=PHONE, customerName="Someone Else", deliveryName="Someone Else")
+    assert resp["statusCode"] == 201
     order = json.loads(resp["body"])
-    assert order["deliveryEmail"] == "ada@example.com"
-    assert order["deliveryPhone"] == "555-1234"
+    assert order["customerName"] == "Ada Lovelace"
+
+
+def test_order_falls_back_to_sign_up_name_without_a_profile(table):
+    from backend.lambda_src import index
+
+    order = json.loads(_order(index, contactPhone=PHONE)["body"])
+    assert order["customerName"] == "Casey Customer"
+
+
+def test_order_rejected_when_customer_has_no_name(table):
+    from backend.lambda_src import index
+
+    resp = _order(index, claims={"sub": "user-9", "email": "x@example.com"}, contactPhone=PHONE)
+    assert resp["statusCode"] == 400
+    assert "My Account" in json.loads(resp["body"])["message"]
+
+
+def test_order_stores_its_own_contact_phone(table):
+    # Prefilled from the profile at checkout, but stored per order - and
+    # placing the order doesn't change the profile's phone.
+    from backend.lambda_src import index
+
+    _save_profile(index, CUSTOMER_CLAIMS, name="Ada", phone="(555) 111-1111")
+    order = json.loads(_order(index, contactPhone="(555) 999-9999")["body"])
+    assert order["contactPhone"] == "(555) 999-9999"
+    profile = json.loads(index.handler(_event("GET", "/profile", claims=CUSTOMER_CLAIMS), None)["body"])
+    assert profile["phone"] == "(555) 111-1111"
+
+
+@pytest.mark.parametrize("phone", ["555-1234", "(555) 555-12345", "call me"])
+def test_order_rejects_a_partial_contact_phone(table, phone):
+    from backend.lambda_src import index
+
+    resp = _order(index, contactPhone=phone)
+    assert resp["statusCode"] == 400
+    assert "phone" in json.loads(resp["body"])["message"]
+
+
+@pytest.mark.parametrize("body", [{}, {"contactPhone": ""}, {"contactPhone": "   "}])
+def test_contact_phone_is_optional(table, body):
+    from backend.lambda_src import index
+
+    resp = _order(index, **body)
+    assert resp["statusCode"] == 201
+    assert json.loads(resp["body"])["contactPhone"] == ""
+
+
+def test_order_no_longer_stores_email_or_address(table):
+    from backend.lambda_src import index
+
+    order = json.loads(
+        _order(index, contactPhone=PHONE, deliveryEmail="a@example.com", deliveryAddress="1 Main St")["body"]
+    )
+    assert "deliveryEmail" not in order and "deliveryAddress" not in order
+    stored = index.table.get_item(Key={"PK": "USER#user-1", "SK": f"ORDER#{order['createdAt']}#{order['orderId']}"})
+    assert "deliveryEmail" not in stored["Item"] and "deliveryAddress" not in stored["Item"]
+
+
+def test_orders_placed_before_the_change_still_show_name_and_phone(table):
+    from backend.lambda_src import index
+
+    index.table.put_item(Item={
+        "PK": "USER#user-1", "SK": "ORDER#2026-01-01T00:00:00+00:00#old1", "orderId": "old1",
+        "createdAt": "2026-01-01T00:00:00+00:00", "items": [], "totalCents": 0, "status": "delivered",
+        "deliveryName": "Old Name", "deliveryEmail": "old@example.com",
+        "deliveryPhone": "(555) 000-0000", "deliveryAddress": "Old St",
+    })
+    [order] = json.loads(index.handler(_event("GET", "/orders", claims=CUSTOMER_CLAIMS), None)["body"])["orders"]
+    assert (order["customerName"], order["contactPhone"], order["pickupName"]) == ("Old Name", "(555) 000-0000", "")
 
 
 def _save_profile(index, claims, **fields):
@@ -1468,6 +1620,57 @@ def test_admin_can_delete_customer(table):
     assert json.loads(list_resp["body"])["customers"] == []
 
 
+def test_delete_customer_removes_both_cognito_account_and_profile(table):
+    from backend.lambda_src import index
+
+    cognito, pool_id = _create_test_pool(index)
+    sub = _create_cognito_user(cognito, pool_id, "jane@example.com")
+    _save_profile(index, {"sub": sub, "email": "jane@example.com"}, name="Jane Doe", phone="555-1234")
+    assert "Item" in index.table.get_item(Key={"PK": f"USER#{sub}", "SK": "PROFILE"})
+
+    resp = index.handler(
+        _event("DELETE", "/customers/jane@example.com", path_params={"username": "jane@example.com"}, claims=ADMIN_CLAIMS),
+        None,
+    )
+    assert resp["statusCode"] == 204
+
+    with pytest.raises(cognito.exceptions.UserNotFoundException):
+        cognito.admin_get_user(UserPoolId=pool_id, Username="jane@example.com")
+    assert "Item" not in index.table.get_item(Key={"PK": f"USER#{sub}", "SK": "PROFILE"})
+
+
+def test_delete_customer_can_be_retried_if_cognito_fails(table, monkeypatch):
+    # The profile row goes first, then the Cognito account. If Cognito
+    # fails, the login still exists, so the admin's retry can still find
+    # the customer and finish the job instead of leaving a half-deleted
+    # account behind.
+    from botocore.exceptions import ClientError
+
+    from backend.lambda_src import index
+
+    cognito, pool_id = _create_test_pool(index)
+    sub = _create_cognito_user(cognito, pool_id, "jane@example.com")
+    _save_profile(index, {"sub": sub, "email": "jane@example.com"}, name="Jane Doe")
+    event = _event("DELETE", "/customers/jane@example.com", path_params={"username": "jane@example.com"},
+                   claims=ADMIN_CLAIMS)
+
+    real_delete = index.cognito_idp.admin_delete_user
+
+    def failing_delete(**kwargs):
+        raise ClientError({"Error": {"Code": "TooManyRequestsException", "Message": "slow down"}}, "AdminDeleteUser")
+
+    monkeypatch.setattr(index.cognito_idp, "admin_delete_user", failing_delete)
+    with pytest.raises(ClientError):
+        index.handler(event, None)
+    # Not reported as deleted, and the login is still there to retry against.
+    cognito.admin_get_user(UserPoolId=pool_id, Username="jane@example.com")
+
+    monkeypatch.setattr(index.cognito_idp, "admin_delete_user", real_delete)
+    assert index.handler(event, None)["statusCode"] == 204
+    with pytest.raises(cognito.exceptions.UserNotFoundException):
+        cognito.admin_get_user(UserPoolId=pool_id, Username="jane@example.com")
+
+
 def test_delete_customer_does_not_delete_their_orders(table):
     from backend.lambda_src import index
 
@@ -1475,7 +1678,7 @@ def test_delete_customer_does_not_delete_their_orders(table):
     sub = _create_cognito_user(cognito, pool_id, "jane@example.com")
     meal = _create_meal(index)
     index.handler(
-        _event("POST", "/orders", {"items": [{"mealId": meal["mealId"], "quantity": 1}]}, claims={"sub": sub, "email": "jane@example.com"}),
+        _event("POST", "/orders", {"contactPhone": PHONE, "items": [{"mealId": meal["mealId"], "quantity": 1}]}, claims={"sub": sub, "email": "jane@example.com", "name": "Jane Doe"}),
         None,
     )
 

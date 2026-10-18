@@ -230,6 +230,30 @@ h2 {
   font-size: 0.78rem;
 }
 
+/* Customer menu page: the current order, shown above the meal grid. */
+.order-summary {
+  border-top: 4px solid var(--color-primary);
+  margin: 1rem 0;
+}
+
+.order-summary h2 {
+  margin: 0 0 0.5rem;
+}
+
+.order-summary-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--color-border);
+}
+
+#checkout-section {
+  margin-top: 1.5rem;
+}
+
 .cart-line-wrap {
   margin-bottom: 0.4rem;
 }
@@ -293,6 +317,39 @@ label {
 
 .form-narrow {
   max-width: 360px;
+}
+
+/* Password box with a Show/Hide button sitting inside its right edge. */
+.password-field {
+  position: relative;
+}
+
+.password-field input {
+  padding-right: 4.5rem;
+}
+
+button.password-toggle {
+  position: absolute;
+  top: 0.3rem;
+  right: 0.35rem;
+  background: transparent;
+  color: var(--color-primary-dark);
+  padding: 0.25rem 0.55rem;
+  font-size: 0.75rem;
+}
+
+button.password-toggle:hover {
+  background: var(--color-bg);
+}
+
+.checkout-customer {
+  margin: 0 0 1rem;
+}
+
+/* Small explanatory text under a form field or option group. */
+.field-note {
+  font-size: 0.85rem;
+  margin: 0.1rem 0 0.5rem;
 }
 
 .error {
@@ -699,6 +756,17 @@ body.admin-page .toast.visible {
   transform: translateY(0);
 }
 
+/* Manage menu page: centered along the bottom instead. */
+body.admin-page.toast-centered .toast {
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%) translateY(20px);
+}
+
+body.admin-page.toast-centered .toast.visible {
+  transform: translateX(-50%) translateY(0);
+}
+
 body.admin-page dialog {
   max-width: 640px;
 }
@@ -756,6 +824,38 @@ body.admin-page dialog {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   column-gap: 0.75rem;
+}
+
+/* A date input with a Clear button beside it - Chrome's date picker has
+   no built-in way to clear a date. */
+.date-with-clear {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.date-with-clear input {
+  flex: 1;
+}
+
+.date-with-clear button {
+  padding: 0.5rem 0.8rem;
+  font-size: 0.8rem;
+}
+
+.field-hint {
+  font-size: 0.8rem;
+  margin: -0.4rem 0 0.75rem;
+}
+
+.field-hint:empty {
+  display: none;
+}
+
+/* Grey the whole option, not just the box, when it's locked. */
+.option-choice:has(input:disabled) {
+  color: var(--color-muted);
+  cursor: not-allowed;
 }
 
 .form-actions {
@@ -851,6 +951,12 @@ body.admin-page dialog {
 .data-table .cell-sub {
   color: var(--color-muted);
   font-size: 0.85rem;
+}
+
+.data-table .pickup-by {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-primary-dark);
 }
 
 .data-table .empty-row td {

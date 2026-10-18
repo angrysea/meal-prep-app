@@ -26,6 +26,9 @@ READY_DATE = (date.today() + timedelta(days=14)).isoformat()
 XSS = '<img src=x onerror="window.__xss=1">'
 
 SEED = {
+    # The signed-in customer's own profile (GET/PUT /profile).
+    "profile": {"name": "Test Customer", "email": "customer@example.com", "phone": "(555) 222-3333",
+                "address": "5 Pine Rd", "preferredContact": "text", "unsubscribed": False},
     "settings": {"nextReadyDate": READY_DATE, "smsEnabled": False, "contactEmail": "admin@example.com"},
     "meals": [
         {"mealId": "m1", "name": "Chicken Teriyaki Bowl", "description": "Rice, broccoli", "priceCents": 1299,
@@ -40,13 +43,13 @@ SEED = {
     ],
     "orders": [
         {"orderId": "o1", "customerSub": "u1", "createdAt": "2026-10-17T15:04:00Z", "status": "placed",
-         "deliveryName": "Jane " + XSS, "deliveryAddress": "1 Main St", "deliveryEmail": "jane@example.com",
-         "deliveryPhone": "(555) 555-1234", "readyDate": READY_DATE, "totalCents": 3198,
+         "customerName": "Jane " + XSS, "contactPhone": "(555) 555-1234", "pickupName": "",
+         "readyDate": READY_DATE, "totalCents": 3198,
          "items": [{"mealId": "m1", "name": "Chicken Teriyaki Bowl", "quantity": 2, "unitPriceCents": 1599,
                     "note": "hold the sauce " + XSS,
                     "selectedAddOns": [{"addOnId": "a1", "description": "Large", "macros": {"calories": 200}}]}]},
         {"orderId": "o2", "customerSub": "u2", "createdAt": "2026-10-16T12:00:00Z", "status": "placed",
-         "deliveryName": "Bob Smith", "deliveryAddress": "22 Oak Ave", "deliveryEmail": "bob@example.com",
+         "customerName": "Bob Smith", "contactPhone": "(555) 555-9876", "pickupName": "",
          "readyDate": READY_DATE, "totalCents": 1150,
          "items": [{"mealId": "m2", "name": "Turkey Chili", "quantity": 1, "unitPriceCents": 1150}]},
     ],
@@ -96,11 +99,11 @@ class MockApi:
         """Every non-GET call the page made, oldest first."""
         return [c for c in self.calls if c["method"] != "GET"]
 
-    def handle(self, method, path, query, body):
+    def handle(self, method, path, query, body, auth=None):
         if (method, path) in self.delays:
             time.sleep(self.delays[(method, path)])
         with self.lock:
-            self.calls.append({"method": method, "path": path, "body": body})
+            self.calls.append({"method": method, "path": path, "body": body, "auth": auth})
             if (method, path) in self.failures:
                 status, message = self.failures[(method, path)]
                 return status, {"message": message}
@@ -116,7 +119,34 @@ class MockApi:
             return 200, s["settings"]
 
         if path == "/profile":
-            return 200, {"name": "Test Customer", "email": "customer@example.com", "phone": "", "address": ""}
+            if method == "PUT":
+                # Partial update, like the real API: omitted fields are kept.
+                s["profile"].update(body)
+            return 200, s["profile"]
+
+        if path == "/orders" and method == "POST":
+            # Like the real API: the name comes from the profile, never the
+            # request, and every order needs a 10-digit contact phone.
+            if not s["profile"].get("name"):
+                return 400, {"message": "Add your name on My Account before placing an order."}
+            digits = "".join(ch for ch in body.get("contactPhone", "") if ch.isdigit())
+            if digits and len(digits) != 10:
+                return 400, {"message": "Please enter a 10-digit contact phone number, or leave it blank."}
+            meals = {m["mealId"]: m for m in s["meals"]}
+            items = [{"mealId": i["mealId"], "name": meals[i["mealId"]]["name"], "quantity": i["quantity"],
+                      "unitPriceCents": meals[i["mealId"]]["priceCents"], "selectedAddOns": [],
+                      "note": i.get("note", "")} for i in body["items"]]
+            order = {
+                "items": items, "customerName": s["profile"]["name"],
+                "contactPhone": body["contactPhone"], "pickupName": body.get("pickupName", ""),
+                "orderId": uuid.uuid4().hex[:8], "status": "placed", "readyDate": READY_DATE,
+                "createdAt": "2026-10-18T12:00:00Z", "totalCents": 1299,
+            }
+            s.setdefault("placed", []).append(order)
+            return 201, order
+
+        if path == "/orders" and method == "GET":
+            return 200, {"orders": s.get("placed", [])}
 
         if parts[0] in ("meals", "addons"):
             key, id_key, required = (
@@ -201,7 +231,9 @@ class _Handler(SimpleHTTPRequestHandler):
         url = urlparse(self.path)
         length = int(self.headers.get("Content-Length") or 0)
         body = json.loads(self.rfile.read(length) or b"{}") if method in ("POST", "PUT") else None
-        status, payload = self.api.handle(method, url.path[len("/api"):], parse_qs(url.query), body)
+        status, payload = self.api.handle(
+            method, url.path[len("/api"):], parse_qs(url.query), body, self.headers.get("Authorization")
+        )
         self._send_json(status, payload)
 
     def do_GET(self):

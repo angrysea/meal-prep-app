@@ -52,25 +52,51 @@
 
     <section id="signup-panel" class="card form-narrow" style="display:none;">
       <h2>Sign up</h2>
-      <div id="signup-form">
+      <form id="signup-form" novalidate>
         <label for="signup-name">Name</label>
-        <input id="signup-name" type="text" />
+        <input id="signup-name" type="text" autocomplete="name" required />
         <label for="signup-email">Email</label>
-        <input id="signup-email" type="email" />
+        <input id="signup-email" type="email" autocomplete="email" required />
+        <label for="signup-phone">Phone <span class="muted">(needed for texts)</span></label>
+        <input id="signup-phone" type="tel" autocomplete="tel-national" />
+        <label for="signup-address">Address</label>
+        <input id="signup-address" type="text" autocomplete="street-address" />
         <label for="signup-password">Password</label>
-        <input id="signup-password" type="password" placeholder="At least 8 characters" />
-        <p class="error" id="signup-error" style="display:none;"></p>
-        <button id="signup-button">Sign up</button>
-      </div>
+        <div class="password-field">
+          <input id="signup-password" type="password" autocomplete="new-password" placeholder="At least 8 characters" required />
+          <button type="button" class="password-toggle" aria-controls="signup-password" aria-pressed="false" aria-label="Show password">Show</button>
+        </div>
+        <label for="signup-password-confirm">Confirm password</label>
+        <div class="password-field">
+          <input id="signup-password-confirm" type="password" autocomplete="new-password" required />
+          <button type="button" class="password-toggle" aria-controls="signup-password-confirm" aria-pressed="false" aria-label="Show password">Show</button>
+        </div>
+        <p class="field-note" id="signup-password-match" aria-live="polite"></p>
 
-      <div id="confirm-form" style="display:none;">
+        <h3>Notifications</h3>
+        <p class="muted field-note">How should we send menus and weekly reminders?</p>
+        <label class="option-choice"><input type="radio" name="signup-preferred-contact" id="signup-contact-email" value="email" checked /> Email me</label>
+        <label class="option-choice"><input type="radio" name="signup-preferred-contact" id="signup-contact-text" value="text" /> Text me</label>
+        <p class="muted field-note" id="signup-sms-consent" style="display:none;">
+          By choosing Text, you agree to receive texts from GTX Meals about
+          menus and reminders. Msg &amp; data rates may apply. Reply STOP to opt out.
+        </p>
+        <label class="option-choice" style="margin-top:0.5rem;">
+          <input type="checkbox" id="signup-unsubscribed" /> Don't send me menus or weekly reminders
+        </label>
+
+        <p class="error" id="signup-error" style="display:none;"></p>
+        <button type="submit" id="signup-button">Sign up</button>
+      </form>
+
+      <form id="confirm-form" style="display:none;">
         <p class="muted">We emailed a confirmation code to your address.</p>
         <label for="confirm-code">Confirmation code</label>
-        <input id="confirm-code" type="text" />
+        <input id="confirm-code" type="text" autocomplete="one-time-code" />
         <p class="error" id="confirm-error" style="display:none;"></p>
-        <button id="confirm-button">Confirm</button>
-        <button class="secondary" id="resend-button">Resend code</button>
-      </div>
+        <button type="submit" id="confirm-button">Confirm</button>
+        <button type="button" class="secondary" id="resend-button">Resend code</button>
+      </form>
     </section>
   </main>
 
@@ -82,8 +108,101 @@
     } from "/js/cognito.js";
     import { renderNav } from "/js/nav.js";
     import { getSafeRedirectTarget } from "/js/redirect.js";
+    import { apiRequest } from "/js/api.js";
+    import { formatPhone } from "/js/pricing.js";
 
     renderNav();
+
+    // The profile (phone, address, contact preference, opt-out) lives in
+    // DynamoDB behind PUT /profile, which needs a signed-in user - and
+    // nobody is signed in until the emailed code is confirmed. Hold it
+    // until then: in memory for the normal path (confirm, then automatic
+    // sign-in), and in sessionStorage (never the password) so a reload
+    // before confirming still saves it at the first manual login.
+    const PENDING_PROFILE_KEY = "mealprep.pendingProfile";
+
+    function storePendingProfile(profile) {
+      try {
+        sessionStorage.setItem(PENDING_PROFILE_KEY, JSON.stringify(profile));
+      } catch {
+        // Storage blocked - the in-memory copy still covers the normal path.
+      }
+    }
+
+    function takePendingProfile(email) {
+      try {
+        const profile = JSON.parse(sessionStorage.getItem(PENDING_PROFILE_KEY) || "null");
+        if (profile && profile.email.toLowerCase() === email.trim().toLowerCase()) return profile;
+      } catch {
+        // Missing or corrupt - nothing to save.
+      }
+      return null;
+    }
+
+    function clearPendingProfile() {
+      try {
+        sessionStorage.removeItem(PENDING_PROFILE_KEY);
+      } catch {
+        // Nothing to clear.
+      }
+    }
+
+    // Show/Hide inside a password box: flips it between masked and plain
+    // text. Each box has its own button, so revealing one doesn't reveal
+    // the other.
+    document.querySelectorAll(".password-toggle").forEach((toggle) => {
+      const input = document.getElementById(toggle.getAttribute("aria-controls"));
+      toggle.addEventListener("click", () => {
+        const show = input.type === "password";
+        input.type = show ? "text" : "password";
+        toggle.textContent = show ? "Hide" : "Show";
+        toggle.setAttribute("aria-pressed", String(show));
+        toggle.setAttribute("aria-label", show ? "Hide password" : "Show password");
+      });
+    });
+
+    const signupPassword = document.getElementById("signup-password");
+    const signupPasswordConfirm = document.getElementById("signup-password-confirm");
+    const passwordMatch = document.getElementById("signup-password-match");
+    // Live feedback once they've started typing the confirmation, so a
+    // typo shows up before they press Sign up.
+    function updatePasswordMatch() {
+      if (!signupPasswordConfirm.value) {
+        passwordMatch.textContent = "";
+        return;
+      }
+      const matches = signupPasswordConfirm.value === signupPassword.value;
+      passwordMatch.textContent = matches ? "Passwords match." : "Passwords don't match.";
+      passwordMatch.className = `field-note ${matches ? "muted" : "error"}`;
+    }
+    signupPassword.addEventListener("input", updatePasswordMatch);
+    signupPasswordConfirm.addEventListener("input", updatePasswordMatch);
+
+    const signupPhone = document.getElementById("signup-phone");
+    signupPhone.addEventListener("input", () => {
+      signupPhone.value = formatPhone(signupPhone.value);
+    });
+
+    const smsConsent = document.getElementById("signup-sms-consent");
+    document.querySelectorAll('input[name="signup-preferred-contact"]').forEach((radio) => {
+      radio.addEventListener("change", () => {
+        smsConsent.style.display = document.getElementById("signup-contact-text").checked ? "block" : "none";
+      });
+    });
+
+    // Returns an error message, or null when the form is good to submit.
+    function validateSignup(profile, password, passwordConfirm) {
+      if (!profile.name.trim()) return "Please enter your name.";
+      if (!profile.email.trim()) return "Please enter your email.";
+      const phoneDigits = profile.phone.replace(/\D/g, "");
+      if (profile.preferredContact === "text" && !phoneDigits) {
+        return "Please enter a phone number so we can text you, or choose Email.";
+      }
+      if (phoneDigits && phoneDigits.length !== 10) return "Please enter a 10-digit phone number.";
+      if (password.length < 8) return "Your password needs at least 8 characters.";
+      if (password !== passwordConfirm) return "Your passwords don't match.";
+      return null;
+    }
 
     function showTab(tab) {
       document.getElementById("login-panel").style.display = tab === "login" ? "block" : "none";
@@ -109,44 +228,85 @@
     }
 
     let pendingEmail = null;
+    // Only ever held in memory, for the automatic sign-in after confirming.
+    let pendingPassword = null;
+    let pendingProfile = null;
+
+    async function saveProfile(config, idToken, profile) {
+      await apiRequest(config.apiUrl, "/profile", { method: "PUT", token: idToken, body: profile });
+      clearPendingProfile();
+    }
 
     loadConfig().then((config) => {
       document.getElementById("login-button").addEventListener("click", async () => {
         hideError("login-error");
+        const email = document.getElementById("login-email").value;
         try {
-          await signIn({
+          const auth = await signIn({
             region: config.region,
             clientId: config.userPoolClientId,
-            email: document.getElementById("login-email").value,
+            email,
             password: document.getElementById("login-password").value,
           });
+          // Signed up, then reloaded before confirming - save the details
+          // they gave at sign-up now. Not fatal if it fails: they can still
+          // fill them in on My Account.
+          const profile = takePendingProfile(email);
+          if (profile) {
+            await saveProfile(config, auth.IdToken, profile).catch(() => {});
+          }
           window.location.href = getSafeRedirectTarget();
         } catch (err) {
           showError("login-error", err.message);
         }
       });
 
-      document.getElementById("signup-button").addEventListener("click", async () => {
+      const signupButton = document.getElementById("signup-button");
+      document.getElementById("signup-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
         hideError("signup-error");
-        const email = document.getElementById("signup-email").value;
+        const profile = {
+          name: document.getElementById("signup-name").value.trim(),
+          email: document.getElementById("signup-email").value.trim(),
+          phone: signupPhone.value,
+          address: document.getElementById("signup-address").value.trim(),
+          preferredContact: document.getElementById("signup-contact-text").checked ? "text" : "email",
+          unsubscribed: document.getElementById("signup-unsubscribed").checked,
+        };
+        const password = signupPassword.value;
+        const problem = validateSignup(profile, password, signupPasswordConfirm.value);
+        if (problem) {
+          showError("signup-error", problem);
+          return;
+        }
+        signupButton.disabled = true;
         try {
           await signUp({
             region: config.region,
             clientId: config.userPoolClientId,
-            email,
-            password: document.getElementById("signup-password").value,
-            name: document.getElementById("signup-name").value,
+            email: profile.email,
+            password,
+            name: profile.name,
           });
-          pendingEmail = email;
+          pendingEmail = profile.email;
+          pendingPassword = password;
+          pendingProfile = profile;
+          storePendingProfile(profile);
           document.getElementById("signup-form").style.display = "none";
           document.getElementById("confirm-form").style.display = "block";
+          document.getElementById("confirm-code").focus();
         } catch (err) {
           showError("signup-error", err.message);
+        } finally {
+          signupButton.disabled = false;
         }
       });
 
-      document.getElementById("confirm-button").addEventListener("click", async () => {
+      const confirmButton = document.getElementById("confirm-button");
+      document.getElementById("confirm-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
         hideError("confirm-error");
+        confirmButton.disabled = true;
         try {
           await confirmSignUp({
             region: config.region,
@@ -154,11 +314,47 @@
             email: pendingEmail,
             code: document.getElementById("confirm-code").value,
           });
-          showTab("login");
-          document.getElementById("login-email").value = pendingEmail;
         } catch (err) {
           showError("confirm-error", err.message);
+          confirmButton.disabled = false;
+          return;
         }
+
+        // Confirmed - sign straight in and save their details, rather than
+        // making them type the password they just chose a second time.
+        let auth;
+        try {
+          auth = await signIn({
+            region: config.region,
+            clientId: config.userPoolClientId,
+            email: pendingEmail,
+            password: pendingPassword,
+          });
+        } catch {
+          // The account exists; fall back to the normal login form. The
+          // details are still pending in sessionStorage for that login.
+          showTab("login");
+          document.getElementById("login-email").value = pendingEmail;
+          confirmButton.disabled = false;
+          return;
+        } finally {
+          pendingPassword = null;
+        }
+
+        try {
+          await saveProfile(config, auth.IdToken, pendingProfile);
+        } catch (err) {
+          const el = document.getElementById("confirm-error");
+          el.innerHTML = "";
+          el.append(
+            `Your account is ready, but we couldn't save your details (${err.message}). You can add them on `,
+            Object.assign(document.createElement("a"), { href: "/account.html", textContent: "My Account" }),
+            "."
+          );
+          el.style.display = "block";
+          return;
+        }
+        window.location.href = getSafeRedirectTarget();
       });
 
       document.getElementById("resend-button").addEventListener("click", async () => {

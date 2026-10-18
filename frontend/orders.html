@@ -25,6 +25,7 @@
     import { apiRequest, formatPrice } from "/js/api.js";
     import { getValidSession } from "/js/cognito.js";
     import { renderNav } from "/js/nav.js";
+    import { escapeHtml } from "/js/admin.js";
     import { loginUrlWithReturnTo } from "/js/redirect.js";
     import { formatMacros } from "/js/pricing.js";
 
@@ -76,8 +77,8 @@
                 .join("")}
             </ul>
             <p>Total: <strong>${formatPrice(order.totalCents)}</strong></p>
-            <p class="muted">${order.deliveryName} - ${order.deliveryAddress}</p>
-            <p class="muted">${order.deliveryEmail}${order.deliveryPhone ? ` - ${order.deliveryPhone}` : ""}</p>
+            <p class="muted">${escapeHtml(order.customerName)}${order.contactPhone ? ` - ${escapeHtml(order.contactPhone)}` : ""}</p>
+            <p class="muted">Pickup: ${order.pickupName ? escapeHtml(order.pickupName) : "you"}</p>
             ${order.status === "placed" ? `<button class="secondary edit-order">Edit</button>` : ""}
           </div>`
           )
@@ -102,10 +103,8 @@
                   note: i.note || "",
                 })),
                 delivery: {
-                  name: order.deliveryName,
-                  email: order.deliveryEmail,
-                  phone: order.deliveryPhone,
-                  address: order.deliveryAddress,
+                  phone: order.contactPhone,
+                  pickupName: order.pickupName,
                 },
               })
             );

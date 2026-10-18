@@ -9,7 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Anton&family=Permanent+Marker&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/css/style.css" />
 </head>
-<body class="admin-page">
+<body class="admin-page toast-centered">
   <header id="nav"></header>
 
   <main>
@@ -74,7 +74,11 @@
               <input type="checkbox" id="new-staple" /> Staple (always on the menu)
             </label>
             <label for="new-week-of">Or only for this ready date</label>
-            <input id="new-week-of" type="date" />
+            <div class="date-with-clear">
+              <input id="new-week-of" type="date" />
+              <button type="button" class="secondary" id="new-week-of-clear">Clear</button>
+            </div>
+            <p class="muted field-hint" id="new-availability-hint"></p>
 
             <p class="error" style="display:none;"></p>
             <div class="form-actions">
@@ -156,9 +160,13 @@
           </label>
           <div>
             <label for="edit-meal-week-of">Or only for this ready date</label>
-            <input id="edit-meal-week-of" type="date" />
+            <div class="date-with-clear">
+              <input id="edit-meal-week-of" type="date" />
+              <button type="button" class="secondary" id="edit-meal-week-of-clear">Clear</button>
+            </div>
           </div>
         </div>
+        <p class="muted field-hint" id="edit-meal-availability-hint"></p>
 
         <p class="error" style="display:none;"></p>
         <div class="dialog-actions">
@@ -247,6 +255,38 @@
         showToast(err.message, { error: true });
         button.disabled = false;
       }
+    }
+
+    // A meal is either a staple or tied to one ready date, never both:
+    // whichever is set locks the other until it's cleared. Returns a sync
+    // function to call after the fields are set from code (form reset,
+    // opening the edit dialog). A meal saved with both before this rule
+    // existed locks both fields - Clear stays enabled to get out of that.
+    function wireAvailability(prefix) {
+      const staple = document.getElementById(`${prefix}-staple`);
+      const date = document.getElementById(`${prefix}-week-of`);
+      const clear = document.getElementById(`${prefix}-week-of-clear`);
+      const hint = document.getElementById(`${prefix}-availability-hint`);
+      const sync = () => {
+        staple.disabled = date.value !== "";
+        date.disabled = staple.checked;
+        clear.disabled = date.value === "";
+        hint.textContent = date.value
+          ? "Clear the ready date to make this a staple."
+          : staple.checked
+            ? "Uncheck Staple to set a ready date instead."
+            : "";
+      };
+      staple.addEventListener("change", sync);
+      date.addEventListener("input", sync);
+      date.addEventListener("change", sync);
+      clear.addEventListener("click", () => {
+        date.value = "";
+        sync();
+        (staple.checked ? staple : date).focus();
+      });
+      sync();
+      return sync;
     }
 
     function openDialog(dialog) {
@@ -393,6 +433,9 @@
         });
       }
 
+      const syncNewAvailability = wireAvailability("new");
+      const syncEditAvailability = wireAvailability("edit-meal");
+
       const mealEditDialog = document.getElementById("meal-edit-dialog");
       const addOnEditDialog = document.getElementById("addon-edit-dialog");
 
@@ -404,6 +447,7 @@
         setMacros("edit-meal", meal.macros);
         document.getElementById("edit-meal-staple").checked = !!meal.staple;
         document.getElementById("edit-meal-week-of").value = meal.weekOf || "";
+        syncEditAvailability();
         openDialog(mealEditDialog);
       }
 
@@ -470,6 +514,7 @@
           },
         });
         mealCreateForm.reset();
+        syncNewAvailability();
         document.getElementById("new-name").focus();
         showToast(`Added "${name}" to the menu`);
         refreshMeals();

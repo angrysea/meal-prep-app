@@ -18,6 +18,10 @@
 
     <div id="admin-content" style="display:none;">
       <div class="toolbar">
+        <label for="ready-date-filter">Ready date</label>
+        <select id="ready-date-filter">
+          <option value="all" selected>All dates</option>
+        </select>
         <label for="status-filter">Show</label>
         <select id="status-filter">
           <option value="all">All</option>
@@ -34,7 +38,7 @@
         <table class="data-table" id="orders-table">
           <thead>
             <tr>
-              <th>Placed</th><th>Customer</th><th>Contact</th><th>Ready date</th>
+              <th>Placed</th><th>Customer</th><th>Phone</th><th>Ready date</th>
               <th>Items</th><th class="num">Total</th><th>Status</th>
             </tr>
           </thead>
@@ -90,16 +94,50 @@
       const filterSelect = document.getElementById("status-filter");
       const body = document.getElementById("orders-body");
       const countEl = document.getElementById("orders-count");
+      const dateSelect = document.getElementById("ready-date-filter");
+
+      // Every ready date seen so far (plus the current next ready date), so
+      // a date doesn't drop out of the list just because the Show filter
+      // currently has no orders for it. Same dates the Prep List offers.
+      const knownDates = new Set();
+
+      function renderDateOptions() {
+        const selected = dateSelect.value;
+        dateSelect.innerHTML =
+          `<option value="all">All dates</option>` +
+          [...knownDates].sort().map((d) => `<option value="${escapeHtml(d)}">${escapeHtml(d)}</option>`).join("");
+        dateSelect.value = knownDates.has(selected) ? selected : "all";
+      }
+
+      apiRequest(config.apiUrl, "/settings", { token })
+        .then(({ nextReadyDate }) => {
+          if (nextReadyDate) {
+            knownDates.add(nextReadyDate);
+            renderDateOptions();
+          }
+        })
+        .catch(() => {
+          // Non-fatal - the list still has every date found on an order.
+        });
+
+      function emptyMessage(status, date) {
+        if (status === "all" && date === "all") return "No orders yet.";
+        if (date === "all") return `No orders in ${status} status right now.`;
+        if (status === "all") return `No orders for ${date}.`;
+        return `No orders in ${status} status for ${date}.`;
+      }
 
       async function refresh() {
         const filter = filterSelect.value;
-        const { orders } = await apiRequest(config.apiUrl, `/admin/orders?status=${encodeURIComponent(filter)}`, { token });
+        const { orders: fetched } = await apiRequest(config.apiUrl, `/admin/orders?status=${encodeURIComponent(filter)}`, { token });
+        fetched.forEach((o) => o.readyDate && knownDates.add(o.readyDate));
+        renderDateOptions();
+        const date = dateSelect.value;
+        const orders = date === "all" ? fetched : fetched.filter((o) => o.readyDate === date);
         countEl.textContent = `${orders.length} order${orders.length === 1 ? "" : "s"}`;
 
         if (orders.length === 0) {
-          body.innerHTML = `<tr class="empty-row"><td colspan="7">${
-            filter === "all" ? "No orders yet." : `No orders in ${escapeHtml(filter)} status right now.`
-          }</td></tr>`;
+          body.innerHTML = `<tr class="empty-row"><td colspan="7">${escapeHtml(emptyMessage(filter, date))}</td></tr>`;
           return;
         }
 
@@ -109,13 +147,16 @@
             return `
           <tr data-order-id="${escapeHtml(order.orderId)}" data-customer-sub="${escapeHtml(order.customerSub)}">
             <td style="white-space:nowrap;">${escapeHtml(createdAt)}</td>
-            <td><strong>${escapeHtml(order.deliveryName)}</strong><div class="cell-sub">${escapeHtml(order.deliveryAddress)}</div></td>
-            <td>${escapeHtml(order.deliveryEmail)}${order.deliveryPhone ? `<div class="cell-sub">${escapeHtml(order.deliveryPhone)}</div>` : ""}</td>
+            <td>
+              <strong>${escapeHtml(order.customerName)}</strong>
+              ${order.pickupName ? `<div class="pickup-by">Pickup: ${escapeHtml(order.pickupName)}</div>` : ""}
+            </td>
+            <td class="nowrap">${escapeHtml(order.contactPhone) || "-"}</td>
             <td style="white-space:nowrap;">${escapeHtml(order.readyDate) || "-"}</td>
             <td>${itemsHtml(order.items)}</td>
             <td class="num"><strong>${formatPrice(order.totalCents)}</strong></td>
             <td>
-              <select class="status-select" aria-label="Status for ${escapeHtml(order.deliveryName)}'s order placed ${escapeHtml(createdAt)}">
+              <select class="status-select" aria-label="Status for ${escapeHtml(order.customerName)}'s order placed ${escapeHtml(createdAt)}">
                 ${STATUSES.map((s) => `<option value="${s}" ${s === order.status ? "selected" : ""}>${s}</option>`).join("")}
               </select>
             </td>
@@ -137,7 +178,7 @@
                 token,
                 body: { status },
               });
-              showToast(`Order for ${order.deliveryName || order.deliveryEmail} marked ${status}`);
+              showToast(`Order for ${order.customerName} marked ${status}`);
               refresh();
             } catch (err) {
               // Put the dropdown back so it doesn't show a status that never saved.
@@ -150,6 +191,7 @@
       }
 
       filterSelect.addEventListener("change", refresh);
+      dateSelect.addEventListener("change", refresh);
       refresh();
     }
   </script>

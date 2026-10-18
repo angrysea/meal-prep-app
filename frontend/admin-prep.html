@@ -21,7 +21,7 @@
       <form class="toolbar" id="print-labels-form">
         <label for="ready-date-filter">Ready date</label>
         <select id="ready-date-filter"></select>
-        <button type="submit" id="print-labels-button">Print labels</button>
+        <button type="submit" id="print-labels-button" disabled>Print labels</button>
         <span class="muted" id="print-labels-hint">
           One label per meal, sized for a standard 3&quot; wide x 2&quot; high label printer.
         </span>
@@ -154,7 +154,8 @@
               addOns,
               note: item.note || "",
               macros,
-              customerName: order.deliveryName || "",
+              customerName: order.customerName || "",
+              pickupName: order.pickupName || "",
             });
           }
         });
@@ -174,7 +175,9 @@
         (row) => `
         <div class="label">
           <div class="label-meal">${escapeHtml(row.name)}</div>
-          ${row.customerName ? `<div class="label-customer">${escapeHtml(row.customerName)}</div>` : ""}
+          ${row.customerName ? `<div class="label-customer">${escapeHtml(row.customerName)}${
+            row.pickupName ? ` (pickup: ${escapeHtml(row.pickupName)})` : ""
+          }</div>` : ""}
           <div class="label-body">
             <img class="label-logo-img" src="/assets/logo.png" alt="GTX Meals" />
             ${macroGridHtml(row.macros)}
@@ -206,9 +209,21 @@
       const printButton = document.getElementById("print-labels-button");
       let currentOrders = [];
 
-      // The Print labels button is the toolbar form's default, so Enter on
-      // the ready-date picker prints too.
-      document.getElementById("print-labels-form").addEventListener("submit", (e) => {
+      // Print labels is this page's default button: Enter prints from the
+      // ready-date picker (via the toolbar form) and from anywhere else on
+      // the page where nothing in particular has focus - e.g. right after
+      // it loads. It starts disabled and only enables once orders for the
+      // selected date have loaded, so an early Enter is a no-op.
+      const printForm = document.getElementById("print-labels-form");
+      document.addEventListener("keydown", (e) => {
+        if (e.key !== "Enter" || e.repeat || e.isComposing || e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return;
+        const nothingFocused = e.target === document.body || e.target === document.documentElement;
+        if (!nothingFocused || printButton.disabled) return;
+        e.preventDefault();
+        printForm.requestSubmit();
+      });
+
+      printForm.addEventListener("submit", (e) => {
         e.preventDefault();
         if (printButton.disabled) return;
         const { html, labelCount, sheetCount } = buildLabelsHtml(currentOrders, mealsById);

@@ -214,3 +214,126 @@ def test_hide_addon_shows_toast(admin_page, mock_api):
     page.click(f"{ADDON_ROW.format('a1')} .toggle-addon-available")
 
     expect_toast(page, '"Large" is now hidden')
+
+
+# ---------- Availability: Staple and a ready date are mutually exclusive ----------
+
+
+def test_checking_staple_locks_ready_date(admin_page):
+    page = admin_page
+    page.open("/admin.html")
+    page.check("#new-staple")
+
+    expect(page.locator("#new-week-of")).to_be_disabled()
+    expect(page.locator("#new-availability-hint")).to_have_text("Uncheck Staple to set a ready date instead.")
+
+    page.uncheck("#new-staple")
+    expect(page.locator("#new-week-of")).to_be_enabled()
+    expect(page.locator("#new-availability-hint")).to_be_hidden()
+
+
+def test_setting_ready_date_locks_staple_until_cleared(admin_page):
+    page = admin_page
+    page.open("/admin.html")
+    page.fill("#new-week-of", "2026-11-02")
+
+    expect(page.locator("#new-staple")).to_be_disabled()
+    expect(page.locator("#new-availability-hint")).to_have_text("Clear the ready date to make this a staple.")
+
+    page.click("#new-week-of-clear")
+    expect(page.locator("#new-week-of")).to_have_value("")
+    expect(page.locator("#new-staple")).to_be_enabled()
+    expect(page.locator("#new-week-of-clear")).to_be_disabled()
+
+
+def test_add_form_unlocks_both_after_adding(admin_page, mock_api):
+    page = admin_page
+    page.open("/admin.html")
+    page.fill("#new-name", "Salmon Plate")
+    page.fill("#new-price", "14.50")
+    page.check("#new-staple")
+    page.press("#new-name", "Enter")
+
+    expect_toast(page, 'Added "Salmon Plate" to the menu')
+    body = mock_api.writes()[-1]["body"]
+    assert (body["staple"], body["weekOf"]) == (True, "")
+    expect(page.locator("#new-staple")).to_be_enabled()
+    expect(page.locator("#new-week-of")).to_be_enabled()
+
+
+def test_edit_dialog_locks_the_other_field(admin_page):
+    page = admin_page
+    page.open("/admin.html")
+
+    # m1 is a staple: its ready date is locked.
+    page.click(f"{MEAL_ROW.format('m1')} .edit-meal")
+    expect(page.locator("#edit-meal-week-of")).to_be_disabled()
+    expect(page.locator("#edit-meal-staple")).to_be_enabled()
+    page.click("#meal-edit-cancel-button")
+
+    # m2 has a ready date: Staple is locked.
+    page.click(f"{MEAL_ROW.format('m2')} .edit-meal")
+    expect(page.locator("#edit-meal-staple")).to_be_disabled()
+    expect(page.locator("#edit-meal-week-of")).to_be_enabled()
+
+
+def test_edit_dialog_switches_dated_meal_to_staple(admin_page, mock_api):
+    page = admin_page
+    page.open("/admin.html")
+    page.click(f"{MEAL_ROW.format('m2')} .edit-meal")
+    page.click("#edit-meal-week-of-clear")
+    page.check("#edit-meal-staple")
+    page.press("#edit-meal-name", "Enter")
+
+    expect_toast(page, 'Saved changes to "Turkey Chili"')
+    body = mock_api.writes()[-1]["body"]
+    assert (body["staple"], body["weekOf"]) == (True, "")
+
+
+def test_meal_saved_with_both_can_still_be_fixed(admin_page, mock_api):
+    # Saved before this rule existed: both fields lock, but Clear stays
+    # usable so the dialog isn't stuck.
+    mock_api.state["meals"][0]["weekOf"] = "2026-11-02"
+    page = admin_page
+    page.open("/admin.html")
+    page.click(f"{MEAL_ROW.format('m1')} .edit-meal")
+
+    expect(page.locator("#edit-meal-staple")).to_be_disabled()
+    expect(page.locator("#edit-meal-week-of")).to_be_disabled()
+    expect(page.locator("#edit-meal-week-of-clear")).to_be_enabled()
+
+    page.click("#edit-meal-week-of-clear")
+    expect(page.locator("#edit-meal-staple")).to_be_enabled()
+    expect(page.locator("#edit-meal-staple")).to_be_checked()
+
+
+# ---------- Toast position ----------
+
+
+def _toast_center_offset(page):
+    box = page.locator("#toast").bounding_box()
+    return box["x"] + box["width"] / 2 - page.viewport_size["width"] / 2
+
+
+def test_toast_is_centered_along_the_bottom(admin_page):
+    page = admin_page
+    page.open("/admin.html")
+    page.check("#sms-enabled")
+    page.press("#sms-enabled", "Enter")
+
+    expect_toast(page, "SMS reminders turned on")
+    page.wait_for_timeout(300)  # let the slide-in transition finish
+    assert abs(_toast_center_offset(page)) <= 2
+    box = page.locator("#toast").bounding_box()
+    assert page.viewport_size["height"] - (box["y"] + box["height"]) < 40
+
+
+def test_other_admin_pages_keep_toast_bottom_right(admin_page):
+    page = admin_page
+    page.open("/admin-orders.html")
+    page.select_option('#orders-body tr[data-order-id="o2"] .status-select', "prepared")
+
+    expect_toast(page, "Order for Bob Smith marked prepared")
+    page.wait_for_timeout(300)
+    box = page.locator("#toast").bounding_box()
+    assert page.viewport_size["width"] - (box["x"] + box["width"]) < 40

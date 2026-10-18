@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import urllib.parse
 import urllib.request
 import uuid
@@ -329,18 +330,26 @@ def get_profile(event):
 
 
 def update_profile(event):
+    """Partial update: fields left out of the body keep their saved values.
+
+    Checkout saves just name/email/phone/address back after an order -
+    replacing the whole item would silently reset that customer's
+    preferredContact to email and re-subscribe them if they'd opted out.
+    """
     claims = _claims(event)
     body = _body(event)
-    preferred_contact = body.get("preferredContact", "email")
+    key = {"PK": f"USER#{claims['sub']}", "SK": "PROFILE"}
+    existing = table.get_item(Key=key).get("Item") or {}
+
+    preferred_contact = body.get("preferredContact", existing.get("preferredContact", "email"))
     if preferred_contact not in CONTACT_METHODS:
         raise BadRequest(f"preferredContact must be one of {CONTACT_METHODS}")
 
     item = {
-        "PK": f"USER#{claims['sub']}",
-        "SK": "PROFILE",
-        **{field: body.get(field, "") for field in PROFILE_TEXT_FIELDS},
+        **key,
+        **{field: body.get(field, existing.get(field, "")) for field in PROFILE_TEXT_FIELDS},
         "preferredContact": preferred_contact,
-        "unsubscribed": bool(body.get("unsubscribed", False)),
+        "unsubscribed": bool(body.get("unsubscribed", existing.get("unsubscribed", False))),
     }
     table.put_item(Item=item)
     return _response(200, _profile_out(item, claims))
@@ -349,9 +358,10 @@ def update_profile(event):
 def _profile_out(item, claims):
     item = item or {}
     return {
-        "name": item.get("name", ""),
-        # Falls back to the Cognito login email until the customer saves a
-        # profile of their own (e.g. the first time they open the account page).
+        # Name and email fall back to what the customer gave Cognito at
+        # sign-up until they save a profile of their own, so checkout is
+        # prefilled even for accounts that never have.
+        "name": item.get("name") or claims.get("name", ""),
         "email": item.get("email") or claims.get("email", ""),
         "phone": item.get("phone", ""),
         "address": item.get("address", ""),
@@ -751,6 +761,20 @@ def create_order(event):
     if not requested_items:
         return _response(400, {"message": "order must include at least one item"})
 
+    # The name always comes from the customer's own profile (falling back to
+    # their sign-up name) - never from the request, so it can't be changed
+    # per order. The phone is per order: prefilled from the profile at
+    # checkout, but whatever they enter is stored on this order only.
+    claims = _claims(event)
+    profile = table.get_item(Key={"PK": f"USER#{user_id}", "SK": "PROFILE"}).get("Item") or {}
+    customer_name = (profile.get("name") or claims.get("name") or "").strip()
+    if not customer_name:
+        raise BadRequest("Add your name on My Account before placing an order.")
+    # Optional - but if given, it has to be a whole number we can call.
+    contact_phone = (body.get("contactPhone") or "").strip()
+    if contact_phone and len(re.sub(r"\D", "", contact_phone)) != 10:
+        raise BadRequest("Please enter a 10-digit contact phone number, or leave it blank.")
+
     ready_date_str = (table.get_item(Key=SETTINGS_KEY).get("Item") or {}).get("nextReadyDate", "")
     if ready_date_str:
         ready_date = datetime.strptime(ready_date_str, "%Y-%m-%d").date()
@@ -796,10 +820,11 @@ def create_order(event):
         "createdAt": created_at,
         "items": line_items,
         "totalCents": total_cents,
-        "deliveryName": body.get("deliveryName", ""),
-        "deliveryEmail": body.get("deliveryEmail", ""),
-        "deliveryPhone": body.get("deliveryPhone", ""),
-        "deliveryAddress": body.get("deliveryAddress", ""),
+        "customerName": customer_name,
+        "contactPhone": contact_phone,
+        # Optional: someone other than the customer collecting the order.
+        # Blank means the customer is picking it up themselves.
+        "pickupName": (body.get("pickupName") or "").strip(),
         "readyDate": ready_date_str,
         "status": "placed",  # stub checkout - no real payment is taken
     }
@@ -948,10 +973,12 @@ def _order_out(item):
         "createdAt": item["createdAt"],
         "items": [dict(i) for i in item["items"]],
         "totalCents": int(item["totalCents"]),
-        "deliveryName": item.get("deliveryName", ""),
-        "deliveryEmail": item.get("deliveryEmail", ""),
-        "deliveryPhone": item.get("deliveryPhone", ""),
-        "deliveryAddress": item.get("deliveryAddress", ""),
+        # Orders placed before these fields existed stored deliveryName /
+        # deliveryPhone instead - fall back so they still show who and how
+        # to reach them. (Their old email/address fields are no longer shown.)
+        "customerName": item.get("customerName") or item.get("deliveryName", ""),
+        "contactPhone": item.get("contactPhone") or item.get("deliveryPhone", ""),
+        "pickupName": item.get("pickupName", ""),
         "readyDate": item.get("readyDate", ""),
         "status": item.get("status", "placed"),
     }

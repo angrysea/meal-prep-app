@@ -21,30 +21,42 @@
     <p class="muted" id="login-prompt" style="display:none;"></p>
     <p class="muted" id="edit-notice" style="display:none;">Editing your previous order - update it below and place it again.</p>
 
+    <!-- Above the menu so what's been ordered is always plainly visible;
+         the checkout details stay below the menu (see #checkout-section). -->
+    <section class="card order-summary" id="cart-section" style="display:none;">
+      <h2>Your order</h2>
+      <div id="cart-lines"></div>
+      <div class="order-summary-footer">
+        <strong>Total: <span id="cart-total">$0.00</span></strong>
+        <a class="button-link" href="#checkout-section" id="checkout-jump">Check out</a>
+      </div>
+    </section>
+
     <div id="meals" class="meal-grid">
       <p class="muted">Loading menu...</p>
     </div>
 
-    <section class="card" id="cart-section" style="display:none;">
-      <div id="cart-lines"></div>
-      <p><strong>Total: <span id="cart-total">$0.00</span></strong></p>
-
+    <section class="card" id="checkout-section" style="display:none;">
+      <h2>Check out</h2>
       <div id="checkout-form">
-        <label for="delivery-name">Name</label>
-        <input id="delivery-name" type="text" placeholder="Your name" />
-
-        <label for="delivery-email">Email</label>
-        <input id="delivery-email" type="email" placeholder="you@example.com" />
-
-        <label for="delivery-phone">Phone</label>
-        <input id="delivery-phone" type="tel" placeholder="555-123-4567" />
-
-        <label for="delivery-address">Delivery address</label>
-        <input id="delivery-address" type="text" placeholder="123 Main St" />
-
-        <p class="muted" id="profile-hint" style="display:none;">
-          Using your saved details - <a href="/account.html">edit account</a>.
+        <!-- The name comes from the customer's profile and can't be changed
+             per order (the API sets it from the profile too). -->
+        <p class="checkout-customer" id="checkout-customer" style="display:none;">
+          Ordering as <strong id="checkout-customer-name"></strong>
+          <span class="muted">- <a href="/account.html">change on My Account</a></span>
         </p>
+        <p class="error" id="checkout-no-name" style="display:none;">
+          Please <a href="/account.html">add your name on My Account</a> before placing an order.
+        </p>
+
+        <label for="contact-phone">Contact phone <span class="muted">(optional)</span></label>
+        <input id="contact-phone" type="tel" inputmode="numeric" autocomplete="tel-national"
+               placeholder="(___) ___-____" maxlength="14" />
+        <p class="muted field-note">For this order only - your saved phone isn't changed.</p>
+
+        <label for="pickup-name">Someone else picking up? <span class="muted">(optional)</span></label>
+        <input id="pickup-name" type="text" placeholder="Their name" />
+        <p class="muted field-note">Leave blank if you're picking it up yourself.</p>
 
         <p class="error" id="checkout-error" style="display:none;"></p>
         <div style="display:flex; gap:0.5rem;">
@@ -75,21 +87,24 @@
     let allAddOns = [];
     let loadedMeals = [];
 
-    const deliveryPhoneInput = document.getElementById("delivery-phone");
-    deliveryPhoneInput.addEventListener("input", () => {
-      deliveryPhoneInput.value = formatPhone(deliveryPhoneInput.value);
+    const contactPhoneInput = document.getElementById("contact-phone");
+    contactPhoneInput.addEventListener("input", () => {
+      contactPhoneInput.value = formatPhone(contactPhoneInput.value);
     });
 
     function renderCart() {
       const section = document.getElementById("cart-section");
+      const checkoutSection = document.getElementById("checkout-section");
       const lines = document.getElementById("cart-lines");
       const entries = Object.entries(cart);
 
       if (entries.length === 0) {
         section.style.display = "none";
+        checkoutSection.style.display = "none";
         return;
       }
       section.style.display = "block";
+      checkoutSection.style.display = "block";
 
       let total = 0;
       lines.innerHTML = entries
@@ -184,10 +199,10 @@
       });
 
       const delivery = data.delivery || {};
-      if (delivery.name) document.getElementById("delivery-name").value = delivery.name;
-      if (delivery.email) document.getElementById("delivery-email").value = delivery.email;
-      if (delivery.phone) document.getElementById("delivery-phone").value = formatPhone(delivery.phone);
-      if (delivery.address) document.getElementById("delivery-address").value = delivery.address;
+      // Editing a previous order keeps that order's own phone and pickup
+      // person rather than the profile's.
+      if (delivery.phone) contactPhoneInput.value = formatPhone(delivery.phone);
+      if (delivery.pickupName) document.getElementById("pickup-name").value = delivery.pickupName;
 
       document.getElementById("edit-notice").style.display = "block";
     }
@@ -325,17 +340,22 @@
       }
     }
 
+    // No name on the profile: the API would refuse the order, so say how to
+    // fix it up front and keep Place order disabled.
+    function showCustomerName(name) {
+      const hasName = !!(name && name.trim());
+      document.getElementById("checkout-customer-name").textContent = hasName ? name : "";
+      document.getElementById("checkout-customer").style.display = hasName ? "block" : "none";
+      document.getElementById("checkout-no-name").style.display = hasName ? "none" : "block";
+      document.getElementById("checkout-button").disabled = !hasName;
+    }
+
     async function prefillFromProfile(config, session) {
       if (!session) return;
       try {
         const profile = await apiRequest(config.apiUrl, "/profile", { token: session.idToken });
-        document.getElementById("delivery-name").value = profile.name || "";
-        document.getElementById("delivery-email").value = profile.email || "";
-        document.getElementById("delivery-phone").value = formatPhone(profile.phone || "");
-        document.getElementById("delivery-address").value = profile.address || "";
-        if (profile.name || profile.address) {
-          document.getElementById("profile-hint").style.display = "block";
-        }
+        showCustomerName(profile.name);
+        contactPhoneInput.value = formatPhone(profile.phone || "");
       } catch (err) {
         // Non-fatal - checkout still works, just without prefilled fields.
       }
@@ -358,24 +378,25 @@
         note,
       }));
 
-      const deliveryName = document.getElementById("delivery-name").value;
-      const deliveryEmail = document.getElementById("delivery-email").value;
-      const deliveryPhone = document.getElementById("delivery-phone").value;
-      const deliveryAddress = document.getElementById("delivery-address").value;
+      const contactPhone = contactPhoneInput.value;
+      const pickupName = document.getElementById("pickup-name").value.trim();
+      const phoneDigits = contactPhone.replace(/\D/g, "").length;
+      if (phoneDigits > 0 && phoneDigits !== 10) {
+        errorEl.textContent = "Please enter a 10-digit contact phone number, or leave it blank.";
+        errorEl.style.display = "block";
+        contactPhoneInput.focus();
+        return;
+      }
 
       try {
+        // Name isn't sent - the API takes it from the profile. Nothing is
+        // saved back to the profile: the phone and pickup person belong to
+        // this order only.
         await apiRequest(config.apiUrl, "/orders", {
           method: "POST",
           token: session.idToken,
-          body: { items, deliveryName, deliveryEmail, deliveryPhone, deliveryAddress },
+          body: { items, contactPhone, pickupName },
         });
-        // Keep the saved profile in sync so next time's checkout is prefilled
-        // even if they changed something this time.
-        apiRequest(config.apiUrl, "/profile", {
-          method: "PUT",
-          token: session.idToken,
-          body: { name: deliveryName, email: deliveryEmail, phone: deliveryPhone, address: deliveryAddress },
-        }).catch(() => {});
         window.location.href = "/orders.html";
       } catch (err) {
         errorEl.textContent = err.message;

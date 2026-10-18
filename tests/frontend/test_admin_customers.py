@@ -85,3 +85,10 @@ def test_cancelled_reminders_send_nothing(admin_page, mock_api):
 
     expect(page.locator("#confirm-dialog")).to_be_hidden()
     assert mock_api.writes() == []
+
+
+def test_edit_dialog_says_address_not_delivery_address(admin_page):
+    page = admin_page
+    page.open("/customers.html")
+
+    expect(page.locator('label[for="edit-address"]')).to_have_text("Address")
