@@ -612,3 +612,18 @@ def test_meals_table_addon_lines_are_escaped(admin_page, mock_api):
 
     expect(page.locator(f"{MEAL_ROW.format('m1')} .meal-macros")).to_contain_text("desc <img")
     assert_no_xss(page)
+
+
+def test_addons_are_shown_alphabetically(admin_page, mock_api):
+    page = admin_page
+    page.open("/admin.html")
+    page.fill("#addon-name", "Cauliflower Rice")
+    page.fill("#addon-price", "1")
+    page.press("#addon-price", "Enter")
+
+    expect_toast(page, 'Added the "Cauliflower Rice" add-on')
+    names = ["Cauliflower Rice", "Large", "Large with Cauliflower Rice"]
+    expect(page.locator("#addons-body tr strong")).to_have_text(names)
+    expect(page.locator("#new-addon-details .addon-detail legend")).to_contain_text(names)
+    labels = page.locator(f"{MEAL_ROW.format('m1')} .meal-macros .macro-label")
+    expect(labels).to_have_text(["Regular", *names])

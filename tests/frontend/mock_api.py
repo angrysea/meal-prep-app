@@ -198,6 +198,8 @@ class MockApi:
                 ("meals", "mealId", "name") if parts[0] == "meals" else ("addOns", "addOnId", "name")
             )
             if method == "GET":
+                if key == "addOns":  # alphabetical, like the real API
+                    return 200, {key: sorted(s[key], key=lambda a: a["name"].strip().casefold())}
                 return 200, {key: s[key]}
             if method == "POST":
                 if not body.get(required):

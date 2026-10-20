@@ -2124,3 +2124,14 @@ def test_addon_details_must_be_an_object(table):
 
     meal = _create_meal(index)
     assert _put_meal(index, meal["mealId"], {"addOnDetails": ["a1"]})["statusCode"] == 400
+
+
+def test_addons_are_listed_alphabetically_by_name(table):
+    from backend.lambda_src import index
+
+    for name in ["Large with Cauliflower Rice", "cauliflower Rice", "+ 1oz. Extra Protein", "Large "]:
+        _create_addon(index, name=name)
+    addons = json.loads(index.handler(_event("GET", "/addons"), None)["body"])["addOns"]
+    assert [a["name"] for a in addons] == [
+        "+ 1oz. Extra Protein", "cauliflower Rice", "Large", "Large with Cauliflower Rice",
+    ]

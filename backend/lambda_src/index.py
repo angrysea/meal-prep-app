@@ -424,7 +424,10 @@ def list_addons():
         KeyConditionExpression="PK = :pk",
         ExpressionAttributeValues={":pk": "ADDON"},
     ).get("Items", [])
-    return _response(200, {"addOns": [_addon_out(item) for item in items]})
+    # Alphabetical by name everywhere they're listed (Manage menu, each
+    # meal's add-on section, the customer menu).
+    addons = sorted((_addon_out(item) for item in items), key=lambda a: a["name"].strip().casefold())
+    return _response(200, {"addOns": addons})
 
 
 def create_addon(event):
