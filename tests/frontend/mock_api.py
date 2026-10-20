@@ -138,10 +138,13 @@ class MockApi:
             )
             # Like the real API: an override only replaces the automatic
             # date it's within 3 days of.
+            # The automatic date itself isn't an override.
             override = s["settings"].get("readyDateOverride", "")
+            if override == READY_DATE:
+                override = ""
             used = bool(override) and abs((date.fromisoformat(override) - date.fromisoformat(READY_DATE)).days) <= 3
             return 200, {
-                **s["settings"], "ordering": ordering,
+                **s["settings"], "ordering": ordering, "readyDateOverride": override,
                 "nextReadyDate": override if used else READY_DATE,
                 "readyDateAuto": READY_DATE, "readyDateOverrideUsed": used,
             }

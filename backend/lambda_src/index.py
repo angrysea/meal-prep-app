@@ -191,7 +191,9 @@ def _ready_dates(settings, now_utc=None):
     local = _central(now_utc or _utcnow())
     auto = _auto_ready_date(local, forced_open=settings.get("orderingMode") == "open")
     override = _ready_date_override(settings)
-    if override:
+    # The same date as the automatic one isn't an override - e.g. a date set
+    # by hand before the ready date was automatic.
+    if override and override != auto.isoformat():
         days_off = abs((datetime.strptime(override, "%Y-%m-%d").date() - auto).days)
         if days_off <= READY_DATE_OVERRIDE_DAYS:
             return override, auto.isoformat(), True
@@ -261,8 +263,9 @@ def _settings_out(item):
         # meals are on the weekly menu, and the Prep List's default date.
         "nextReadyDate": ready_date,
         "readyDateAuto": auto_ready_date,
-        # As saved, even when it's not for the current week (then unused).
-        "readyDateOverride": _ready_date_override(item),
+        # As saved, even when it's not for the current week (then unused) -
+        # except when it's simply the automatic date, which isn't an override.
+        "readyDateOverride": "" if _ready_date_override(item) == auto_ready_date else _ready_date_override(item),
         "readyDateOverrideUsed": override_used,
         # Off by default - SMS costs real money per message and this
         # account's SNS access is currently blocked at the AWS org level

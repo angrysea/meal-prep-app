@@ -648,3 +648,14 @@ def test_addons_are_shown_alphabetically(admin_page, mock_api):
     expect(page.locator("#new-addon-details .addon-detail legend")).to_contain_text(names)
     labels = page.locator('tr[data-options-for="m1"] .macro-label')
     expect(labels).to_have_text(["Regular", *names])
+
+
+def test_a_saved_date_matching_the_automatic_one_reads_as_automatic(admin_page, mock_api):
+    # Not "Orders are for Monday, October 26 (instead of Monday, October 26)."
+    mock_api.state["settings"]["readyDateOverride"] = READY_DATE
+    page = admin_page
+    page.open("/admin.html")
+
+    expect(page.locator("#ready-date-status")).to_have_text(f"Orders are for {_day(READY_DATE)} (automatic).")
+    expect(page.locator("#ready-date-override")).to_have_value("")
+    expect(page.locator("#ready-date-override-note")).to_have_text("")

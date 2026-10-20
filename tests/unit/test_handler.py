@@ -456,13 +456,27 @@ def test_clearing_the_override(table):
 def test_ready_date_saved_before_it_was_automatic_reads_as_an_override(table):
     from backend.lambda_src import index
 
-    index.table.put_item(Item={"PK": "SETTINGS", "SK": "GLOBAL", "nextReadyDate": "2026-10-26", "smsEnabled": False})
+    index.table.put_item(Item={"PK": "SETTINGS", "SK": "GLOBAL", "nextReadyDate": "2026-10-27", "smsEnabled": False})
     body = json.loads(index.handler(_event("GET", "/settings"), None)["body"])
-    assert (body["nextReadyDate"], body["readyDateOverride"]) == ("2026-10-26", "2026-10-26")
+    assert (body["nextReadyDate"], body["readyDateOverride"]) == ("2026-10-27", "2026-10-27")
     # Saving another setting moves it to the new field.
     _put_settings(index, {"smsEnabled": True})
     stored = index.table.get_item(Key={"PK": "SETTINGS", "SK": "GLOBAL"})["Item"]
-    assert stored["readyDateOverride"] == "2026-10-26" and "nextReadyDate" not in stored
+    assert stored["readyDateOverride"] == "2026-10-27" and "nextReadyDate" not in stored
+
+
+@pytest.mark.parametrize("saved", [
+    {"nextReadyDate": "2026-10-26"},      # set by hand before it was automatic
+    {"readyDateOverride": "2026-10-26"},  # or saved as a "different date"
+])
+def test_an_override_on_the_automatic_date_is_not_an_override(table, saved):
+    # Otherwise Manage menu says "Monday, October 26 (instead of Monday,
+    # October 26)".
+    from backend.lambda_src import index
+
+    index.table.put_item(Item={"PK": "SETTINGS", "SK": "GLOBAL", **saved})
+    body = json.loads(index.handler(_event("GET", "/settings"), None)["body"])
+    assert body == {**_settings(), "contactEmail": ""}
 
 
 def test_forced_open_monday_morning_is_for_next_monday(table, monkeypatch):
