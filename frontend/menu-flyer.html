@@ -31,6 +31,8 @@
     .flyer-footer .footer-line2 { font-size: 0.85rem; margin-top: 0.2rem; }
     .flyer-actions { display: flex; gap: 0.5rem; justify-content: center; margin-top: 1.5rem; }
     .flyer-actions button { background: #d20d0d; color: #fff; border: none; border-radius: 6px; padding: 0.6rem 1.1rem; font-size: 0.95rem; cursor: pointer; font-family: inherit; }
+    .flyer-actions a.button-link { display: inline-block; text-decoration: none; border-radius: 6px; padding: 0.6rem 1.1rem; font-size: 0.95rem; font-family: inherit; }
+    .flyer-actions a.button-link.secondary { background: transparent; color: #d20d0d; border: 1px solid #d20d0d; }
     .flyer-actions button.secondary { background: transparent; color: #d20d0d; border: 1px solid #d20d0d; }
     .text-status { text-align: center; margin-top: 0.75rem; font-size: 0.9rem; }
     .text-status.error { color: #aa0e0c; }
@@ -66,7 +68,7 @@
       <div class="flyer-actions">
         <button type="button" id="print-button" onclick="window.print()">View as PDF</button>
         <button type="button" class="secondary" id="text-button" style="display:none;">Send this menu to customers</button>
-        <button type="button" class="secondary" id="cancel-button">Cancel</button>
+        <a class="button-link secondary" id="back-to-menu" href="/index.html">Back to Main Menu</a>
       </div>
       <p class="text-status" id="text-status" style="display:none;"></p>
     </div>
@@ -96,8 +98,12 @@
     const params = new URLSearchParams(location.search);
     const period = params.get("period") === "weekly" ? "weekly" : "monthly";
 
+    // The monthly menu is a sneak peek of what's coming - nutrition info
+    // is shown once a meal is on the weekly ordering menu instead.
+    const showMacros = period === "weekly";
+
     function itemHtml(meal) {
-      const macrosText = formatMacros(meal.macros);
+      const macrosText = showMacros ? formatMacros(meal.macros) : "";
       return `
         <div class="item">
           <div class="item-name">${meal.name} - ${formatPrice(meal.priceCents)}</div>
@@ -238,14 +244,6 @@
         }
       });
     }
-
-    document.getElementById("cancel-button").addEventListener("click", () => {
-      if (history.length > 1) {
-        history.back();
-      } else {
-        location.href = "/index.html";
-      }
-    });
 
     loadConfig().then(async (config) => {
       await render(config);

@@ -13,6 +13,28 @@
   <header id="nav"></header>
 
   <main>
+    <!-- Starts open; a customer who collapses it stays collapsed on that
+         device (remembered in localStorage - see wireHowItWorks). -->
+    <details class="card how-it-works" id="how-it-works" open>
+      <summary><h2>How It Works</h2></summary>
+      <p><strong>Ordering:</strong> Our weekly menu is updated every Monday by 11:00 AM. Orders placed during the week will be ready for pickup the following Monday.</p>
+      <p><strong>Order Deadline:</strong> Friday at 2:00 PM or when all available spots are filled. <strong>Limited spots available each week!</strong></p>
+      <p><strong>Monday Pickup:</strong></p>
+      <ul>
+        <li>
+          <strong>Georgetown:</strong> 8:00 AM&ndash;1:00 PM or 3:30 PM&ndash;6:30 PM at The Gym TX<br />
+          <a id="pickup-directions" target="_blank" rel="noopener"
+             href="https://www.google.com/maps/dir/?api=1&amp;destination=The+Gym+TX%2C+4112+Williams+Drive+%23105%2C+Georgetown+TX+78628">4112 Williams Drive #105, Georgetown TX 78628</a>
+        </li>
+        <li><strong>Elgin:</strong> Pickup may be available upon request. Please text or email us to make arrangements before placing your order.</li>
+      </ul>
+      <p><strong>Freshly Prepared:</strong> All meals are prepared fresh the night before pickup, kept refrigerated, and ready to reheat whenever you're ready to enjoy them.</p>
+      <p><strong>Payment:</strong> Payment is due when your order is placed unless prior arrangements have been made. <strong>Orders are not confirmed until payment is received.</strong></p>
+      <p>Cash is preferred, but Venmo is also accepted (<a id="venmo-link" target="_blank" rel="noopener" href="https://venmo.com/u/lgraffeo88"><strong>@lgraffeo88</strong></a>).</p>
+      <p><strong>Questions or Other Payment Options?</strong> Call, text, or email us at <a id="contact-email-link" href="mailto:gtxmeals@gmail.com"><strong>gtxmeals@gmail.com</strong></a>.</p>
+      <p>Thank you for supporting The Gym TX Meals!</p>
+    </details>
+
     <h1>This Week's Menu</h1>
     <p class="muted">Pick your meals, then check out below.</p>
     <!-- Admin only: the flyer pages are where the admin sends the weekly or
@@ -70,6 +92,9 @@
         <p class="muted" id="checkout-note">
           This is not a checkout - please arrange payment before or at pickup.
         </p>
+        <p class="payment-warning" id="payment-warning">
+          IMPORTANT: If payment is not received by Saturday morning and you have not made prior payment arrangements with us, your order will be canceled.
+        </p>
       </div>
     </section>
   </main>
@@ -82,6 +107,23 @@
     import { getValidSession, isAdmin } from "/js/cognito.js";
     import { renderNav } from "/js/nav.js";
     import { loginUrlWithReturnTo } from "/js/redirect.js";
+
+    // How It Works: remember a customer's collapse/expand per device. Storage
+    // can be unavailable (private mode, blocked site data), so every access is
+    // guarded and the section just falls back to open.
+    const HOW_IT_WORKS_KEY = "mealprep.howItWorksCollapsed";
+    function wireHowItWorks() {
+      const details = document.getElementById("how-it-works");
+      try {
+        if (localStorage.getItem(HOW_IT_WORKS_KEY) === "1") details.open = false;
+      } catch {}
+      details.addEventListener("toggle", () => {
+        try {
+          localStorage.setItem(HOW_IT_WORKS_KEY, details.open ? "0" : "1");
+        } catch {}
+      });
+    }
+    wireHowItWorks();
     import { computeUnitPriceCents, selectionsKey, formatMacros, formatPhone } from "/js/pricing.js";
     import { showToast } from "/js/toast.js";
 

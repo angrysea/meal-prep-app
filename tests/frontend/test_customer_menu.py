@@ -231,3 +231,77 @@ def test_admin_keeps_flyer_buttons_to_send_menus(admin_page):
     expect(page.get_by_role("link", name="View this week's menu")).to_be_visible()
     expect(page.get_by_role("link", name="View this month's menu")).to_be_visible()
     expect(page.locator("#nav-links a", has_text="Monthly Menu")).to_have_count(0)
+
+
+# ---------- How It Works ----------
+
+
+def test_how_it_works_sits_above_this_weeks_menu(customer_page):
+    page = customer_page
+    page.open("/index.html")
+
+    section = page.locator("#how-it-works")
+    expect(section).to_be_visible()
+    expect(section.locator("summary")).to_have_text("How It Works")
+    expect(section).to_contain_text("Our weekly menu is updated every Monday by 11:00 AM.")
+    expect(section).to_contain_text("Orders are not confirmed until payment is received.")
+    assert _top(page, "#how-it-works") < _top(page, "h1")
+
+
+def test_how_it_works_links(customer_page):
+    page = customer_page
+    page.open("/index.html")
+
+    directions = page.locator("#pickup-directions")
+    expect(directions).to_have_text("4112 Williams Drive #105, Georgetown TX 78628")
+    href = directions.get_attribute("href")
+    assert href.startswith("https://www.google.com/maps/dir/?api=1&destination=")
+    assert "4112+Williams+Drive+%23105" in href
+    expect(directions).to_have_attribute("target", "_blank")
+    expect(page.locator("#venmo-link")).to_have_attribute("href", "https://venmo.com/u/lgraffeo88")
+    expect(page.locator("#contact-email-link")).to_have_attribute("href", "mailto:gtxmeals@gmail.com")
+
+
+def test_how_it_works_shows_for_logged_out_visitors(anonymous_page):
+    page = anonymous_page
+    page.open("/index.html")
+
+    expect(page.locator("#how-it-works")).to_be_visible()
+
+
+def test_collapsing_how_it_works_is_remembered(customer_page):
+    page = customer_page
+    page.open("/index.html")
+    is_open = "document.getElementById('how-it-works').open"
+    # The toggle event (which saves the choice) fires asynchronously.
+    saved = "v => localStorage.getItem('mealprep.howItWorksCollapsed') === v"
+
+    page.click("#how-it-works summary")
+    expect(page.locator("#how-it-works p").first).to_be_hidden()
+    page.wait_for_function(saved, arg="1")
+    page.reload()
+    page.wait_for_function(f"!{is_open}")
+
+    page.click("#how-it-works summary")
+    page.wait_for_function(saved, arg="0")
+    page.reload()
+    assert page.evaluate(is_open)
+
+
+# ---------- Payment reminder ----------
+
+
+def test_payment_reminder_sits_under_not_a_checkout(customer_page):
+    page = customer_page
+    _start_checkout(page)
+
+    warning = page.locator("#payment-warning")
+    expect(warning).to_have_text(
+        "IMPORTANT: If payment is not received by Saturday morning and you have not made "
+        "prior payment arrangements with us, your order will be canceled."
+    )
+    assert warning.evaluate("el => getComputedStyle(el).fontWeight") == "700"
+    assert warning.evaluate("el => el.previousElementSibling.id") == "checkout-note"
+    # Customers see it before they submit.
+    assert _top(page, "#payment-warning") < _top(page, "#checkout-button") + 200
+    expect(warning).to_be_visible()
