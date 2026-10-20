@@ -79,13 +79,17 @@
     function itemsHtml(items) {
       return `<ul>${items
         .map((i) => {
-          const addOnParts = (i.selectedAddOns || []).map((a) => {
-            const macrosText = formatMacros(a.macros);
-            return `${escapeHtml(a.name)}${macrosText ? ` [${macrosText}]` : ""}`;
-          });
-          const addOnText = addOnParts.length ? ` <span class="muted">(${addOnParts.join(", ")})</span>` : "";
-          const noteText = i.note ? ` <span class="muted">- Note: ${escapeHtml(i.note)}</span>` : "";
-          return `<li>${i.quantity} x ${escapeHtml(i.name)}${addOnText} - ${formatPrice(i.unitPriceCents * i.quantity)}${noteText}</li>`;
+          // The chosen add-on gets its own line under the item, then the note.
+          const addOnLines = (i.selectedAddOns || [])
+            .map((a) => {
+              const macrosText = formatMacros(a.macros);
+              return `<div class="item-addon">+ ${escapeHtml(a.name)}${
+                macrosText ? ` <span class="muted">${macrosText}</span>` : ""
+              }</div>`;
+            })
+            .join("");
+          const noteText = i.note ? `<div class="item-addon muted">Note: ${escapeHtml(i.note)}</div>` : "";
+          return `<li>${i.quantity} x ${escapeHtml(i.name)} - ${formatPrice(i.unitPriceCents * i.quantity)}${addOnLines}${noteText}</li>`;
         })
         .join("")}</ul>`;
     }

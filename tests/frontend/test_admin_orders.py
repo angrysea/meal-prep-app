@@ -144,3 +144,26 @@ def test_shows_pickup_person_when_someone_else_collects(admin_page, mock_api):
 
     expect(page.locator(f"{ROW.format('o2')} .pickup-by")).to_have_text("Pickup: Sam Lee")
     expect(page.locator(f"{ROW.format('o1')} .pickup-by")).to_have_count(0)
+
+
+def test_addon_is_listed_on_its_own_line_under_the_item(admin_page):
+    page = admin_page
+    page.open("/admin-orders.html")
+
+    jane = page.locator(ROW.format("o1"))
+    item = jane.locator("li").first
+    addon = item.locator(".item-addon").first
+    expect(item.locator(".item-addon")).to_have_count(2)  # the add-on, then the note
+    expect(item.locator(".item-addon").nth(1)).to_have_text('Note: hold the sauce <img src=x onerror="window.__xss=1">')
+    expect(addon).to_contain_text("+ Large")
+    expect(addon).to_contain_text("740 cal")
+    # Below the item's own line, not beside it.
+    first_line_y = item.evaluate("li => li.getClientRects()[0].top")
+    assert addon.bounding_box()["y"] > first_line_y + 5
+
+
+def test_item_without_an_addon_has_no_addon_line(admin_page):
+    page = admin_page
+    page.open("/admin-orders.html")
+
+    expect(page.locator(f"{ROW.format('o2')} .item-addon")).to_have_count(0)

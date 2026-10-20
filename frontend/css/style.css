@@ -1255,3 +1255,9 @@ body.admin-page dialog {
 .option-groups .option-choice + .option-choice {
   margin-top: 0.35rem;
 }
+
+/* Admin orders: the chosen add-on, on its own line under the item. */
+.item-addon {
+  font-size: 0.85rem;
+  padding-left: 1rem;
+}
