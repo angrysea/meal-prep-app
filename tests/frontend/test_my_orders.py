@@ -1,17 +1,17 @@
 """My Orders page (orders.html): Edit / Cancel until the Friday deadline,
-then a message to call or email instead. The API decides which (each order's
+then a message to email instead. The API decides which (each order's
 "changeable"); the deadline itself is unit-tested."""
 from playwright.sync_api import expect
 
 from .helpers import expect_toast
 
 LOCKED_MESSAGE = (
-    "Need to make changes to your order? Please call or email us no later than Friday at 2:00 PM. "
+    "Need to make changes to your order? Please email us no later than Friday at 2:00 PM. "
     "Changes and cancellations cannot be made after this deadline."
 )
 REFUSED = (
     "This order can no longer be changed or cancelled online - the deadline was Friday at 2:00 PM. "
-    "Please call or email us."
+    "Please email us."
 )
 
 

@@ -192,7 +192,7 @@ class MockApi:
         if parts[0] == "orders" and len(parts) == 2 and method == "PUT":
             if s["changes_locked"]:
                 return 400, {"message": "This order can no longer be changed or cancelled online - "
-                                        "the deadline was Friday at 2:00 PM. Please call or email us."}
+                                        "the deadline was Friday at 2:00 PM. Please email us."}
             order = next(o for o in s.get("placed", []) if o["orderId"] == parts[1])
             order["status"] = body["status"]
             return 200, order

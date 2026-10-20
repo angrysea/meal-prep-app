@@ -261,6 +261,9 @@ def test_how_it_works_links(customer_page):
     expect(directions).to_have_attribute("target", "_blank")
     expect(page.locator("#venmo-link")).to_have_attribute("href", "https://venmo.com/u/lgraffeo88")
     expect(page.locator("#contact-email-link")).to_have_attribute("href", "mailto:gtxmeals@gmail.com")
+    expect(section.locator("li").filter(has_text="Elgin")).to_contain_text(
+        "Please email us to make arrangements before placing your order."
+    )
     expect(section.locator("p").filter(has_text="Questions or Other Payment Options?")).to_have_text(
         "Questions or Other Payment Options? Email us at gtxmeals@gmail.com."
     )

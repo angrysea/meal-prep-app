@@ -1035,7 +1035,7 @@ def cancel_order(event, order_id):
     if not _order_changeable(item, settings):
         raise BadRequest(
             "This order can no longer be changed or cancelled online - the deadline was Friday at 2:00 PM. "
-            "Please call or email us."
+            "Please email us."
         )
     item["status"] = "cancelled"
     table.put_item(Item=item)
