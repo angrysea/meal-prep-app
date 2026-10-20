@@ -1186,3 +1186,21 @@ body.admin-page dialog {
 .meal-macros .macro-label {
   font-weight: bold;
 }
+
+/* Customer menu add-on choices: a long option wraps under its own name, not
+   under the radio button, and the description lines up with the name too. */
+.option-groups .option-choice {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 0.4rem;
+  align-items: start;
+}
+
+.option-groups .option-choice input {
+  margin: 0.2rem 0 0;
+}
+
+.option-groups .option-choice .addon-description {
+  grid-column: 2;
+  margin: 0.15rem 0 0;
+}

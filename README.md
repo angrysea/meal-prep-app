@@ -168,7 +168,13 @@ Once the distribution has the domain names and certificate attached
 
 ## One-time setup
 
+The CDK CLI and its Python bridge (jsii) need Node.js. Use the version in
+`.nvmrc` (Node 24 LTS - the newest release jsii supports; it warns on
+untested versions like Node 26):
+
 ```bash
+nvm install            # reads .nvmrc
+npm install -g aws-cdk
 python3.12 -m venv .venv
 make install
 ```
