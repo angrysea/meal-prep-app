@@ -142,7 +142,7 @@
       });
     }
     wireHowItWorks();
-    import { addOnDetailFor, computeUnitPriceCents, selectionsKey, formatMacros, formatPhone } from "/js/pricing.js";
+    import { addOnDetailFor, isAddOnOffered, computeUnitPriceCents, selectionsKey, formatMacros, formatPhone } from "/js/pricing.js";
     import { showToast } from "/js/toast.js";
     import { escapeHtml } from "/js/admin.js";
 
@@ -289,7 +289,7 @@
     // that version of the meal - see showAddOnChoice. Anyone can flip
     // through the options to see the nutrition; only adding is restricted.
     function renderAddOnChoices(meal) {
-      const visibleAddOns = allAddOns.filter((a) => a.available);
+      const visibleAddOns = allAddOns.filter((a) => a.available && isAddOnOffered(meal, a));
       if (visibleAddOns.length === 0) return "";
       const name = `addon-${meal.mealId}`;
       return `<div class="option-groups" role="radiogroup" aria-label="Options for ${escapeHtml(meal.name)}">

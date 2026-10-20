@@ -564,7 +564,8 @@ def test_new_addon_appears_in_add_a_meal_without_losing_typed_values(admin_page)
     expect_toast(page, 'Added the "Extra Protein (1 oz)" add-on')
     expect(page.locator("#new-addon-details .addon-detail")).to_have_count(3)
     expect(_detail(page, "#new-addon-details", "a1").locator('[data-field="calories"]')).to_have_value("800")
-    expect(page.locator("#new-addon-details .addon-detail").last.locator('[data-field="description"]')).to_have_value(
+    new_block = page.locator("#new-addon-details .addon-detail").filter(has_text="Extra Protein (1 oz)")
+    expect(new_block.locator('[data-field="description"]')).to_have_value(
         "1 more ounce of protein."
     )
 

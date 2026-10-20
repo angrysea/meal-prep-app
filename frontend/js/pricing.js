@@ -22,6 +22,14 @@ export function addOnDetailFor(meal, addOn) {
   };
 }
 
+// An add-on is only offered on a meal that has something to say about it -
+// a description or macros. Leaving both blank on Manage menu is how an
+// add-on is left off a meal (e.g. no cauliflower rice for the chili).
+export function isAddOnOffered(meal, addOn) {
+  const { description, macros } = addOnDetailFor(meal, addOn);
+  return !!description || Object.values(macros || {}).some(Boolean);
+}
+
 export function describeAddOns(allAddOns, selectedAddOnIds) {
   return selectedAddOnIds
     .map((id) => allAddOns.find((a) => a.addOnId === id))

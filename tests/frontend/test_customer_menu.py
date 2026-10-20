@@ -418,3 +418,47 @@ def test_addon_text_is_escaped_on_the_menu(customer_page, mock_api):
 
     expect(page.locator(f"{CARD} .addon-description")).to_contain_text("desc <img")
     assert_no_xss(page)
+
+
+def test_addon_with_no_description_or_macros_is_left_off_the_meal(customer_page, mock_api):
+    # The meal has a blank entry for the combo (both cleared on Manage menu).
+    mock_api.state["meals"][0]["addOnDetails"]["a2"] = {
+        "description": "", "macros": {"calories": 0, "proteinG": 0, "carbsG": 0, "fatG": 0},
+    }
+    page = customer_page
+    page.open("/index.html")
+
+    expect(page.locator(CARD).get_by_label("Large with Cauliflower Rice (+$4.00)", exact=True)).to_have_count(0)
+    expect(page.locator(f"{CARD} .addon-choice")).to_have_count(2)  # Regular + Large
+
+
+def test_addon_with_only_macros_is_still_offered(customer_page, mock_api):
+    mock_api.state["meals"][0]["addOnDetails"]["a2"] = {
+        "description": "", "macros": {"calories": 690, "proteinG": 0, "carbsG": 0, "fatG": 0},
+    }
+    page = customer_page
+    page.open("/index.html")
+    _choose(page, "Large with Cauliflower Rice (+$4.00)")
+
+    expect(page.locator(f"{CARD} .macros")).to_contain_text("Large with Cauliflower Rice: 690 cal")
+
+
+def test_addon_with_no_meal_details_and_no_default_description_is_left_off(customer_page, mock_api):
+    mock_api.state["addOns"][1]["description"] = ""
+    page = customer_page
+    page.open("/index.html")
+
+    expect(page.locator(f"{CARD} .addon-choice")).to_have_count(2)
+
+
+def test_meal_with_no_addons_offered_has_no_choices(customer_page, mock_api):
+    for addon in mock_api.state["addOns"]:
+        addon["description"] = ""
+    del mock_api.state["meals"][0]["addOnDetails"]
+    page = customer_page
+    page.open("/index.html")
+
+    expect(page.locator(f"{CARD} .addon-choice")).to_have_count(0)
+    expect(page.locator(f"{CARD} [role=radiogroup]")).to_have_count(0)
+    page.click(ADD_M1)
+    expect(page.locator("#cart-lines")).to_contain_text("Chicken Teriyaki Bowl")
