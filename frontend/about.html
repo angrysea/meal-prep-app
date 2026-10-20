@@ -12,32 +12,48 @@
 <body>
   <header id="nav"></header>
 
-  <main>
-    <h1>About Us</h1>
+  <main class="about-page">
+    <!-- Text from "GTX Meals About Us Section" (Oct 2026). Each section is
+         its own card so photos can be added beside the text later. -->
+    <h1>Meet Christian &amp; Liz</h1>
+    <section class="card about-intro">
+      <p class="about-tagline">The husband-and-wife team behind The Gym TX Meals.</p>
+      <p>What happens when a personal trainer with a culinary background marries a woman who loves to cook? For us, it turned into The Gym TX Meals.</p>
+    </section>
 
-    <section class="card">
-      <p>
-        GTX Meals is a small, local meal-prep company - not a factory, not a
-        chain. Every meal is made in small batches from fresh ingredients,
-        prepared by our own in-house chefs rather than shipped in from some
-        outside supplier.
-      </p>
-      <p>
-        We believe eating well shouldn't mean sacrificing flavor. That's why
-        we focus on fresh, healthy ingredients in every meal we prep, so you
-        can eat clean without giving up taste - made fresh, picked up fresh,
-        and ready when you need it.
-      </p>
-      <p class="muted">
-        Questions, help, or support? Contact us at
-        <a id="about-contact-email" href="#"></a>.
-      </p>
+    <section class="card" id="about-christian">
+      <h2>Meet Christian</h2>
+      <p>Originally from New Jersey, Christian moved to Texas in 2019. His passion for fitness began at just 16 years old, eventually leading him to become a personal trainer in 2013. He also attended culinary school in New York City, where he developed a foundation in cooking that would later become an important part of The Gym TX Meals.</p>
+      <p>In 2023, Christian opened The Gym TX, a personal training gym dedicated to helping people become stronger, healthier, and more confident. Through his years of experience in fitness, he has seen firsthand how important nutrition is when it comes to reaching personal goals.</p>
+      <p>Today, Christian brings his fitness knowledge and culinary background to The Gym TX Meals, working alongside Liz to prepare flavorful, satisfying meals that support a variety of lifestyles and fitness goals.</p>
+    </section>
+
+    <section class="card" id="about-liz">
+      <h2>Meet Liz</h2>
+      <p>Originally from Indiana, Liz moved to Texas in 2005. Growing up as the oldest daughter in a family of four children, she discovered her love for cooking at just 15 years old. What started as a hobby grew into a lifelong passion as she taught herself new recipes, explored different flavors, and eventually became the go-to cook for family gatherings.</p>
+      <p>Today, Liz brings her creativity and passion for cooking to The Gym TX Meals, creating the weekly menus, developing recipes, and overseeing the details that bring each meal together. Her favorite part is hearing how much customers enjoy the food and knowing she's helping make their busy lives a little easier.</p>
+    </section>
+
+    <section class="card" id="about-started">
+      <h2>How It All Started</h2>
+      <p>After marrying in 2025, Christian and Liz were encouraged by clients at The Gym TX to combine their talents and start a meal prep business. With a little extra encouragement from one of their clients, Robbye, The Gym TX Meals officially began in March 2026.</p>
+      <p>What started as an idea has grown into a family-owned business focused on making home-cooked meals convenient, flavorful, and accessible.</p>
+      <p>Our menu features a variety of familiar favorites, along with options to fit different needs and goals. Whether you're looking to lose weight, build muscle, increase your protein intake, or simply enjoy a delicious meal without having to cook, we want to make it easier.</p>
+      <p>That's why we offer flexible options, including cauliflower rice substitutions, larger portions, and additional protein, because we know everyone's needs are different.</p>
+    </section>
+
+    <section class="card" id="about-cta">
+      <h2>Let Us Take Cooking Off Your To-Do List!</h2>
+      <p>Ready to spend less time planning meals and more time enjoying them? Explore our weekly menu, choose your favorites, and let us take care of the cooking! Every meal is prepared with the same care and attention we'd put into cooking for our own family.</p>
+      <p><strong>Browse our menu and place your order today. We can't wait to cook for you!</strong></p>
+      <p>Thank you for supporting our small family business!</p>
+      <p class="about-signoff"><strong>Christian &amp; Liz</strong><br />The Gym TX Meals</p>
+      <p class="about-browse"><a class="button-link" id="browse-menu" href="/index.html">Browse Our Menu</a></p>
     </section>
   </main>
 
   <script type="module">
     import { loadConfig } from "/js/config.js";
-    import { apiRequest } from "/js/api.js";
     import { getValidSession } from "/js/cognito.js";
     import { renderNav } from "/js/nav.js";
     import { loginUrlWithReturnTo } from "/js/redirect.js";
@@ -48,16 +64,6 @@
       const session = await getValidSession({ region: config.region, clientId: config.userPoolClientId });
       if (!session) {
         window.location.href = loginUrlWithReturnTo();
-        return;
-      }
-
-      const { contactEmail } = await apiRequest(config.apiUrl, "/settings").catch(() => ({ contactEmail: "" }));
-      const contactLink = document.getElementById("about-contact-email");
-      if (contactEmail) {
-        contactLink.href = `mailto:${contactEmail}`;
-        contactLink.textContent = contactEmail;
-      } else {
-        contactLink.closest("p").style.display = "none";
       }
     });
   </script>

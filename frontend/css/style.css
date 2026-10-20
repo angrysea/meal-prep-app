@@ -1040,3 +1040,21 @@ body.admin-page dialog {
   text-align: center;
   padding: 2rem;
 }
+
+/* About Us: one card per section, so photos can sit beside the text later. */
+.about-page section p {
+  line-height: 1.55;
+}
+
+.about-page h2 {
+  margin-top: 0;
+}
+
+.about-tagline {
+  font-weight: bold;
+}
+
+.about-browse {
+  text-align: center;
+  margin: 1.5rem 0 0.25rem;
+}
