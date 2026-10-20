@@ -1172,3 +1172,17 @@ body.admin-page dialog {
   font-weight: bold;
   margin: 0 0 0.75rem;
 }
+
+/* Manage menu meals table: regular macros, then a line per add-on. */
+.meal-macros .macro-line {
+  font-size: 0.85rem;
+  margin-bottom: 0.35rem;
+}
+
+.meal-macros .macro-line:last-child {
+  margin-bottom: 0;
+}
+
+.meal-macros .macro-label {
+  font-weight: bold;
+}

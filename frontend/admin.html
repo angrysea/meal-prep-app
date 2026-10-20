@@ -234,7 +234,7 @@
     import { getValidSession, isAdmin } from "/js/cognito.js";
     import { renderNav } from "/js/nav.js";
     import { loginUrlWithReturnTo } from "/js/redirect.js";
-    import { formatMacros } from "/js/pricing.js";
+    import { addOnDetailFor, formatMacros } from "/js/pricing.js";
     import { showToast } from "/js/toast.js";
     import { confirmAction, enableEnterToSubmit, escapeHtml, handleSubmit } from "/js/admin.js";
 
@@ -460,8 +460,34 @@
         showToast(smsEnabled ? "SMS reminders turned on" : "SMS reminders turned off");
       });
 
+      let currentMeals = null;
+
       async function refreshMeals() {
-        const { meals } = await apiRequest(config.apiUrl, "/meals");
+        ({ meals: currentMeals } = await apiRequest(config.apiUrl, "/meals"));
+        renderMeals();
+      }
+
+      // Regular macros, then one line per add-on: its name, this meal's
+      // description for it, and the macros of the meal with it.
+      function mealMacrosHtml(meal) {
+        const line = (label, macros, description = "") => `
+          <div class="macro-line">
+            <span class="macro-label">${escapeHtml(label)}</span> ${formatMacros(macros) || "-"}
+            ${description ? `<div class="cell-sub">${escapeHtml(description)}</div>` : ""}
+          </div>`;
+        return [
+          line("Regular", meal.macros),
+          ...currentAddOns.map((addOn) => {
+            const { description, macros } = addOnDetailFor(meal, addOn);
+            return line(addOn.name, macros, description);
+          }),
+        ].join("");
+      }
+
+      // Re-run when the add-on list changes too, so the macro lines match it.
+      function renderMeals() {
+        const meals = currentMeals;
+        if (!meals) return;
         const body = document.getElementById("meals-body");
         if (meals.length === 0) {
           body.innerHTML = `<tr class="empty-row"><td colspan="6">No meals yet - add one on the left.</td></tr>`;
@@ -473,7 +499,7 @@
           <tr data-meal-id="${escapeHtml(meal.mealId)}">
             <td><strong>${escapeHtml(meal.name)}</strong>${meal.description ? `<div class="cell-sub">${escapeHtml(meal.description)}</div>` : ""}</td>
             <td class="num">${formatPrice(meal.priceCents)}</td>
-            <td>${formatMacros(meal.macros) || "-"}</td>
+            <td class="meal-macros">${mealMacrosHtml(meal)}</td>
             <td class="nowrap">${meal.staple ? "Always" : escapeHtml(meal.weekOf) || "-"}</td>
             <td>${meal.available ? "Yes" : "No"}</td>
             <td class="actions">
@@ -522,6 +548,7 @@
       async function refreshAddOns() {
         const { addOns } = await apiRequest(config.apiUrl, "/addons");
         currentAddOns = addOns;
+        renderMeals();
         // Keep whatever's been typed into Add a meal so far.
         renderAddOnDetails(newAddOnDetails, addOns, addOnDetailsFrom(newAddOnDetails));
         const body = document.getElementById("addons-body");

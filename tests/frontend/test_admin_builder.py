@@ -576,3 +576,39 @@ def test_addon_names_in_meal_sections_are_escaped(admin_page, mock_api):
 
     expect(_detail(page, "#new-addon-details", "a1").locator("legend")).to_contain_text("Big <img")
     assert_no_xss(page)
+
+
+def test_meals_table_lists_macros_for_regular_and_every_addon(admin_page):
+    page = admin_page
+    page.open("/admin.html")
+
+    lines = page.locator(f"{MEAL_ROW.format('m1')} .meal-macros .macro-line")
+    expect(lines).to_have_count(3)
+    expect(lines.nth(0)).to_contain_text("Regular 550 cal · 42g protein · 60g carbs · 12g fat")
+    expect(lines.nth(1).locator(".macro-label")).to_have_text("Large")
+    expect(lines.nth(1)).to_contain_text("750 cal · 60g protein · 70g carbs · 18g fat")
+    expect(lines.nth(1).locator(".cell-sub")).to_have_text("2 extra oz of chicken and 1 oz of broccoli.")
+    # Nothing entered for this meal yet: default description, no macros.
+    expect(lines.nth(2).locator(".macro-label")).to_have_text("Large with Cauliflower Rice")
+    expect(lines.nth(2)).to_contain_text("Large with Cauliflower Rice -")
+    expect(lines.nth(2).locator(".cell-sub")).to_have_text("Large, with cauliflower rice instead of rice.")
+
+
+def test_meals_table_updates_when_an_addon_is_added(admin_page):
+    page = admin_page
+    page.open("/admin.html")
+    page.fill("#addon-name", "Extra Protein (1 oz)")
+    page.fill("#addon-price", "2")
+    page.press("#addon-price", "Enter")
+
+    expect_toast(page, 'Added the "Extra Protein (1 oz)" add-on')
+    expect(page.locator(f"{MEAL_ROW.format('m1')} .meal-macros .macro-line")).to_have_count(4)
+
+
+def test_meals_table_addon_lines_are_escaped(admin_page, mock_api):
+    mock_api.state["meals"][0]["addOnDetails"]["a1"]["description"] = "desc " + XSS
+    page = admin_page
+    page.open("/admin.html")
+
+    expect(page.locator(f"{MEAL_ROW.format('m1')} .meal-macros")).to_contain_text("desc <img")
+    assert_no_xss(page)
