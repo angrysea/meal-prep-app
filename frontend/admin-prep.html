@@ -30,7 +30,7 @@
       <div class="table-card">
         <table class="data-table" id="prep-table">
           <thead>
-            <tr><th>Meal</th><th>Add-ons</th><th>Note</th><th class="num">Quantity</th></tr>
+            <tr><th>Meal</th><th>Add-on</th><th>Note</th><th>Macros</th><th class="num">Quantity</th></tr>
           </thead>
           <tbody id="prep-body"></tbody>
         </table>
@@ -75,45 +75,44 @@
     // two meals share a name; note is part of the key too, since "hold the
     // cheese" and a plain order of the same meal need separate rows/labels.
     //
-    // Add-on macros come from the meal's CURRENT add-on details, not the
-    // order's own snapshot: this view aggregates across every matching order
-    // for today's cooking, and two orders for the same add-on can carry
-    // different snapshotted macros (the meal's nutrition info was edited in
-    // between) - showing live values keeps one aggregated row internally
-    // consistent instead of reflecting whichever order happened to be seen
-    // first. See withLiveMacros.
-    //
-    // Each meal holds the macros of the WHOLE meal with an add-on
-    // ("totalMacros"). Orders placed before that, for meals not yet given
-    // add-on macros, keep their snapshotted macros as an extra amount shown
-    // on its own line.
-    function withLiveMacros(item, mealsById) {
+    // Each ordered add-on with this meal's CURRENT description and macros
+    // for it (set per meal on Manage menu), not the order's snapshot: this
+    // view aggregates across every matching order for today's cooking, and
+    // two orders for the same add-on can carry different snapshots (the
+    // nutrition info was edited in between) - live values keep one row
+    // consistent. The snapshot is only the fallback when the meal no longer
+    // has macros for it. An add-on's macros are those of the WHOLE meal with
+    // it, so they replace the meal's own - see macrosFor.
+    function resolveAddOns(item, mealsById, addOnsById) {
       const details = (mealsById.get(item.mealId) || {}).addOnDetails || {};
+      const hasValues = (m) => m && Object.values(m).some(Boolean);
       return (item.selectedAddOns || [])
         .map((a) => {
-          const live = (details[a.addOnId] || {}).macros;
-          return live && Object.values(live).some(Boolean) ? { ...a, totalMacros: live } : a;
+          const detail = details[a.addOnId];
+          const description = detail ? detail.description : (addOnsById.get(a.addOnId) || {}).description || "";
+          const macros = hasValues(detail && detail.macros) ? detail.macros : hasValues(a.macros) ? a.macros : null;
+          return { ...a, description, macros };
         })
         .sort((a, b) => a.name.localeCompare(b.name));
     }
 
-    // The label's macro grid: the add-on version of the meal when there is
-    // one, otherwise the regular meal.
-    function labelMacros(addOns, mealMacros) {
-      const version = addOns.length === 1 && addOns[0].totalMacros;
-      return version || mealMacros;
+    // The meal's macros, unless an add-on was chosen - then that add-on's
+    // (none if the meal has no macros entered for it, rather than the
+    // regular meal's numbers as if they applied).
+    function macrosFor(addOns, mealMacros) {
+      return addOns.length ? addOns[0].macros : mealMacros;
     }
 
-    function aggregateByMeal(orders, mealsById) {
+    function aggregateByMeal(orders, mealsById, addOnsById) {
       const totals = new Map();
       orders.forEach((order) => {
         order.items.forEach((item) => {
-          const addOns = withLiveMacros(item, mealsById);
+          const addOns = resolveAddOns(item, mealsById, addOnsById);
           const addOnKey = addOns.map((a) => a.name).join(",");
           const note = item.note || "";
           const key = `${item.mealId}|${addOnKey}|${note}`;
           if (!totals.has(key)) {
-            const macros = labelMacros(addOns, (mealsById.get(item.mealId) || {}).macros);
+            const macros = macrosFor(addOns, (mealsById.get(item.mealId) || {}).macros);
             totals.set(key, { name: item.name, addOns, addOnKey, note, macros, quantity: 0 });
           }
           totals.get(key).quantity += item.quantity;
@@ -143,18 +142,11 @@
       </div>`;
     }
 
-    // "LARGE" when the macro grid already shows the Large meal; for an older
-    // order, "CAULIFLOWER RICE: 25 Calories | 1g Protein | ..." - the extra
-    // amount it added.
+    // "LARGE: Includes 2 extra ounces of chicken..." - the macro grid above
+    // already shows the Large meal's macros.
     function addOnLineHtml(addOn) {
-      const m = addOn.totalMacros ? {} : addOn.macros || {};
-      const parts = [];
-      if (m.calories) parts.push(`${m.calories} Calories`);
-      if (m.proteinG) parts.push(`${m.proteinG}g Protein`);
-      if (m.carbsG) parts.push(`${m.carbsG}g Carbs`);
-      if (m.fatG) parts.push(`${m.fatG}g Fat`);
       const name = escapeHtml(addOn.name);
-      const text = parts.length ? `${name}: ${parts.join(" | ")}` : name;
+      const text = addOn.description ? `${name}: ${escapeHtml(addOn.description)}` : name;
       return `<div class="label-addon-line">${text}</div>`;
     }
 
@@ -162,12 +154,12 @@
     // aggregated table rows) so each label can carry its own customer name -
     // 2 Chicken Bowls for 2 different customers means 2 labels, each naming
     // who it's for, not one row worth of identical unlabeled bowls.
-    function buildLabelsHtml(orders, mealsById) {
+    function buildLabelsHtml(orders, mealsById, addOnsById) {
       const labels = [];
       orders.forEach((order) => {
         order.items.forEach((item) => {
-          const addOns = withLiveMacros(item, mealsById);
-          const macros = labelMacros(addOns, (mealsById.get(item.mealId) || {}).macros);
+          const addOns = resolveAddOns(item, mealsById, addOnsById);
+          const macros = macrosFor(addOns, (mealsById.get(item.mealId) || {}).macros);
           for (let i = 0; i < item.quantity; i++) {
             labels.push({
               name: item.name,
@@ -246,18 +238,21 @@
       printForm.addEventListener("submit", (e) => {
         e.preventDefault();
         if (printButton.disabled) return;
-        const { html, labelCount, sheetCount } = buildLabelsHtml(currentOrders, mealsById);
+        const { html, labelCount, sheetCount } = buildLabelsHtml(currentOrders, mealsById, addOnsById);
         document.getElementById("print-labels").innerHTML = html;
         window.print();
         showToast(`Sent ${labelCount} label${labelCount === 1 ? "" : "s"} (${sheetCount} sheet${sheetCount === 1 ? "" : "s"}) for ${select.value} to print`);
       });
 
-      const [{ orders }, { nextReadyDate }, { meals }] = await Promise.all([
+      const [{ orders }, { nextReadyDate }, { meals }, { addOns }] = await Promise.all([
         apiRequest(config.apiUrl, "/admin/orders?status=placed", { token }),
         apiRequest(config.apiUrl, "/settings", { token }),
         apiRequest(config.apiUrl, "/meals"),
+        apiRequest(config.apiUrl, "/addons"),
       ]);
       const mealsById = new Map(meals.map((m) => [m.mealId, m]));
+      // Only for an add-on's default description, when a meal has none of its own.
+      const addOnsById = new Map(addOns.map((a) => [a.addOnId, a]));
 
       // Orders placed before the ready date last changed may still carry an
       // older date - offer every date actually in play, not just the current
@@ -271,7 +266,7 @@
         document.querySelector('label[for="ready-date-filter"]').style.display = "none";
         printButton.style.display = "none";
         document.getElementById("print-labels-hint").style.display = "none";
-        body.innerHTML = `<tr class="empty-row"><td colspan="4">No ready date has been set yet - set one on the Builder page.</td></tr>`;
+        body.innerHTML = `<tr class="empty-row"><td colspan="5">No ready date has been set yet - set one on the Builder page.</td></tr>`;
         return;
       }
 
@@ -284,10 +279,10 @@
         currentOrders = filtered;
         if (filtered.length === 0) {
           printButton.disabled = true;
-          body.innerHTML = `<tr class="empty-row"><td colspan="4">No placed orders for this date.</td></tr>`;
+          body.innerHTML = `<tr class="empty-row"><td colspan="5">No placed orders for this date.</td></tr>`;
           return;
         }
-        const rows = aggregateByMeal(filtered, mealsById);
+        const rows = aggregateByMeal(filtered, mealsById, addOnsById);
         printButton.disabled = false;
         body.innerHTML = rows
           .map(
@@ -297,14 +292,16 @@
             <td>${
               row.addOns.length
                 ? row.addOns
-                    .map((a) => {
-                      const m = formatMacros(a.totalMacros || a.macros);
-                      return `<div>${escapeHtml(a.name)}${m ? `<div class="muted" style="font-size:0.75rem;">${m}</div>` : ""}</div>`;
-                    })
+                    .map(
+                      (a) => `<div><strong>${escapeHtml(a.name)}</strong>${
+                        a.description ? `<div class="cell-sub">${escapeHtml(a.description)}</div>` : ""
+                      }</div>`
+                    )
                     .join("")
                 : "-"
             }</td>
             <td>${escapeHtml(row.note) || "-"}</td>
+            <td class="prep-macros">${formatMacros(row.macros) || "-"}</td>
             <td class="num"><strong>${row.quantity}</strong></td>
           </tr>`
           )

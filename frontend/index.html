@@ -284,10 +284,11 @@
     }
 
     // One choice per meal: Regular or a single add-on (combinations like
-    // "Large with Cauliflower Rice" are add-ons of their own). Choosing one
-    // shows this meal's description for it and switches the macros line to
-    // that version of the meal - see showAddOnChoice. Anyone can flip
-    // through the options to see the nutrition; only adding is restricted.
+    // "Large with Cauliflower Rice" are add-ons of their own). Under each
+    // add-on: this meal's description for it, then the macros of the meal
+    // with it. Choosing one also switches the macros line at the top of the
+    // card to that version - see showAddOnChoice. Anyone can flip through
+    // the options; only adding is restricted.
     function renderAddOnChoices(meal) {
       const visibleAddOns = allAddOns.filter((a) => a.available && isAddOnOffered(meal, a));
       if (visibleAddOns.length === 0) return "";
@@ -297,15 +298,23 @@
           <input type="radio" class="addon-choice" name="${name}" value="" checked /> Regular
         </label>
         ${visibleAddOns
-          .map(
-            (a) => `
+          .map((a) => {
+            const { description, macros } = addOnDetailFor(meal, a);
+            const macrosText = formatMacros(macros); // HTML: numbers and &middot;s
+            // The option's accessible name is just "Large (+$3.00)"; the two
+            // lines under it are read as its description.
+            const id = escapeHtml(`${name}-${a.addOnId}`);
+            const describedBy = [description && `${id}-desc`, macrosText && `${id}-macros`].filter(Boolean).join(" ");
+            return `
           <label class="option-choice">
-            <input type="radio" class="addon-choice" name="${name}" value="${escapeHtml(a.addOnId)}" />
-            ${escapeHtml(a.name)} (+${formatPrice(a.priceCents)})
-          </label>`
-          )
+            <input type="radio" class="addon-choice" name="${name}" value="${escapeHtml(a.addOnId)}"
+                   aria-labelledby="${id}-name"${describedBy ? ` aria-describedby="${describedBy}"` : ""} />
+            <span id="${id}-name">${escapeHtml(a.name)} (+${formatPrice(a.priceCents)})</span>
+            ${description ? `<span class="muted addon-description" id="${id}-desc">${escapeHtml(description)}</span>` : ""}
+            ${macrosText ? `<span class="muted addon-macros" id="${id}-macros">${macrosText}</span>` : ""}
+          </label>`;
+          })
           .join("")}
-        <p class="muted addon-description" hidden></p>
       </div>`;
     }
 
@@ -313,20 +322,13 @@
       const chosen = cardEl.querySelector(".addon-choice:checked");
       const addOn = chosen && chosen.value ? allAddOns.find((a) => a.addOnId === chosen.value) : null;
       const macrosEl = cardEl.querySelector(".macros");
-      const descriptionEl = cardEl.querySelector(".addon-description");
       // formatMacros returns HTML (numbers and &middot;s); the add-on name
       // is escaped.
       if (!addOn) {
         macrosEl.innerHTML = formatMacros(meal.macros);
-        descriptionEl.hidden = true;
       } else {
-        const { description, macros } = addOnDetailFor(meal, addOn);
-        const macrosText = formatMacros(macros);
+        const macrosText = formatMacros(addOnDetailFor(meal, addOn).macros);
         macrosEl.innerHTML = macrosText ? `${escapeHtml(addOn.name)}: ${macrosText}` : "";
-        descriptionEl.textContent = description;
-        descriptionEl.hidden = !description;
-        // Sits right under the option it describes.
-        chosen.closest(".option-choice").appendChild(descriptionEl);
       }
       macrosEl.hidden = !macrosEl.textContent;
     }

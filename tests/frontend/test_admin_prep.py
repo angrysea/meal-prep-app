@@ -103,28 +103,51 @@ def _labels(page):
     return page.locator("#print-labels .label")
 
 
-def test_label_shows_the_macros_of_the_meal_with_its_addon(admin_page):
+def test_label_with_an_addon_shows_its_macros_and_description(admin_page):
     # Jane's 2 bowls are Large; the meal has Large macros (750 cal).
     labels = _labels(admin_page)
     jane = labels.filter(has_text="Jane").first
     expect(jane.locator(".label-macros")).to_contain_text("Calories: 750")
-    expect(jane.locator(".label-addon-line")).to_have_text("Large")
+    expect(jane.locator(".label-macros")).to_contain_text("Protein: 60g")
+    expect(jane.locator(".label-addon-line")).to_have_text("Large: 2 extra oz of chicken and 1 oz of broccoli.")
 
 
-def test_older_order_without_meal_addon_macros_keeps_the_extra_amount(admin_page, mock_api):
-    # Placed before add-on macros moved to the meal: its snapshot was the
-    # extra amount the add-on added.
-    del mock_api.state["meals"][0]["addOnDetails"]
+def test_label_without_an_addon_shows_the_meals_macros(admin_page, mock_api):
+    mock_api.state["orders"][0]["items"][0]["selectedAddOns"] = []
     labels = _labels(admin_page)
     jane = labels.filter(has_text="Jane").first
     expect(jane.locator(".label-macros")).to_contain_text("Calories: 550")
-    expect(jane.locator(".label-addon-line")).to_have_text("Large: 200 Calories")
+    expect(jane.locator(".label-addon-line")).to_have_count(0)
 
 
-def test_prep_table_shows_the_addon_versions_macros(admin_page):
+def test_label_falls_back_to_the_orders_saved_macros_and_default_description(admin_page, mock_api):
+    # The meal's add-on details were cleared after the order was placed.
+    del mock_api.state["meals"][0]["addOnDetails"]
+    labels = _labels(admin_page)
+    jane = labels.filter(has_text="Jane").first
+    expect(jane.locator(".label-macros")).to_contain_text("Calories: 740")
+    expect(jane.locator(".label-addon-line")).to_have_text(
+        "Large: Includes 2 extra ounces of protein and 1 extra ounce of vegetables."
+    )
+
+
+def test_addon_with_no_macros_anywhere_shows_no_macros(admin_page, mock_api):
+    # Rather than the regular meal's numbers, as if they applied.
+    del mock_api.state["meals"][0]["addOnDetails"]
+    del mock_api.state["orders"][0]["items"][0]["selectedAddOns"][0]["macros"]
+    labels = _labels(admin_page)
+    expect(labels.filter(has_text="Jane").first.locator(".label-macros")).to_have_count(0)
+
+
+def test_prep_table_shows_macros_for_the_meal_or_its_addon(admin_page):
     page = admin_page
     page.open("/admin-prep.html")
 
-    row = page.locator("#prep-body tr").filter(has_text="Chicken Teriyaki Bowl")
-    expect(row).to_contain_text("Large")
-    expect(row).to_contain_text("750 cal")
+    headers = [h.strip() for h in page.locator("#prep-table th").all_text_contents()]
+    assert [h.title() for h in headers] == ["Meal", "Add-On", "Note", "Macros", "Quantity"]
+    bowl = page.locator("#prep-body tr").filter(has_text="Chicken Teriyaki Bowl")
+    expect(bowl.locator("td").nth(1)).to_contain_text("Large")
+    expect(bowl.locator(".cell-sub")).to_have_text("2 extra oz of chicken and 1 oz of broccoli.")
+    expect(bowl.locator(".prep-macros")).to_have_text("750 cal · 60g protein · 70g carbs · 18g fat")
+    chili = page.locator("#prep-body tr").filter(has_text="Turkey Chili")
+    expect(chili.locator(".prep-macros")).to_have_text("480 cal · 38g protein · 40g carbs · 14g fat")

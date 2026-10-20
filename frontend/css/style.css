@@ -225,11 +225,6 @@ h2 {
   margin: 0 0.4rem 0 0;
 }
 
-.addon-macros {
-  margin-left: 1.4rem;
-  font-size: 0.78rem;
-}
-
 /* Customer menu page: the current order, shown above the meal grid. */
 .order-summary {
   border-top: 4px solid var(--color-primary);
@@ -1059,13 +1054,7 @@ body.admin-page dialog {
   margin: 1.5rem 0 0.25rem;
 }
 
-/* Add-on descriptions: under the checkbox on the menu, under the name in
-   the Manage menu table. */
-.option-choice .addon-description {
-  margin: 0.15rem 0 0 1.4rem;
-  font-size: 0.85rem;
-}
-
+/* Add-on default description, under its name in the Manage menu table. */
 .addon-row-description {
   font-size: 0.85rem;
   margin-top: 0.15rem;
@@ -1173,19 +1162,75 @@ body.admin-page dialog {
   margin: 0 0 0.75rem;
 }
 
-/* Manage menu meals table: regular macros, then a line per add-on. */
-.meal-macros .macro-line {
+/* Manage menu meals table: Regular, then a row per add-on, each with its
+   description and macros. */
+.meal-options {
+  border-collapse: collapse;
+  width: 100%;
   font-size: 0.85rem;
-  margin-bottom: 0.35rem;
 }
 
-.meal-macros .macro-line:last-child {
-  margin-bottom: 0;
+.meal-options th,
+.meal-options td {
+  padding: 0.25rem 0.6rem 0.25rem 0;
+  border: none;
+  vertical-align: top;
+  text-align: left;
+  /* Not the outer table's sticky header styling. */
+  position: static;
+  box-shadow: none;
+  background: none;
 }
 
-.meal-macros .macro-label {
+.meal-options tbody tr th,
+.meal-options tbody tr td {
+  border-top: 1px solid var(--color-border);
+}
+
+.meal-options .macro-label {
   font-weight: bold;
+  white-space: nowrap;
+  text-transform: none;
+  letter-spacing: 0;
+  font-family: inherit;
+  color: inherit;
 }
+
+.meal-options thead th {
+  font-weight: normal;
+  font-size: 0.75rem;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.meal-options .macro-label {
+  width: 14rem;
+}
+
+.meal-options .macro-description {
+  color: var(--color-muted);
+}
+
+.meal-options .macro-values {
+  width: 19rem;
+}
+
+/* The meal's row and its options row read as one item. */
+.data-table tr.meal-row td {
+  border-bottom: none;
+  padding-bottom: 0.2rem;
+}
+
+.data-table tr.meal-options-row td.meal-macros {
+  padding-top: 0;
+  padding-left: 1.5rem;
+}
+
+.data-table tr.meal-options-row:hover {
+  background: none;
+}
+
 
 /* Customer menu add-on choices: a long option wraps under its own name, not
    under the radio button, and the description lines up with the name too. */
@@ -1200,7 +1245,13 @@ body.admin-page dialog {
   margin: 0.2rem 0 0;
 }
 
-.option-groups .option-choice .addon-description {
+.option-groups .option-choice .addon-description,
+.option-groups .option-choice .addon-macros {
   grid-column: 2;
-  margin: 0.15rem 0 0;
+  margin: 0.1rem 0 0;
+  font-size: 0.8rem;
+}
+
+.option-groups .option-choice + .option-choice {
+  margin-top: 0.35rem;
 }

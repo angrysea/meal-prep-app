@@ -29,7 +29,7 @@ def test_enter_in_any_field_adds_meal(admin_page, mock_api):
     assert call["body"]["priceCents"] == 1450
     assert call["body"]["macros"] == {"calories": 0, "proteinG": 0, "carbsG": 0, "fatG": 20}
     expect(page.locator("#new-name")).to_have_value("")
-    expect(page.locator("#meals-body tr")).to_have_count(3)
+    expect(page.locator("#meals-body tr.meal-row")).to_have_count(3)
 
 
 def test_enter_on_checkbox_submits_its_form(admin_page, mock_api):
@@ -579,20 +579,40 @@ def test_addon_names_in_meal_sections_are_escaped(admin_page, mock_api):
     assert_no_xss(page)
 
 
-def test_meals_table_lists_macros_for_regular_and_every_addon(admin_page):
+def _option_rows(page, meal_id):
+    return page.locator(f'tr[data-options-for="{meal_id}"] .meal-options tbody tr')
+
+
+def _cells(row):
+    return [c.strip() for c in row.locator("th, td").all_text_contents()]
+
+
+def test_meals_table_lists_regular_then_every_addon_on_its_own_line(admin_page):
     page = admin_page
     page.open("/admin.html")
 
-    lines = page.locator(f"{MEAL_ROW.format('m1')} .meal-macros .macro-line")
-    expect(lines).to_have_count(3)
-    expect(lines.nth(0)).to_contain_text("Regular 550 cal · 42g protein · 60g carbs · 12g fat")
-    expect(lines.nth(1).locator(".macro-label")).to_have_text("Large")
-    expect(lines.nth(1)).to_contain_text("750 cal · 60g protein · 70g carbs · 18g fat")
-    expect(lines.nth(1).locator(".cell-sub")).to_have_text("2 extra oz of chicken and 1 oz of broccoli.")
-    # Nothing entered for this meal yet: default description, no macros.
-    expect(lines.nth(2).locator(".macro-label")).to_have_text("Large with Cauliflower Rice")
-    expect(lines.nth(2)).to_contain_text("Large with Cauliflower Rice -")
-    expect(lines.nth(2).locator(".cell-sub")).to_have_text("Large, with cauliflower rice instead of rice.")
+    rows = _option_rows(page, "m1")
+    expect(rows).to_have_count(3)
+    assert _cells(rows.nth(0)) == ["Regular", "", "550 cal · 42g protein · 60g carbs · 12g fat"]
+    assert _cells(rows.nth(1)) == [
+        "Large", "2 extra oz of chicken and 1 oz of broccoli.", "750 cal · 60g protein · 70g carbs · 18g fat",
+    ]
+    # Nothing entered for this meal yet: the default description, no macros.
+    assert _cells(rows.nth(2)) == [
+        "Large with Cauliflower Rice", "Large, with cauliflower rice instead of rice.", "-",
+    ]
+    headers = page.locator('tr[data-options-for="m1"] .meal-options thead th').all_text_contents()
+    assert [h.strip() for h in headers] == ["Option", "Description", "Macros"]
+
+
+def test_options_row_sits_right_under_its_meal(admin_page):
+    page = admin_page
+    page.open("/admin.html")
+
+    following = page.locator(MEAL_ROW.format("m1")).evaluate("tr => tr.nextElementSibling.dataset.optionsFor")
+    assert following == "m1"
+    headers = page.locator("#meals-table > thead th").all_text_contents()
+    assert "Macros" not in headers
 
 
 def test_meals_table_updates_when_an_addon_is_added(admin_page):
@@ -603,7 +623,7 @@ def test_meals_table_updates_when_an_addon_is_added(admin_page):
     page.press("#addon-price", "Enter")
 
     expect_toast(page, 'Added the "Extra Protein (1 oz)" add-on')
-    expect(page.locator(f"{MEAL_ROW.format('m1')} .meal-macros .macro-line")).to_have_count(4)
+    expect(_option_rows(page, "m1")).to_have_count(4)
 
 
 def test_meals_table_addon_lines_are_escaped(admin_page, mock_api):
@@ -611,7 +631,7 @@ def test_meals_table_addon_lines_are_escaped(admin_page, mock_api):
     page = admin_page
     page.open("/admin.html")
 
-    expect(page.locator(f"{MEAL_ROW.format('m1')} .meal-macros")).to_contain_text("desc <img")
+    expect(page.locator('tr[data-options-for="m1"]')).to_contain_text("desc <img")
     assert_no_xss(page)
 
 
@@ -626,5 +646,5 @@ def test_addons_are_shown_alphabetically(admin_page, mock_api):
     names = ["Cauliflower Rice", "Large", "Large with Cauliflower Rice"]
     expect(page.locator("#addons-body tr strong")).to_have_text(names)
     expect(page.locator("#new-addon-details .addon-detail legend")).to_contain_text(names)
-    labels = page.locator(f"{MEAL_ROW.format('m1')} .meal-macros .macro-label")
+    labels = page.locator('tr[data-options-for="m1"] .macro-label')
     expect(labels).to_have_text(["Regular", *names])

@@ -332,31 +332,56 @@ def test_addons_are_a_single_choice_starting_at_regular(customer_page):
     expect(page.locator(f"{CARD} .addon-choice:checked")).to_have_count(1)
 
 
-def test_choosing_an_addon_shows_this_meals_description_and_macros(customer_page):
+def _option(page, label):
+    return page.locator(f"{CARD} .option-choice").filter(has_text=label).first
+
+
+def test_each_addon_lists_its_description_and_macros(customer_page):
+    page = customer_page
+    page.open("/index.html")
+
+    large = _option(page, "Large (+$3.00)")
+    expect(large.locator(".addon-description")).to_have_text("2 extra oz of chicken and 1 oz of broccoli.")
+    expect(large.locator(".addon-macros")).to_have_text("750 cal · 60g protein · 70g carbs · 18g fat")
+    # Description first, then macros - both under the option's name.
+    assert large.locator(".addon-description").bounding_box()["y"] < large.locator(".addon-macros").bounding_box()["y"]
+    name_x = large.get_by_text("Large (+$3.00)").bounding_box()["x"]
+    assert abs(large.locator(".addon-macros").bounding_box()["x"] - name_x) < 1
+    # Shown without choosing anything.
+    expect(page.locator(CARD).get_by_label("Regular", exact=True)).to_be_checked()
+
+
+def test_regular_has_no_extra_lines(customer_page):
+    page = customer_page
+    page.open("/index.html")
+
+    regular = _option(page, "Regular")
+    expect(regular.locator(".addon-description, .addon-macros")).to_have_count(0)
+
+
+def test_choosing_an_addon_switches_the_cards_macros_line(customer_page):
     page = customer_page
     page.open("/index.html")
     macros = page.locator(f"{CARD} .macros")
-    description = page.locator(f"{CARD} .addon-description")
     expect(macros).to_have_text("550 cal · 42g protein · 60g carbs · 12g fat")
-    expect(description).to_be_hidden()
 
     _choose(page, "Large (+$3.00)")
-    expect(description).to_have_text("2 extra oz of chicken and 1 oz of broccoli.")
     expect(macros).to_have_text("Large: 750 cal · 60g protein · 70g carbs · 18g fat")
 
     _choose(page, "Regular")
     expect(macros).to_have_text("550 cal · 42g protein · 60g carbs · 12g fat")
-    expect(description).to_be_hidden()
 
 
 def test_addon_without_meal_details_uses_the_default_description(customer_page):
     page = customer_page
     page.open("/index.html")
-    _choose(page, "Large with Cauliflower Rice (+$4.00)")
 
-    expect(page.locator(f"{CARD} .addon-description")).to_have_text("Large, with cauliflower rice instead of rice.")
-    # No macros entered for this meal yet - rather than show the regular
-    # meal's numbers as if they applied.
+    combo = _option(page, "Large with Cauliflower Rice (+$4.00)")
+    expect(combo.locator(".addon-description")).to_have_text("Large, with cauliflower rice instead of rice.")
+    # No macros entered for this meal yet - no macros line, rather than the
+    # regular meal's numbers as if they applied.
+    expect(combo.locator(".addon-macros")).to_have_count(0)
+    _choose(page, "Large with Cauliflower Rice (+$4.00)")
     expect(page.locator(f"{CARD} .macros")).to_be_hidden()
 
 
@@ -414,9 +439,8 @@ def test_addon_text_is_escaped_on_the_menu(customer_page, mock_api):
     mock_api.state["meals"][0]["addOnDetails"]["a1"]["description"] = "desc " + XSS
     page = customer_page
     page.open("/index.html")
-    page.locator(f"{CARD} .addon-choice").nth(1).check()
 
-    expect(page.locator(f"{CARD} .addon-description")).to_contain_text("desc <img")
+    expect(page.locator(f"{CARD} .addon-description").first).to_contain_text("desc <img")
     assert_no_xss(page)
 
 
