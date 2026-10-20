@@ -25,7 +25,8 @@
     import { apiRequest, formatPrice } from "/js/api.js";
     import { getValidSession } from "/js/cognito.js";
     import { renderNav } from "/js/nav.js";
-    import { escapeHtml } from "/js/admin.js";
+    import { confirmAction, escapeHtml } from "/js/admin.js";
+    import { showToast } from "/js/toast.js";
     import { loginUrlWithReturnTo } from "/js/redirect.js";
     import { formatMacros } from "/js/pricing.js";
 
@@ -43,6 +44,42 @@
       const paginationEl = document.getElementById("pagination");
       let allOrders = [];
       let currentPage = 1;
+
+      // The API says whether an order can still be changed (until the Friday
+      // before its ready date); customers are told the deadline is 2:00 PM.
+      function orderActions(order) {
+        if (order.changeable) {
+          return `
+            <div class="order-actions">
+              <button type="button" class="secondary edit-order">Edit</button>
+              <button type="button" class="secondary cancel-order">Cancel order</button>
+            </div>
+            <p class="muted order-deadline-note">You can edit or cancel this order until Friday at 2:00 PM.</p>`;
+        }
+        if (order.status === "placed") {
+          return `
+            <p class="order-locked">
+              <strong>Need to make changes to your order?</strong> Please call or email us no later than
+              Friday at 2:00 PM. Changes and cancellations cannot be made after this deadline.
+            </p>`;
+        }
+        return "";
+      }
+
+      async function cancelOnServer(orderId) {
+        await apiRequest(config.apiUrl, `/orders/${orderId}`, {
+          method: "PUT",
+          token: session.idToken,
+          body: { status: "cancelled" },
+        });
+      }
+
+      // A refused change (e.g. the deadline passed while the page was open):
+      // say why and re-render from the server so the buttons go away.
+      async function showChangeError(err) {
+        showToast(err.message, { error: true });
+        await loadOrders();
+      }
 
       function renderPage() {
         if (allOrders.length === 0) {
@@ -79,7 +116,7 @@
             <p>Total: <strong>${formatPrice(order.totalCents)}</strong></p>
             <p class="muted">${escapeHtml(order.customerName)}${order.contactPhone ? ` - ${escapeHtml(order.contactPhone)}` : ""}</p>
             <p class="muted">Pickup: ${order.pickupName ? escapeHtml(order.pickupName) : "you"}</p>
-            ${order.status === "placed" ? `<button class="secondary edit-order">Edit</button>` : ""}
+            ${orderActions(order)}
           </div>`
           )
           .join("");
@@ -88,11 +125,12 @@
           btn.addEventListener("click", async (e) => {
             const orderId = e.target.closest(".order-card").dataset.orderId;
             const order = allOrders.find((o) => o.orderId === orderId);
-            await apiRequest(config.apiUrl, `/orders/${orderId}`, {
-              method: "PUT",
-              token: session.idToken,
-              body: { status: "cancelled" },
-            });
+            try {
+              await cancelOnServer(orderId);
+            } catch (err) {
+              await showChangeError(err);
+              return;
+            }
             sessionStorage.setItem(
               "editOrderCart",
               JSON.stringify({
@@ -109,6 +147,24 @@
               })
             );
             window.location.href = "/index.html";
+          });
+        });
+
+        container.querySelectorAll(".cancel-order").forEach((btn) => {
+          btn.addEventListener("click", async (e) => {
+            const orderId = e.target.closest(".order-card").dataset.orderId;
+            const ok = await confirmAction("Cancel this order? This can't be undone.", { confirmLabel: "Cancel order" });
+            if (!ok) return;
+            try {
+              await cancelOnServer(orderId);
+            } catch (err) {
+              await showChangeError(err);
+              return;
+            }
+            const order = allOrders.find((o) => o.orderId === orderId);
+            Object.assign(order, { status: "cancelled", changeable: false });
+            renderPage();
+            showToast("Your order was cancelled");
           });
         });
 
@@ -131,13 +187,17 @@
         });
       }
 
-      try {
-        const { orders } = await apiRequest(config.apiUrl, "/orders", { token: session.idToken });
-        allOrders = orders;
-        renderPage();
-      } catch (err) {
-        container.innerHTML = `<p class="error">Couldn't load your orders: ${err.message}</p>`;
+      async function loadOrders() {
+        try {
+          const { orders } = await apiRequest(config.apiUrl, "/orders", { token: session.idToken });
+          allOrders = orders;
+          renderPage();
+        } catch (err) {
+          container.innerHTML = `<p class="error">Couldn't load your orders: ${escapeHtml(err.message)}</p>`;
+        }
       }
+
+      await loadOrders();
     });
   </script>
 </body>

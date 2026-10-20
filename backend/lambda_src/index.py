@@ -176,6 +176,27 @@ def _ordering_status(settings, now_utc=None):
     return {"open": is_open, "reason": reason}
 
 
+def _change_deadline_passed(ready_date_str, local):
+    """Customers can edit or cancel an order until 4:00 PM (Central) on the
+    Friday before its ready date - the same moment ordering closes, so the
+    grace period is the same too. They're told 2:00 PM."""
+    ready = datetime.strptime(ready_date_str, "%Y-%m-%d").date()
+    friday = ready - timedelta(days=(ready.weekday() - 4) % 7 or 7)
+    return (local.date(), local.time()) >= (friday, ORDERING_CLOSES[1])
+
+
+def _order_changeable(item, settings, now_utc=None):
+    """Whether the customer can still edit or cancel this order. "Edit"
+    cancels the order and reloads it into the cart, so ordering also has to
+    be open right now - otherwise they couldn't place it again."""
+    if item.get("status", "placed") != "placed":
+        return False
+    if not _ordering_status(settings, now_utc)["open"]:
+        return False
+    ready_date = item.get("readyDate", "")
+    return not ready_date or not _change_deadline_passed(ready_date, _central(now_utc or _utcnow()))
+
+
 def get_settings():
     item = table.get_item(Key=SETTINGS_KEY).get("Item") or {}
     try:
@@ -832,7 +853,10 @@ def list_orders(event):
         ExpressionAttributeValues={":pk": f"USER#{user_id}", ":sk": "ORDER#"},
         ScanIndexForward=False,  # most recent first
     ).get("Items", [])
-    return _response(200, {"orders": [_order_out(item) for item in items]})
+    settings = table.get_item(Key=SETTINGS_KEY).get("Item") or {}
+    return _response(200, {
+        "orders": [{**_order_out(item), "changeable": _order_changeable(item, settings)} for item in items]
+    })
 
 
 def create_order(event):
@@ -912,10 +936,11 @@ def create_order(event):
 
 
 def cancel_order(event, order_id):
-    """Self-service cancel, used by the "Edit" button on a placed order: the
-    customer's page cancels the order then sends them back to the menu with
-    the same items reloaded into the cart, rather than mutating a placed order
-    in place.
+    """Self-service cancel, used by the Cancel and Edit buttons on a placed
+    order. Edit cancels the order then sends the customer back to the menu
+    with the same items reloaded into the cart, rather than mutating a placed
+    order in place. Refused after the order's change deadline (see
+    _order_changeable).
     """
     user_id = _user_id(event)
     item = _find_order(user_id, order_id)
@@ -923,6 +948,12 @@ def cancel_order(event, order_id):
         raise BadRequest(f"no such order: {order_id}")
     if item.get("status", "placed") != "placed":
         raise BadRequest("only orders in placed status can be cancelled")
+    settings = table.get_item(Key=SETTINGS_KEY).get("Item") or {}
+    if not _order_changeable(item, settings):
+        raise BadRequest(
+            "This order can no longer be changed or cancelled online - the deadline was Friday at 2:00 PM. "
+            "Please call or email us."
+        )
     item["status"] = "cancelled"
     table.put_item(Item=item)
     return _response(200, _order_out(item))

@@ -1953,3 +1953,105 @@ def test_orders_placed_before_the_split_show_the_addon_name(table):
     })
     [order] = json.loads(index.handler(_event("GET", "/orders", claims=CUSTOMER_CLAIMS), None)["body"])["orders"]
     assert order["items"][0]["selectedAddOns"] == [{"addOnId": "a1", "name": "Large", "priceCents": 300}]
+
+
+# ---------- edit/cancel deadline: Friday 4:00 PM (customers are told 2:00 PM) ----------
+
+
+def _order_for_monday(index):
+    # Placed Wednesday 2026-10-21 (the pinned clock) for Monday 2026-10-26.
+    order = json.loads(_order_for_ready_date(index, ready_date="2026-10-26")["body"])
+    assert order["readyDate"] == "2026-10-26"
+    return order
+
+
+def _cancel(index, order):
+    return index.handler(
+        _event("PUT", f"/orders/{order['orderId']}", {"status": "cancelled"},
+               path_params={"orderId": order["orderId"]}, claims=CUSTOMER_CLAIMS),
+        None,
+    )
+
+
+def _listed(index):
+    [order] = json.loads(index.handler(_event("GET", "/orders", claims=CUSTOMER_CLAIMS), None)["body"])["orders"]
+    return order
+
+
+@pytest.mark.parametrize("when, changeable", [
+    ("2026-10-21T17:00:00+00:00", True),   # Wednesday
+    ("2026-10-23T19:00:00+00:00", True),   # Friday 2:00 PM - grace period
+    ("2026-10-23T20:59:00+00:00", True),   # Friday 3:59 PM
+    ("2026-10-23T21:00:00+00:00", False),  # Friday 4:00 PM
+    ("2026-10-24T17:00:00+00:00", False),  # Saturday
+])
+def test_order_is_changeable_until_friday_4pm(table, monkeypatch, when, changeable):
+    from backend.lambda_src import index
+
+    _order_for_monday(index)
+    _at(monkeypatch, when)
+    assert _listed(index)["changeable"] is changeable
+
+
+def test_cancel_before_the_deadline_works(table, monkeypatch):
+    from backend.lambda_src import index
+
+    order = _order_for_monday(index)
+    _at(monkeypatch, "2026-10-23T20:30:00+00:00")  # Friday 3:30 PM
+    resp = _cancel(index, order)
+    assert resp["statusCode"] == 200
+    assert json.loads(resp["body"])["status"] == "cancelled"
+
+
+def test_cancel_after_the_deadline_is_refused(table, monkeypatch):
+    from backend.lambda_src import index
+
+    order = _order_for_monday(index)
+    _at(monkeypatch, "2026-10-23T21:00:00+00:00")  # Friday 4:00 PM
+    resp = _cancel(index, order)
+    assert resp["statusCode"] == 400
+    assert "Friday at 2:00 PM" in json.loads(resp["body"])["message"]
+    assert _listed(index)["status"] == "placed"
+
+
+def test_orders_cant_be_changed_while_ordering_is_forced_closed(table):
+    # Edit cancels then re-orders - with ordering closed, the customer
+    # couldn't place it again, so don't let them start.
+    from backend.lambda_src import index
+
+    order = _order_for_monday(index)
+    _set_mode(index, "closed")
+    assert _listed(index)["changeable"] is False
+    assert _cancel(index, order)["statusCode"] == 400
+
+
+def test_last_weeks_order_is_not_changeable_even_if_forced_open(table, monkeypatch):
+    from backend.lambda_src import index
+
+    _order_for_monday(index)
+    _set_mode(index, "open")
+    _at(monkeypatch, "2026-10-24T17:00:00+00:00")  # Saturday - past that order's Friday
+    assert _listed(index)["changeable"] is False
+
+
+def test_cancelled_orders_are_not_changeable(table):
+    from backend.lambda_src import index
+
+    order = _order_for_monday(index)
+    _cancel(index, order)
+    assert _listed(index)["changeable"] is False
+
+
+@pytest.mark.parametrize("ready_date, friday", [
+    ("2026-10-26", "2026-10-23"),  # Monday -> the Friday before
+    ("2026-10-27", "2026-10-23"),  # a Tuesday (holiday week) -> still that Friday
+    ("2026-10-30", "2026-10-23"),  # a Friday -> the Friday a week earlier
+])
+def test_change_deadline_is_the_friday_before_the_ready_date(ready_date, friday):
+    from backend.lambda_src import index
+
+    tz = index._central(OPEN_TIME).tzinfo
+    just_before = datetime.fromisoformat(f"{friday}T15:59:00").replace(tzinfo=tz)
+    at_four = datetime.fromisoformat(f"{friday}T16:00:00").replace(tzinfo=tz)
+    assert index._change_deadline_passed(ready_date, just_before) is False
+    assert index._change_deadline_passed(ready_date, at_four) is True

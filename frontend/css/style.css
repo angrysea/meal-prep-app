@@ -1116,3 +1116,22 @@ body.admin-page dialog {
   font-weight: normal;
   color: var(--color-muted);
 }
+
+/* My Orders: Edit / Cancel order, or the deadline message once it's passed. */
+.order-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.order-deadline-note {
+  font-size: 0.85rem;
+  margin: 0.4rem 0 0;
+}
+
+.order-locked {
+  border-left: 3px solid var(--color-primary);
+  padding: 0.5rem 0.75rem;
+  background: var(--color-bg);
+  margin: 0.5rem 0 0;
+}

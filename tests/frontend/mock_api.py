@@ -34,6 +34,8 @@ SEED = {
     # Stands in for the real API's clock: whether Monday 11 AM - Friday 4 PM
     # is "now". Set False to simulate the weekend.
     "schedule_open": True,
+    # Whether customers' orders are past their Friday change deadline.
+    "changes_locked": False,
     "meals": [
         {"mealId": "m1", "name": "Chicken Teriyaki Bowl", "description": "Rice, broccoli", "priceCents": 1299,
          "macros": {"calories": 550, "proteinG": 42, "carbsG": 60, "fatG": 12}, "staple": True, "available": True},
@@ -162,7 +164,19 @@ class MockApi:
             return 201, order
 
         if path == "/orders" and method == "GET":
-            return 200, {"orders": s.get("placed", [])}
+            # Stands in for the real API's per-order deadline check.
+            return 200, {"orders": [
+                {**o, "changeable": o["status"] == "placed" and not s["changes_locked"]}
+                for o in s.get("placed", [])
+            ]}
+
+        if parts[0] == "orders" and len(parts) == 2 and method == "PUT":
+            if s["changes_locked"]:
+                return 400, {"message": "This order can no longer be changed or cancelled online - "
+                                        "the deadline was Friday at 2:00 PM. Please call or email us."}
+            order = next(o for o in s.get("placed", []) if o["orderId"] == parts[1])
+            order["status"] = body["status"]
+            return 200, order
 
         if parts[0] in ("meals", "addons"):
             key, id_key, required = (
