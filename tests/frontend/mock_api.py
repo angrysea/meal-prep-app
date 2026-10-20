@@ -38,15 +38,21 @@ SEED = {
     "changes_locked": False,
     "meals": [
         {"mealId": "m1", "name": "Chicken Teriyaki Bowl", "description": "Rice, broccoli", "priceCents": 1299,
-         "macros": {"calories": 550, "proteinG": 42, "carbsG": 60, "fatG": 12}, "staple": True, "available": True},
+         "macros": {"calories": 550, "proteinG": 42, "carbsG": 60, "fatG": 12}, "staple": True, "available": True,
+         # This meal's own text and whole-meal macros for each add-on.
+         "addOnDetails": {
+             "a1": {"description": "2 extra oz of chicken and 1 oz of broccoli.",
+                    "macros": {"calories": 750, "proteinG": 60, "carbsG": 70, "fatG": 18}},
+         }},
         {"mealId": "m2", "name": "Turkey Chili", "description": "", "priceCents": 1150,
          "macros": {"calories": 480, "proteinG": 38, "carbsG": 40, "fatG": 14},
          "staple": False, "weekOf": READY_DATE, "available": False},
     ],
     "addOns": [
         {"addOnId": "a1", "name": "Large", "priceCents": 300,
-         "description": "Includes 2 extra ounces of protein and 1 extra ounce of vegetables.",
-         "macros": {"calories": 200, "proteinG": 15, "carbsG": 20, "fatG": 5}, "available": True},
+         "description": "Includes 2 extra ounces of protein and 1 extra ounce of vegetables.", "available": True},
+        {"addOnId": "a2", "name": "Large with Cauliflower Rice", "priceCents": 400,
+         "description": "Large, with cauliflower rice instead of rice.", "available": True},
     ],
     "orders": [
         {"orderId": "o1", "customerSub": "u1", "createdAt": "2026-10-17T15:04:00Z", "status": "placed",

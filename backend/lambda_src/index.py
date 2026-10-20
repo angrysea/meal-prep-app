@@ -274,6 +274,7 @@ def create_meal(event):
         "priceCents": int(body["priceCents"]),
         "available": bool(body.get("available", True)),
         "macros": _parse_macros(body.get("macros")),
+        "addOnDetails": _parse_addon_details(body.get("addOnDetails")),
         "staple": bool(body.get("staple", False)),
         "weekOf": _parse_week_of(body.get("weekOf", "")),
     }
@@ -295,6 +296,10 @@ def update_meal(event, meal_id):
         "priceCents": int(body.get("priceCents", existing["priceCents"])),
         "available": bool(body.get("available", existing.get("available", True))),
         "macros": _parse_macros(body["macros"]) if "macros" in body else existing.get("macros", _parse_macros(None)),
+        "addOnDetails": (
+            _parse_addon_details(body["addOnDetails"]) if "addOnDetails" in body
+            else existing.get("addOnDetails", {})
+        ),
         "staple": bool(body.get("staple", existing.get("staple", False))),
         "weekOf": _parse_week_of(body["weekOf"]) if "weekOf" in body else existing.get("weekOf", ""),
     }
@@ -311,6 +316,22 @@ def delete_meal(event, meal_id):
 def _parse_macros(raw):
     raw = raw or {}
     return {field: int(raw.get(field, 0) or 0) for field in MACRO_FIELDS}
+
+
+def _parse_addon_details(raw):
+    """This meal's own description and macros for each add-on, keyed by
+    addOnId - e.g. what "Large" means for this dish and the macros of the
+    whole Large meal. Add-ons not listed fall back to the add-on's default
+    description and no macros."""
+    if not isinstance(raw or {}, dict):
+        raise BadRequest("addOnDetails must be an object keyed by addOnId")
+    return {
+        str(addon_id): {
+            "description": ((detail or {}).get("description") or "").strip(),
+            "macros": _parse_macros((detail or {}).get("macros")),
+        }
+        for addon_id, detail in (raw or {}).items()
+    }
 
 
 def _parse_week_of(raw):
@@ -331,15 +352,24 @@ def _meal_out(item):
         "priceCents": int(item["priceCents"]),
         "available": bool(item.get("available", True)),
         "macros": {field: int(item.get("macros", {}).get(field, 0)) for field in MACRO_FIELDS},
+        "addOnDetails": {
+            addon_id: {
+                "description": detail.get("description", ""),
+                "macros": {field: int(detail.get("macros", {}).get(field, 0)) for field in MACRO_FIELDS},
+            }
+            for addon_id, detail in (item.get("addOnDetails") or {}).items()
+        },
         "staple": bool(item.get("staple", False)),
         "weekOf": item.get("weekOf", ""),
     }
 
 
 # ---------- add-ons ----------
-# A single global list, e.g. "Large" (+$3.00), "Extra Protein" (+$1.50),
-# offered as independent optional checkboxes on every meal - not grouped or
-# mutually exclusive.
+# A single global list, e.g. "Large" (+$3.00), "Large with Cauliflower Rice",
+# offered on every meal. A customer picks at most one per meal (combinations
+# are add-ons of their own). The add-on holds the name, price and a default
+# description; each meal holds its own description and macros for it (see
+# _parse_addon_details).
 
 def list_addons():
     items = table.query(
@@ -361,7 +391,6 @@ def create_addon(event):
         "description": (body.get("description") or "").strip(),
         "priceCents": int(body["priceCents"]),
         "available": bool(body.get("available", True)),
-        "macros": _parse_macros(body.get("macros")),
     }
     table.put_item(Item=item)
     return _response(201, _addon_out(item))
@@ -381,8 +410,9 @@ def update_addon(event, addon_id):
         "description": (body.get("description") or "").strip() if "description" in body else current["description"],
         "priceCents": int(body.get("priceCents", existing["priceCents"])),
         "available": bool(body.get("available", existing.get("available", True))),
-        "macros": _parse_macros(body["macros"]) if "macros" in body else existing.get("macros", _parse_macros(None)),
     }
+    # Macros now live on each meal; drop any an older add-on still carries.
+    updated.pop("macros", None)
     table.put_item(Item=updated)
     return _response(200, _addon_out(updated))
 
@@ -414,7 +444,6 @@ def _addon_out(item):
         "description": description,
         "priceCents": int(item["priceCents"]),
         "available": bool(item.get("available", True)),
-        "macros": {field: int(item.get("macros", {}).get(field, 0)) for field in MACRO_FIELDS},
     }
 
 
@@ -899,7 +928,7 @@ def create_order(event):
         if not meal:
             return _response(400, {"message": f"unknown mealId: {meal_id}"})
 
-        resolved_addons, addons_total_cents = _resolve_addons(requested.get("selectedAddOnIds") or [])
+        resolved_addons, addons_total_cents = _resolve_addons(meal, requested.get("selectedAddOnIds") or [])
 
         unit_price_cents = int(meal["priceCents"]) + addons_total_cents
         total_cents += unit_price_cents * quantity
@@ -1052,14 +1081,18 @@ def _reply_to():
     return emails[:1]
 
 
-def _resolve_addons(requested_addon_ids):
-    """Validates the client's add-on id picks against the current global
-    add-on list and returns (resolved add-ons with name/price/macros
-    snapshotted, total price delta in cents). Raises BadRequest for any id
-    that doesn't currently exist. Macros are snapshotted (not looked up live)
-    for the same reason name/price are - so a past order's label is
-    unaffected by the add-on's nutrition info changing later.
+def _resolve_addons(meal, requested_addon_ids):
+    """Validates the client's add-on pick (at most one per meal) against the
+    current global add-on list and returns (resolved add-ons with name/price
+    and this meal's macros for it snapshotted, total price delta in cents).
+    Raises BadRequest for more than one add-on, or an id that doesn't
+    currently exist. Macros are snapshotted (not looked up live) for the same
+    reason name/price are - so a past order's label is unaffected by the
+    nutrition info changing later.
     """
+    if len(requested_addon_ids) > 1:
+        raise BadRequest("Choose one add-on per meal.")
+    details = meal.get("addOnDetails") or {}
     resolved = []
     total_cents = 0
     for addon_id in requested_addon_ids:
@@ -1072,7 +1105,7 @@ def _resolve_addons(requested_addon_ids):
             "addOnId": addon_id,
             "name": _addon_out(addon)["name"],
             "priceCents": price_cents,
-            "macros": {field: int(addon.get("macros", {}).get(field, 0)) for field in MACRO_FIELDS},
+            "macros": _parse_macros((details.get(addon_id) or {}).get("macros")),
         })
     return resolved, total_cents
 

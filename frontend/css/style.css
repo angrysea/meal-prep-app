@@ -1135,3 +1135,34 @@ body.admin-page dialog {
   background: var(--color-bg);
   margin: 0.5rem 0 0;
 }
+
+/* Manage menu: "Add-ons for this meal" - one block per add-on. */
+.addon-detail {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem 0.25rem;
+  margin: 0 0 0.75rem;
+}
+
+.addon-detail legend {
+  font-weight: bold;
+  padding: 0 0.3rem;
+}
+
+.addon-detail label {
+  font-size: 0.85rem;
+}
+
+.addon-detail .field-grid {
+  margin-top: 0.25rem;
+}
+
+.addon-detail label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.addon-detail input {
+  width: 100%;
+}

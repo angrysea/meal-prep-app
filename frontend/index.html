@@ -142,7 +142,7 @@
       });
     }
     wireHowItWorks();
-    import { computeUnitPriceCents, selectionsKey, formatMacros, formatPhone } from "/js/pricing.js";
+    import { addOnDetailFor, computeUnitPriceCents, selectionsKey, formatMacros, formatPhone } from "/js/pricing.js";
     import { showToast } from "/js/toast.js";
     import { escapeHtml } from "/js/admin.js";
 
@@ -179,7 +179,7 @@
           const selectedAddOns = selectedAddOnIds.map((id) => allAddOns.find((a) => a.addOnId === id)).filter(Boolean);
           const addOnText = selectedAddOns
             .map((a) => {
-              const macrosText = formatMacros(a.macros);
+              const macrosText = formatMacros(addOnDetailFor(meal, a).macros);
               return `<div class="muted" style="font-size:0.85rem;">${escapeHtml(a.name)}${macrosText ? ` - ${macrosText}` : ""}</div>`;
             })
             .join("");
@@ -280,26 +280,55 @@
 
     function renderMacros(macros) {
       const text = formatMacros(macros);
-      return text ? `<p class="macros muted">${text}</p>` : "";
+      return `<p class="macros muted"${text ? "" : " hidden"}>${text}</p>`;
     }
 
-    function renderAddOnChoices(meal, disabled) {
+    // One choice per meal: Regular or a single add-on (combinations like
+    // "Large with Cauliflower Rice" are add-ons of their own). Choosing one
+    // shows this meal's description for it and switches the macros line to
+    // that version of the meal - see showAddOnChoice. Anyone can flip
+    // through the options to see the nutrition; only adding is restricted.
+    function renderAddOnChoices(meal) {
       const visibleAddOns = allAddOns.filter((a) => a.available);
       if (visibleAddOns.length === 0) return "";
-      return `<div class="option-groups">
+      const name = `addon-${meal.mealId}`;
+      return `<div class="option-groups" role="radiogroup" aria-label="Options for ${escapeHtml(meal.name)}">
+        <label class="option-choice">
+          <input type="radio" class="addon-choice" name="${name}" value="" checked /> Regular
+        </label>
         ${visibleAddOns
-          .map((a) => {
-            const macrosText = formatMacros(a.macros);
-            return `
+          .map(
+            (a) => `
           <label class="option-choice">
-            <input type="checkbox" class="addon-choice" data-addon-id="${a.addOnId}" ${disabled ? "disabled" : ""} />
+            <input type="radio" class="addon-choice" name="${name}" value="${escapeHtml(a.addOnId)}" />
             ${escapeHtml(a.name)} (+${formatPrice(a.priceCents)})
-            ${a.description ? `<div class="muted addon-description">${escapeHtml(a.description)}</div>` : ""}
-            ${macrosText ? `<div class="muted addon-macros">${macrosText}</div>` : ""}
-          </label>`;
-          })
+          </label>`
+          )
           .join("")}
+        <p class="muted addon-description" hidden></p>
       </div>`;
+    }
+
+    function showAddOnChoice(cardEl, meal) {
+      const chosen = cardEl.querySelector(".addon-choice:checked");
+      const addOn = chosen && chosen.value ? allAddOns.find((a) => a.addOnId === chosen.value) : null;
+      const macrosEl = cardEl.querySelector(".macros");
+      const descriptionEl = cardEl.querySelector(".addon-description");
+      // formatMacros returns HTML (numbers and &middot;s); the add-on name
+      // is escaped.
+      if (!addOn) {
+        macrosEl.innerHTML = formatMacros(meal.macros);
+        descriptionEl.hidden = true;
+      } else {
+        const { description, macros } = addOnDetailFor(meal, addOn);
+        const macrosText = formatMacros(macros);
+        macrosEl.innerHTML = macrosText ? `${escapeHtml(addOn.name)}: ${macrosText}` : "";
+        descriptionEl.textContent = description;
+        descriptionEl.hidden = !description;
+        // Sits right under the option it describes.
+        chosen.closest(".option-choice").appendChild(descriptionEl);
+      }
+      macrosEl.hidden = !macrosEl.textContent;
     }
 
     function formatReadyDate(isoDate) {
@@ -362,7 +391,7 @@
             <p class="description">${meal.description || ""}</p>
             ${renderMacros(meal.macros)}
             <p class="price">${formatPrice(meal.priceCents)}</p>
-            ${renderAddOnChoices(meal, !interactive)}
+            ${renderAddOnChoices(meal)}
             <label for="note-${meal.mealId}" class="muted" style="font-size:0.85rem; font-weight:normal;">Special requests</label>
             <input
               type="text" class="note-input" id="note-${meal.mealId}"
@@ -374,17 +403,27 @@
           )
           .join("");
 
+        container.querySelectorAll(".meal-card").forEach((cardEl) => {
+          const meal = available.find((m) => m.mealId === cardEl.dataset.mealId);
+          cardEl.querySelectorAll(".addon-choice").forEach((radio) =>
+            radio.addEventListener("change", () => showAddOnChoice(cardEl, meal))
+          );
+        });
+
         if (!interactive) return; // anonymous visitor or admin - nothing left to wire up
 
         container.querySelectorAll("button.add-to-order").forEach((btn) => {
           btn.addEventListener("click", () => {
             const cardEl = btn.closest(".meal-card");
             const meal = available.find((m) => m.mealId === btn.dataset.mealId);
-            const selectedAddOnIds = [...cardEl.querySelectorAll(".addon-choice:checked")].map((el) => el.dataset.addonId);
+            const chosen = cardEl.querySelector(".addon-choice:checked");
+            const selectedAddOnIds = chosen && chosen.value ? [chosen.value] : [];
             const noteInput = cardEl.querySelector(".note-input");
             const note = noteInput.value.trim();
             addToCart(meal, selectedAddOnIds, note);
-            cardEl.querySelectorAll(".addon-choice:checked").forEach((el) => (el.checked = false));
+            const regular = cardEl.querySelector('.addon-choice[value=""]');
+            if (regular) regular.checked = true;
+            showAddOnChoice(cardEl, meal);
             noteInput.value = "";
             showToast(`${meal.name} added to your order`);
           });

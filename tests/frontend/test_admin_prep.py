@@ -92,3 +92,39 @@ def test_label_names_the_pickup_person(admin_page, mock_api):
     expect(page.locator("#print-labels .label-customer", has_text="Bob Smith")).to_have_text(
         "Bob Smith (pickup: Sam Lee)"
     )
+
+
+# ---------- Labels: the add-on version's macros ----------
+
+
+def _labels(page):
+    page.open("/admin-prep.html")
+    page.click("#print-labels-button")
+    return page.locator("#print-labels .label")
+
+
+def test_label_shows_the_macros_of_the_meal_with_its_addon(admin_page):
+    # Jane's 2 bowls are Large; the meal has Large macros (750 cal).
+    labels = _labels(admin_page)
+    jane = labels.filter(has_text="Jane").first
+    expect(jane.locator(".label-macros")).to_contain_text("Calories: 750")
+    expect(jane.locator(".label-addon-line")).to_have_text("Large")
+
+
+def test_older_order_without_meal_addon_macros_keeps_the_extra_amount(admin_page, mock_api):
+    # Placed before add-on macros moved to the meal: its snapshot was the
+    # extra amount the add-on added.
+    del mock_api.state["meals"][0]["addOnDetails"]
+    labels = _labels(admin_page)
+    jane = labels.filter(has_text="Jane").first
+    expect(jane.locator(".label-macros")).to_contain_text("Calories: 550")
+    expect(jane.locator(".label-addon-line")).to_have_text("Large: 200 Calories")
+
+
+def test_prep_table_shows_the_addon_versions_macros(admin_page):
+    page = admin_page
+    page.open("/admin-prep.html")
+
+    row = page.locator("#prep-body tr").filter(has_text="Chicken Teriyaki Bowl")
+    expect(row).to_contain_text("Large")
+    expect(row).to_contain_text("750 cal")

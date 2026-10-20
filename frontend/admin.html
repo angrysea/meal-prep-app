@@ -81,13 +81,17 @@
             <label for="new-price">Base price (USD)</label>
             <input id="new-price" type="number" step="0.01" min="0" required />
 
-            <h3>Macros</h3>
+            <h3>Macros - regular</h3>
             <div class="field-grid">
               <div><label for="new-calories">Calories</label><input id="new-calories" type="number" min="0" /></div>
               <div><label for="new-protein">Protein (g)</label><input id="new-protein" type="number" min="0" /></div>
               <div><label for="new-carbs">Carbs (g)</label><input id="new-carbs" type="number" min="0" /></div>
               <div><label for="new-fat">Fat (g)</label><input id="new-fat" type="number" min="0" /></div>
             </div>
+
+            <h3>Add-ons for this meal</h3>
+            <p class="muted field-hint">The description and macros of the whole meal with each add-on.</p>
+            <div class="addon-details" id="new-addon-details"></div>
 
             <h3>Availability</h3>
             <label class="option-choice">
@@ -118,24 +122,19 @@
       </section>
 
       <section class="admin-section">
-        <h2>Add-ons <span class="muted" style="font-family:inherit; font-size:0.9rem; text-transform:none; letter-spacing:0;">(offered on every meal)</span></h2>
+        <h2>Add-ons <span class="muted" style="font-family:inherit; font-size:0.9rem; text-transform:none; letter-spacing:0;">(offered on every meal - customers pick one)</span></h2>
         <div class="admin-split">
           <form class="card" id="addon-create-form">
             <h2>Add an add-on</h2>
             <label for="addon-name">Name</label>
             <input id="addon-name" type="text" placeholder="e.g. Large, Extra Protein" required />
-            <label for="addon-description">Description <span class="muted">(optional)</span></label>
+            <label for="addon-description">Default description <span class="muted">(optional)</span></label>
             <input id="addon-description" type="text" placeholder="e.g. Includes 2 extra ounces of protein and 1 extra ounce of vegetables." />
             <label for="addon-price">Price (USD)</label>
             <input id="addon-price" type="number" step="0.01" min="0" required />
-
-            <h3>Macros</h3>
-            <div class="field-grid">
-              <div><label for="addon-calories">Calories</label><input id="addon-calories" type="number" min="0" /></div>
-              <div><label for="addon-protein">Protein (g)</label><input id="addon-protein" type="number" min="0" /></div>
-              <div><label for="addon-carbs">Carbs (g)</label><input id="addon-carbs" type="number" min="0" /></div>
-              <div><label for="addon-fat">Fat (g)</label><input id="addon-fat" type="number" min="0" /></div>
-            </div>
+            <p class="muted field-hint">
+              Each meal has its own description and macros for this add-on - set them when adding or editing a meal.
+            </p>
 
             <p class="error" style="display:none;"></p>
             <div class="form-actions">
@@ -146,7 +145,7 @@
           <div class="table-card">
             <table class="data-table" id="addons-table">
               <thead>
-                <tr><th>Name</th><th class="num">Price</th><th>Macros</th><th>Available</th><th></th></tr>
+                <tr><th>Name</th><th class="num">Price</th><th>Available</th><th></th></tr>
               </thead>
               <tbody id="addons-body"></tbody>
             </table>
@@ -167,13 +166,17 @@
         <label for="edit-meal-price">Base price (USD)</label>
         <input id="edit-meal-price" type="number" step="0.01" min="0" required style="max-width:160px;" />
 
-        <h3>Macros</h3>
+        <h3>Macros - regular</h3>
         <div class="field-grid">
           <div><label for="edit-meal-calories">Calories</label><input id="edit-meal-calories" type="number" min="0" /></div>
           <div><label for="edit-meal-protein">Protein (g)</label><input id="edit-meal-protein" type="number" min="0" /></div>
           <div><label for="edit-meal-carbs">Carbs (g)</label><input id="edit-meal-carbs" type="number" min="0" /></div>
           <div><label for="edit-meal-fat">Fat (g)</label><input id="edit-meal-fat" type="number" min="0" /></div>
         </div>
+
+        <h3>Add-ons for this meal</h3>
+        <p class="muted field-hint">The description and macros of the whole meal with each add-on.</p>
+        <div class="addon-details" id="edit-meal-addon-details"></div>
 
         <h3>Availability</h3>
         <div class="field-grid-2" style="align-items:end;">
@@ -203,19 +206,12 @@
         <h2>Edit add-on</h2>
         <label for="edit-addon-name">Name</label>
         <input id="edit-addon-name" type="text" required />
-        <label for="edit-addon-description">Description <span class="muted">(optional)</span></label>
+        <label for="edit-addon-description">Default description <span class="muted">(optional)</span></label>
         <input id="edit-addon-description" type="text" placeholder="e.g. Includes 2 extra ounces of protein and 1 extra ounce of vegetables." />
 
         <label for="edit-addon-price">Price (USD)</label>
         <input id="edit-addon-price" type="number" step="0.01" min="0" required style="max-width:160px;" />
 
-        <h3>Macros</h3>
-        <div class="field-grid">
-          <div><label for="edit-addon-calories">Calories</label><input id="edit-addon-calories" type="number" min="0" /></div>
-          <div><label for="edit-addon-protein">Protein (g)</label><input id="edit-addon-protein" type="number" min="0" /></div>
-          <div><label for="edit-addon-carbs">Carbs (g)</label><input id="edit-addon-carbs" type="number" min="0" /></div>
-          <div><label for="edit-addon-fat">Fat (g)</label><input id="edit-addon-fat" type="number" min="0" /></div>
-        </div>
 
         <p class="error" style="display:none;"></p>
         <div class="dialog-actions">
@@ -262,6 +258,57 @@
       carbsG: parseInt(value(`${prefix}-carbs`), 10) || 0,
       fatG: parseInt(value(`${prefix}-fat`), 10) || 0,
     });
+    // "Add-ons for this meal": one block per add-on with this meal's own
+    // description (prefilled from the add-on's default) and macros. Inputs
+    // are found by data-addon-id/data-field rather than ids, since the
+    // add-on list changes.
+    const MACRO_INPUTS = [
+      ["calories", "Calories"],
+      ["proteinG", "Protein (g)"],
+      ["carbsG", "Carbs (g)"],
+      ["fatG", "Fat (g)"],
+    ];
+
+    function renderAddOnDetails(container, addOns, details = {}) {
+      if (addOns.length === 0) {
+        container.innerHTML = `<p class="muted">No add-ons yet - add them under Add-ons below.</p>`;
+        return;
+      }
+      container.innerHTML = addOns
+        .map((addOn) => {
+          const detail = details[addOn.addOnId];
+          const description = detail ? detail.description : addOn.description || "";
+          const macros = (detail && detail.macros) || {};
+          const id = escapeHtml(addOn.addOnId);
+          return `
+          <fieldset class="addon-detail" data-addon-id="${id}">
+            <legend>${escapeHtml(addOn.name)} <span class="muted">(+${formatPrice(addOn.priceCents)}${addOn.available ? "" : ", hidden"})</span></legend>
+            <label>Description
+              <input type="text" data-field="description" value="${escapeHtml(description)}" />
+            </label>
+            <div class="field-grid">
+              ${MACRO_INPUTS.map(
+                ([field, label]) =>
+                  `<label>${label}<input type="number" min="0" data-field="${field}" value="${macros[field] || ""}" /></label>`
+              ).join("")}
+            </div>
+          </fieldset>`;
+        })
+        .join("");
+    }
+
+    function addOnDetailsFrom(container) {
+      const details = {};
+      container.querySelectorAll(".addon-detail").forEach((block) => {
+        const field = (name) => block.querySelector(`[data-field="${name}"]`).value;
+        details[block.dataset.addonId] = {
+          description: field("description").trim(),
+          macros: Object.fromEntries(MACRO_INPUTS.map(([name]) => [name, parseInt(field(name), 10) || 0])),
+        };
+      });
+      return details;
+    }
+
     const setMacros = (prefix, macros) => {
       document.getElementById(`${prefix}-calories`).value = macros.calories || "";
       document.getElementById(`${prefix}-protein`).value = macros.proteinG || "";
@@ -321,6 +368,9 @@
     async function initAdmin(config, token) {
       let editingAddOnId = null;
       let editingMealId = null;
+      let currentAddOns = [];
+      const newAddOnDetails = document.getElementById("new-addon-details");
+      const editAddOnDetails = document.getElementById("edit-meal-addon-details");
 
       // What customers see right now, under the Ordering dropdown.
       function showOrderingStatus({ ordering, orderingMode }) {
@@ -428,9 +478,12 @@
 
       async function refreshAddOns() {
         const { addOns } = await apiRequest(config.apiUrl, "/addons");
+        currentAddOns = addOns;
+        // Keep whatever's been typed into Add a meal so far.
+        renderAddOnDetails(newAddOnDetails, addOns, addOnDetailsFrom(newAddOnDetails));
         const body = document.getElementById("addons-body");
         if (addOns.length === 0) {
-          body.innerHTML = `<tr class="empty-row"><td colspan="5">No add-ons yet - add one on the left.</td></tr>`;
+          body.innerHTML = `<tr class="empty-row"><td colspan="4">No add-ons yet - add one on the left.</td></tr>`;
           return;
         }
         body.innerHTML = addOns
@@ -442,7 +495,6 @@
               ${addOn.description ? `<div class="muted addon-row-description">${escapeHtml(addOn.description)}</div>` : ""}
             </td>
             <td class="num">${formatPrice(addOn.priceCents)}</td>
-            <td>${formatMacros(addOn.macros) || "-"}</td>
             <td>${addOn.available ? "Yes" : "No"}</td>
             <td class="actions">
               <button type="button" class="secondary edit-addon">Edit</button>
@@ -499,6 +551,7 @@
         document.getElementById("edit-meal-description").value = meal.description || "";
         document.getElementById("edit-meal-price").value = (meal.priceCents / 100).toFixed(2);
         setMacros("edit-meal", meal.macros);
+        renderAddOnDetails(editAddOnDetails, currentAddOns, meal.addOnDetails || {});
         document.getElementById("edit-meal-staple").checked = !!meal.staple;
         document.getElementById("edit-meal-week-of").value = meal.weekOf || "";
         syncEditAvailability();
@@ -517,6 +570,7 @@
             description: value("edit-meal-description"),
             priceCents: priceCentsFrom("edit-meal-price"),
             macros: macrosFrom("edit-meal"),
+            addOnDetails: addOnDetailsFrom(editAddOnDetails),
             staple: document.getElementById("edit-meal-staple").checked,
             weekOf: value("edit-meal-week-of"),
           },
@@ -531,7 +585,6 @@
         document.getElementById("edit-addon-name").value = addOn.name;
         document.getElementById("edit-addon-description").value = addOn.description || "";
         document.getElementById("edit-addon-price").value = (addOn.priceCents / 100).toFixed(2);
-        setMacros("edit-addon", addOn.macros);
         openDialog(addOnEditDialog);
       }
 
@@ -546,7 +599,6 @@
             name,
             description: value("edit-addon-description"),
             priceCents: priceCentsFrom("edit-addon-price"),
-            macros: macrosFrom("edit-addon"),
           },
         });
         addOnEditDialog.close();
@@ -565,11 +617,13 @@
             description: value("new-description"),
             priceCents: priceCentsFrom("new-price"),
             macros: macrosFrom("new"),
+            addOnDetails: addOnDetailsFrom(newAddOnDetails),
             staple: document.getElementById("new-staple").checked,
             weekOf: value("new-week-of"),
           },
         });
         mealCreateForm.reset();
+        renderAddOnDetails(newAddOnDetails, currentAddOns);
         syncNewAvailability();
         document.getElementById("new-name").focus();
         showToast(`Added "${name}" to the menu`);
@@ -586,7 +640,6 @@
             name,
             description: value("addon-description"),
             priceCents: priceCentsFrom("addon-price"),
-            macros: macrosFrom("addon"),
           },
         });
         addOnCreateForm.reset();

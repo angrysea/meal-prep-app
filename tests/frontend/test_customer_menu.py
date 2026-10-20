@@ -307,50 +307,114 @@ def test_payment_reminder_sits_under_not_a_checkout(customer_page):
     expect(warning).to_be_visible()
 
 
-# ---------- Add-on name + description ----------
+# ---------- Add-ons: pick one; each meal has its own description and macros ----------
+
+CARD = '.meal-card[data-meal-id="m1"]'
 
 
-def test_addon_shows_name_price_and_description(customer_page):
+def _choose(page, label):
+    page.locator(CARD).get_by_label(label, exact=True).check()
+
+
+def test_addons_are_a_single_choice_starting_at_regular(customer_page):
     page = customer_page
     page.open("/index.html")
 
-    choice = page.locator('.meal-card:has(.add-to-order[data-meal-id="m1"]) .option-choice').first
-    expect(choice).to_contain_text("Large (+$3.00)")
-    expect(choice.locator(".addon-description")).to_have_text(
-        "Includes 2 extra ounces of protein and 1 extra ounce of vegetables."
-    )
+    radios = page.locator(f"{CARD} .addon-choice")
+    expect(radios).to_have_count(3)
+    assert all(r.get_attribute("type") == "radio" for r in radios.all())
+    expect(page.locator(CARD).get_by_label("Regular", exact=True)).to_be_checked()
+    expect(page.locator(CARD)).to_contain_text("Large (+$3.00)")
+    expect(page.locator(CARD)).to_contain_text("Large with Cauliflower Rice (+$4.00)")
+
+    _choose(page, "Large (+$3.00)")
+    _choose(page, "Large with Cauliflower Rice (+$4.00)")
+    expect(page.locator(f"{CARD} .addon-choice:checked")).to_have_count(1)
 
 
-def test_addon_without_description_shows_just_the_name(customer_page, mock_api):
-    mock_api.state["addOns"][0]["description"] = ""
+def test_choosing_an_addon_shows_this_meals_description_and_macros(customer_page):
     page = customer_page
     page.open("/index.html")
+    macros = page.locator(f"{CARD} .macros")
+    description = page.locator(f"{CARD} .addon-description")
+    expect(macros).to_have_text("550 cal · 42g protein · 60g carbs · 12g fat")
+    expect(description).to_be_hidden()
 
-    expect(page.locator(".option-choice").first).to_contain_text("Large (+$3.00)")
-    expect(page.locator(".addon-description")).to_have_count(0)
+    _choose(page, "Large (+$3.00)")
+    expect(description).to_have_text("2 extra oz of chicken and 1 oz of broccoli.")
+    expect(macros).to_have_text("Large: 750 cal · 60g protein · 70g carbs · 18g fat")
+
+    _choose(page, "Regular")
+    expect(macros).to_have_text("550 cal · 42g protein · 60g carbs · 12g fat")
+    expect(description).to_be_hidden()
 
 
-def test_ordered_addon_shows_its_name(customer_page, mock_api):
+def test_addon_without_meal_details_uses_the_default_description(customer_page):
     page = customer_page
     page.open("/index.html")
-    card = page.locator('.meal-card:has(.add-to-order[data-meal-id="m1"])')
-    card.locator(".addon-choice").check()
-    card.locator(".add-to-order").click()
+    _choose(page, "Large with Cauliflower Rice (+$4.00)")
 
-    expect(page.locator("#cart-lines")).to_contain_text("Large")
-    expect(page.locator("#cart-lines")).not_to_contain_text("Includes 2 extra")
+    expect(page.locator(f"{CARD} .addon-description")).to_have_text("Large, with cauliflower rice instead of rice.")
+    # No macros entered for this meal yet - rather than show the regular
+    # meal's numbers as if they applied.
+    expect(page.locator(f"{CARD} .macros")).to_be_hidden()
+
+
+def test_ordering_with_an_addon(customer_page, mock_api):
+    page = customer_page
+    page.open("/index.html")
+    _choose(page, "Large (+$3.00)")
+    page.click(ADD_M1)
+
+    lines = page.locator("#cart-lines")
+    expect(lines).to_contain_text("Large - 750 cal")
+    expect(page.locator("#cart-total")).to_have_text("$15.99")
+    # The card goes back to Regular for the next one.
+    expect(page.locator(CARD).get_by_label("Regular", exact=True)).to_be_checked()
+    expect(page.locator(f"{CARD} .macros")).to_have_text("550 cal · 42g protein · 60g carbs · 12g fat")
+
     page.click("#checkout-button")
     page.wait_for_url("**/orders.html")
+    assert _placed_order(mock_api)["body"]["items"][0]["selectedAddOnIds"] == ["a1"]
     expect(page.locator(".order-card")).to_contain_text("Large")
+
+
+def test_regular_orders_send_no_addon(customer_page, mock_api):
+    page = customer_page
+    page.open("/index.html")
+    page.click(ADD_M1)
+    page.click("#checkout-button")
+
+    page.wait_for_url("**/orders.html")
+    assert _placed_order(mock_api)["body"]["items"][0]["selectedAddOnIds"] == []
+
+
+def test_logged_out_visitors_can_compare_options(anonymous_page):
+    page = anonymous_page
+    page.open("/index.html")
+    _choose(page, "Large (+$3.00)")
+
+    expect(page.locator(f"{CARD} .macros")).to_have_text("Large: 750 cal · 60g protein · 70g carbs · 18g fat")
+    expect(page.locator(ADD_M1)).to_be_disabled()
+
+
+def test_hidden_addons_are_not_offered(customer_page, mock_api):
+    mock_api.state["addOns"][1]["available"] = False
+    page = customer_page
+    page.open("/index.html")
+
+    expect(page.locator(f"{CARD} .addon-choice")).to_have_count(2)  # Regular + Large
 
 
 def test_addon_text_is_escaped_on_the_menu(customer_page, mock_api):
     from .helpers import assert_no_xss
     from .mock_api import XSS
 
-    mock_api.state["addOns"][0].update(name="Big " + XSS, description="desc " + XSS)
+    mock_api.state["addOns"][0]["name"] = "Big " + XSS
+    mock_api.state["meals"][0]["addOnDetails"]["a1"]["description"] = "desc " + XSS
     page = customer_page
     page.open("/index.html")
+    page.locator(f"{CARD} .addon-choice").nth(1).check()
 
-    expect(page.locator(".addon-description").first).to_contain_text("desc <img")
+    expect(page.locator(f"{CARD} .addon-description")).to_contain_text("desc <img")
     assert_no_xss(page)

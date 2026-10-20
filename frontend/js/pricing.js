@@ -11,6 +11,17 @@ export function computeUnitPriceCents(meal, allAddOns, selectedAddOnIds) {
   return price;
 }
 
+// This meal's own description and macros for an add-on (set per meal on
+// Manage menu). A meal saved before the add-on existed falls back to the
+// add-on's default description, with no macros.
+export function addOnDetailFor(meal, addOn) {
+  const detail = (meal.addOnDetails || {})[addOn.addOnId];
+  return {
+    description: detail ? detail.description : addOn.description || "",
+    macros: detail ? detail.macros : null,
+  };
+}
+
 export function describeAddOns(allAddOns, selectedAddOnIds) {
   return selectedAddOnIds
     .map((id) => allAddOns.find((a) => a.addOnId === id))

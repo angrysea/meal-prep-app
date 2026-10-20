@@ -208,47 +208,22 @@ def test_create_addon_requires_admin(table):
     assert resp["statusCode"] == 403
 
 
-def test_create_addon_with_macros(table):
+def test_addon_has_no_macros_of_its_own(table):
+    # Macros are per meal now (the meal's addOnDetails) - anything sent for
+    # the add-on itself is ignored, and an older add-on's macros are dropped.
     from backend.lambda_src import index
 
     resp = index.handler(
-        _event(
-            "POST", "/addons",
-            {
-                "name": "Cauliflower Rice",
-                "priceCents": 100,
-                "macros": {"calories": 25, "proteinG": 1, "carbsG": 5, "fatG": 0},
-            },
-            claims=ADMIN_CLAIMS,
-        ),
+        _event("POST", "/addons", {"name": "Cauliflower Rice", "priceCents": 100,
+                                   "macros": {"calories": 25}}, claims=ADMIN_CLAIMS),
         None,
     )
-    assert resp["statusCode"] == 201
-    addon = json.loads(resp["body"])
-    assert addon["macros"] == {"calories": 25, "proteinG": 1, "carbsG": 5, "fatG": 0}
-
-
-def test_create_addon_defaults_macros_when_omitted(table):
-    from backend.lambda_src import index
-
-    addon = _create_addon(index)
-    assert addon["macros"] == {"calories": 0, "proteinG": 0, "carbsG": 0, "fatG": 0}
-
-
-def test_admin_can_update_addon_macros(table):
-    from backend.lambda_src import index
-
-    addon = _create_addon(index)
-    resp = index.handler(
-        _event(
-            "PUT", f"/addons/{addon['addOnId']}",
-            {"macros": {"calories": 60, "proteinG": 7, "carbsG": 0, "fatG": 0}},
-            path_params={"addOnId": addon["addOnId"]}, claims=ADMIN_CLAIMS,
-        ),
-        None,
-    )
-    assert resp["statusCode"] == 200
-    assert json.loads(resp["body"])["macros"] == {"calories": 60, "proteinG": 7, "carbsG": 0, "fatG": 0}
+    assert "macros" not in json.loads(resp["body"])
+    index.table.put_item(Item={"PK": "ADDON", "SK": "old", "addOnId": "old", "name": "Large",
+                               "priceCents": 300, "macros": {"calories": 200}})
+    updated = json.loads(_put_addon(index, "old", {"priceCents": 350})["body"])
+    assert "macros" not in updated
+    assert "macros" not in index.table.get_item(Key={"PK": "ADDON", "SK": "old"})["Item"]
 
 
 def test_admin_can_create_and_delete_addon(table):
@@ -508,20 +483,14 @@ def test_create_order_adds_global_addon_price(table):
     ]
 
 
-def test_create_order_snapshots_addon_macros(table):
+def test_create_order_snapshots_the_meals_macros_for_the_addon(table):
     from backend.lambda_src import index
 
     meal = _create_meal(index, price_cents=1200)
-    resp = index.handler(
-        _event(
-            "POST", "/addons",
-            {"name": "Cauliflower Rice", "priceCents": 100,
-             "macros": {"calories": 25, "proteinG": 1, "carbsG": 5, "fatG": 0}},
-            claims=ADMIN_CLAIMS,
-        ),
-        None,
-    )
-    cauli = json.loads(resp["body"])
+    cauli = _create_addon(index, name="Cauliflower Rice", price_cents=100)
+    _put_meal(index, meal["mealId"], {"addOnDetails": {
+        cauli["addOnId"]: {"description": "Swaps the rice", "macros": {"calories": 410, "proteinG": 40, "carbsG": 12, "fatG": 9}},
+    }})
 
     resp = index.handler(
         _event(
@@ -533,46 +502,57 @@ def test_create_order_snapshots_addon_macros(table):
     )
     order = json.loads(resp["body"])
     assert order["items"][0]["selectedAddOns"][0]["macros"] == {
-        "calories": 25, "proteinG": 1, "carbsG": 5, "fatG": 0,
+        "calories": 410, "proteinG": 40, "carbsG": 12, "fatG": 9,
     }
 
-    # Changing the add-on's macros afterward must not rewrite the past order.
-    index.handler(
-        _event(
-            "PUT", f"/addons/{cauli['addOnId']}",
-            {"macros": {"calories": 999, "proteinG": 0, "carbsG": 0, "fatG": 0}},
-            path_params={"addOnId": cauli["addOnId"]}, claims=ADMIN_CLAIMS,
-        ),
-        None,
-    )
+    # Changing the meal's macros afterward must not rewrite the past order.
+    _put_meal(index, meal["mealId"], {"addOnDetails": {
+        cauli["addOnId"]: {"description": "", "macros": {"calories": 999}},
+    }})
     orders_resp = index.handler(_event("GET", "/orders", claims=CUSTOMER_CLAIMS), None)
     stored_order = json.loads(orders_resp["body"])["orders"][0]
-    assert stored_order["items"][0]["selectedAddOns"][0]["macros"]["calories"] == 25
+    assert stored_order["items"][0]["selectedAddOns"][0]["macros"]["calories"] == 410
 
 
-def test_create_order_sums_multiple_addons(table):
+def test_addon_without_meal_macros_snapshots_zeros(table):
+    from backend.lambda_src import index
+
+    meal = _create_meal(index)
+    large = _create_addon(index)
+    resp = index.handler(_event("POST", "/orders", {"contactPhone": PHONE, "items": [
+        {"mealId": meal["mealId"], "quantity": 1, "selectedAddOnIds": [large["addOnId"]]},
+    ]}, claims=CUSTOMER_CLAIMS), None)
+    assert json.loads(resp["body"])["items"][0]["selectedAddOns"][0]["macros"] == {
+        "calories": 0, "proteinG": 0, "carbsG": 0, "fatG": 0,
+    }
+
+
+def test_create_order_adds_the_addon_price(table):
     from backend.lambda_src import index
 
     meal = _create_meal(index, price_cents=1200)
-    large = _create_addon(index, description="Large", price_cents=300)
-    extra_protein = _create_addon(index, description="Extra Protein", price_cents=150)
-
-    resp = index.handler(
-        _event(
-            "POST", "/orders",
-            {"contactPhone": PHONE, "items": [{
-                "mealId": meal["mealId"], "quantity": 2,
-                "selectedAddOnIds": [large["addOnId"], extra_protein["addOnId"]],
-            }]},
-            claims=CUSTOMER_CLAIMS,
-        ),
-        None,
-    )
+    large = _create_addon(index, name="Large", price_cents=300)
+    resp = index.handler(_event("POST", "/orders", {"contactPhone": PHONE, "items": [
+        {"mealId": meal["mealId"], "quantity": 2, "selectedAddOnIds": [large["addOnId"]]},
+    ]}, claims=CUSTOMER_CLAIMS), None)
     assert resp["statusCode"] == 201
     order = json.loads(resp["body"])
-    # unit price: 1200 + 300 + 150 = 1650, times quantity 2
-    assert order["totalCents"] == 3300
-    assert order["items"][0]["unitPriceCents"] == 1650
+    assert order["items"][0]["unitPriceCents"] == 1500
+    assert order["totalCents"] == 3000
+
+
+def test_only_one_addon_per_meal(table):
+    # Combinations ("Large with Cauliflower Rice") are add-ons of their own.
+    from backend.lambda_src import index
+
+    meal = _create_meal(index, price_cents=1200)
+    large = _create_addon(index, name="Large", price_cents=300)
+    cauli = _create_addon(index, name="Cauliflower Rice", price_cents=100)
+    resp = index.handler(_event("POST", "/orders", {"contactPhone": PHONE, "items": [
+        {"mealId": meal["mealId"], "quantity": 1, "selectedAddOnIds": [large["addOnId"], cauli["addOnId"]]},
+    ]}, claims=CUSTOMER_CLAIMS), None)
+    assert resp["statusCode"] == 400
+    assert json.loads(resp["body"])["message"] == "Choose one add-on per meal."
 
 
 def test_create_order_with_no_addons_selected(table):
@@ -2055,3 +2035,54 @@ def test_change_deadline_is_the_friday_before_the_ready_date(ready_date, friday)
     at_four = datetime.fromisoformat(f"{friday}T16:00:00").replace(tzinfo=tz)
     assert index._change_deadline_passed(ready_date, just_before) is False
     assert index._change_deadline_passed(ready_date, at_four) is True
+
+
+# ---------- per-meal add-on details ----------
+
+
+def _put_meal(index, meal_id, body):
+    return index.handler(
+        _event("PUT", f"/meals/{meal_id}", body, path_params={"mealId": meal_id}, claims=ADMIN_CLAIMS), None
+    )
+
+
+def test_meal_stores_its_own_description_and_macros_per_addon(table):
+    from backend.lambda_src import index
+
+    large = _create_addon(index, name="Large", description="Default text")
+    resp = index.handler(_event("POST", "/meals", {
+        "name": "Bowl", "priceCents": 1200,
+        "addOnDetails": {large["addOnId"]: {
+            "description": "  2 extra oz of chicken  ",
+            "macros": {"calories": "750", "proteinG": 60, "carbsG": 70, "fatG": 18},
+        }},
+    }, claims=ADMIN_CLAIMS), None)
+    meal = json.loads(resp["body"])
+    assert meal["addOnDetails"] == {large["addOnId"]: {
+        "description": "2 extra oz of chicken",
+        "macros": {"calories": 750, "proteinG": 60, "carbsG": 70, "fatG": 18},
+    }}
+    [listed] = json.loads(index.handler(_event("GET", "/meals"), None)["body"])["meals"]
+    assert listed["addOnDetails"] == meal["addOnDetails"]
+
+
+def test_meal_without_addon_details_returns_an_empty_map(table):
+    from backend.lambda_src import index
+
+    assert _create_meal(index)["addOnDetails"] == {}
+
+
+def test_updating_other_meal_fields_keeps_addon_details(table):
+    from backend.lambda_src import index
+
+    meal = _create_meal(index)
+    _put_meal(index, meal["mealId"], {"addOnDetails": {"a1": {"description": "x", "macros": {"calories": 5}}}})
+    updated = json.loads(_put_meal(index, meal["mealId"], {"available": False})["body"])
+    assert updated["addOnDetails"]["a1"]["macros"]["calories"] == 5
+
+
+def test_addon_details_must_be_an_object(table):
+    from backend.lambda_src import index
+
+    meal = _create_meal(index)
+    assert _put_meal(index, meal["mealId"], {"addOnDetails": ["a1"]})["statusCode"] == 400
