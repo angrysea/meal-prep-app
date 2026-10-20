@@ -1,8 +1,10 @@
 """Builder page (admin.html): menu settings, meals, and add-ons."""
+from datetime import date, timedelta
+
 from playwright.sync_api import expect
 
 from .helpers import assert_no_xss, expect_toast
-from .mock_api import XSS
+from .mock_api import READY_DATE, XSS
 
 MEAL_ROW = '#meals-body tr[data-meal-id="{}"]'
 ADDON_ROW = '#addons-body tr[data-addon-id="{}"]'
@@ -69,14 +71,60 @@ def test_required_fields_block_submit(admin_page, mock_api):
     assert mock_api.writes() == []
 
 
-def test_enter_saves_next_ready_date(admin_page, mock_api):
+def _day(iso, offset=0):
+    # "Monday, October 26" - how the page shows a date (en-US).
+    d = date.fromisoformat(iso) + timedelta(days=offset)
+    return f"{d:%A}, {d:%B} {d.day}"
+
+
+def test_ready_date_shows_the_automatic_date(admin_page):
     page = admin_page
     page.open("/admin.html")
-    page.fill("#next-ready-date", "2026-11-02")
-    page.press("#next-ready-date", "Enter")
 
-    expect_toast(page, "Next ready date set to 2026-11-02")
-    assert mock_api.writes()[-1]["body"] == {"nextReadyDate": "2026-11-02"}
+    expect(page.locator("#ready-date-status")).to_have_text(f"Orders are for {_day(READY_DATE)} (automatic).")
+    expect(page.locator("#ready-date-override")).to_have_value("")
+    expect(page.locator("#ready-date-override-clear")).to_be_disabled()
+
+
+def test_enter_saves_a_different_date_for_this_week(admin_page, mock_api):
+    tuesday = (date.fromisoformat(READY_DATE) + timedelta(days=1)).isoformat()
+    page = admin_page
+    page.open("/admin.html")
+    page.fill("#ready-date-override", tuesday)
+    page.press("#ready-date-override", "Enter")
+
+    expect_toast(page, f"Orders this week are for {_day(tuesday)}")
+    assert mock_api.writes()[-1]["body"] == {"readyDateOverride": tuesday}
+    expect(page.locator("#ready-date-status")).to_have_text(
+        f"Orders are for {_day(tuesday)} (instead of {_day(READY_DATE)})."
+    )
+
+
+def test_a_date_outside_this_week_is_flagged(admin_page):
+    far = (date.fromisoformat(READY_DATE) + timedelta(days=7)).isoformat()
+    page = admin_page
+    page.open("/admin.html")
+    page.fill("#ready-date-override", far)
+    page.press("#ready-date-override", "Enter")
+
+    expect_toast(page, f"Saved {_day(far)}, but it isn't within 3 days of {_day(READY_DATE)}", error=True)
+    expect(page.locator("#ready-date-status")).to_have_text(f"Orders are for {_day(READY_DATE)} (automatic).")
+    expect(page.locator("#ready-date-override-note")).to_have_text(
+        f"{_day(far)} isn't within 3 days of {_day(READY_DATE)}, so it isn't being used."
+    )
+
+
+def test_clearing_goes_back_to_automatic(admin_page, mock_api):
+    mock_api.state["settings"]["readyDateOverride"] = (date.fromisoformat(READY_DATE) + timedelta(days=1)).isoformat()
+    page = admin_page
+    page.open("/admin.html")
+    page.click("#ready-date-override-clear")
+    expect(page.locator("#ready-date-override")).to_have_value("")
+    page.press("#ready-date-override", "Enter")
+
+    expect_toast(page, f"Ready date is automatic - orders are for {_day(READY_DATE)}")
+    assert mock_api.writes()[-1]["body"] == {"readyDateOverride": ""}
+    expect(page.locator("#ready-date-status")).to_have_text(f"Orders are for {_day(READY_DATE)} (automatic).")
 
 
 def test_enter_on_sms_checkbox_saves_setting(admin_page, mock_api):

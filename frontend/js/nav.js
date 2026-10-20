@@ -27,6 +27,7 @@ export function renderNav(targetId = "nav") {
     links.push(`<a href="/about.html">About Us</a>`);
     links.push(`<a href="#" id="nav-logout">Log out</a>`);
   } else {
+    links.push(`<a href="/about.html">About Us</a>`);
     links.push(`<a href="/login.html">Log in / Sign up</a>`);
   }
 

@@ -39,14 +39,20 @@
         </form>
 
         <form class="card" id="ready-date-form">
-          <h2>Next ready date</h2>
+          <h2>Ready date</h2>
           <p class="muted">
-            The next date meals will be ready for pickup. Orders placed between
-            now and then are prepped for this date. Set the new date each week -
-            ordering stays closed while this date is today or earlier.
+            Automatic: the Monday after ordering closes. It moves to the next
+            Monday when ordering opens Monday 11:00 AM. For an unusual week
+            (e.g. a Tuesday pickup after a holiday), set a different date - it
+            only applies within 3 days of that week's Monday.
           </p>
-          <label for="next-ready-date">Next ready date</label>
-          <input id="next-ready-date" type="date" required style="max-width:220px;" />
+          <p class="ready-date-status" id="ready-date-status"></p>
+          <label for="ready-date-override">Different date this week <span class="muted">(optional)</span></label>
+          <div class="date-with-clear">
+            <input id="ready-date-override" type="date" />
+            <button type="button" class="secondary" id="ready-date-override-clear">Clear</button>
+          </div>
+          <p class="muted field-hint" id="ready-date-override-note"></p>
           <p class="error" style="display:none;"></p>
           <div class="form-actions">
             <button type="submit">Save</button>
@@ -378,7 +384,7 @@
         const reasons = {
           schedule: "",
           forced: " (forced)",
-          "ready-date-passed": " - set the next ready date to reopen it",
+          "ready-date-passed": " - today is the pickup day",
         };
         el.textContent = ordering.open
           ? `Customers can order right now${reasons[ordering.reason] || ""}.`
@@ -387,9 +393,38 @@
         el.classList.toggle("is-forced", orderingMode !== "auto");
       }
 
+      // "Monday, October 26" from YYYY-MM-DD, read as a local date.
+      function formatDay(isoDate) {
+        const [y, m, d] = isoDate.split("-").map(Number);
+        return new Date(y, m - 1, d).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+      }
+
+      function showReadyDate(settings) {
+        const { nextReadyDate, readyDateAuto, readyDateOverride, readyDateOverrideUsed } = settings;
+        document.getElementById("ready-date-status").textContent = readyDateOverrideUsed
+          ? `Orders are for ${formatDay(nextReadyDate)} (instead of ${formatDay(readyDateAuto)}).`
+          : `Orders are for ${formatDay(nextReadyDate)} (automatic).`;
+        document.getElementById("ready-date-override").value = readyDateOverride;
+        document.getElementById("ready-date-override-note").textContent =
+          readyDateOverride && !readyDateOverrideUsed
+            ? `${formatDay(readyDateOverride)} isn't within 3 days of ${formatDay(readyDateAuto)}, so it isn't being used.`
+            : "";
+        syncOverrideClear();
+      }
+
+      const overrideInput = document.getElementById("ready-date-override");
+      const overrideClear = document.getElementById("ready-date-override-clear");
+      const syncOverrideClear = () => (overrideClear.disabled = !overrideInput.value);
+      overrideInput.addEventListener("input", syncOverrideClear);
+      overrideClear.addEventListener("click", () => {
+        overrideInput.value = "";
+        syncOverrideClear();
+        overrideInput.focus();
+      });
+
       async function refreshSettings() {
         const settings = await apiRequest(config.apiUrl, "/settings");
-        document.getElementById("next-ready-date").value = settings.nextReadyDate;
+        showReadyDate(settings);
         document.getElementById("sms-enabled").checked = settings.smsEnabled;
         document.getElementById("ordering-mode").value = settings.orderingMode || "auto";
         showOrderingStatus(settings);
@@ -405,10 +440,18 @@
       });
 
       handleSubmit(document.getElementById("ready-date-form"), async () => {
-        const nextReadyDate = value("next-ready-date");
-        const saved = await apiRequest(config.apiUrl, "/settings", { method: "PUT", token, body: { nextReadyDate } });
+        const readyDateOverride = value("ready-date-override");
+        const saved = await apiRequest(config.apiUrl, "/settings", { method: "PUT", token, body: { readyDateOverride } });
+        showReadyDate(saved);
         showOrderingStatus(saved);
-        showToast(`Next ready date set to ${nextReadyDate}`);
+        showToast(
+          !readyDateOverride
+            ? `Ready date is automatic - orders are for ${formatDay(saved.nextReadyDate)}`
+            : saved.readyDateOverrideUsed
+              ? `Orders this week are for ${formatDay(saved.nextReadyDate)}`
+              : `Saved ${formatDay(readyDateOverride)}, but it isn't within 3 days of ${formatDay(saved.readyDateAuto)}`,
+          { error: !!readyDateOverride && !saved.readyDateOverrideUsed }
+        );
       });
 
       handleSubmit(document.getElementById("sms-form"), async () => {

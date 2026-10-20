@@ -59,6 +59,12 @@ SETTINGS_KEY = {"PK": "SETTINGS", "SK": "GLOBAL"}
 ORDERING_OPENS = (0, time(11, 0))  # (weekday, time) - Monday
 ORDERING_CLOSES = (4, time(16, 0))  # Friday
 ORDERING_MODES = ("auto", "open", "closed")
+# The ready date (pickup day) is worked out from the same schedule: once
+# ordering opens Monday 11:00 AM it's the following Monday. The admin can
+# override it for an unusual week (e.g. a Tuesday pickup after a holiday) -
+# an override only replaces the automatic Monday it's within this many days
+# of, so it can't outlive its week.
+READY_DATE_OVERRIDE_DAYS = 3
 
 
 def handler(event, context):
@@ -124,8 +130,9 @@ def handler(event, context):
 
 
 # ---------- global settings ----------
-# Just the next ready date today, but kept as its own small item/route rather
-# than folded into meals, since it's a business-wide value with its own
+# Ordering schedule, ready date override and SMS switch, kept as their own
+# small item/route rather than folded into meals, since they're business-wide
+# values with their own
 # lifecycle (admin sets it on the Builder page, every order placed before it
 # next changes is prepped for that date).
 
@@ -159,19 +166,51 @@ def _in_ordering_window(local):
     return _week_minutes(*ORDERING_OPENS) <= now < _week_minutes(*ORDERING_CLOSES)
 
 
+def _auto_ready_date(local, forced_open=False):
+    """The Monday that orders placed right now are for: this week's Monday
+    until ordering opens at 11:00 AM, then the following Monday. While
+    ordering is forced open it's never today - nothing can be ordered for a
+    pickup already underway."""
+    monday = local.date() - timedelta(days=local.weekday())
+    before_opening = local.weekday() == ORDERING_OPENS[0] and local.time() < ORDERING_OPENS[1]
+    ready = monday if before_opening else monday + timedelta(days=7)
+    if forced_open and ready <= local.date():
+        ready += timedelta(days=7)
+    return ready
+
+
+def _ready_date_override(settings):
+    # Stored as nextReadyDate before the ready date was automatic - a value
+    # saved then reads as an override (and is only used in its own week).
+    return settings.get("readyDateOverride", settings.get("nextReadyDate", "")) or ""
+
+
+def _ready_dates(settings, now_utc=None):
+    """(ready date in effect, automatic ready date, whether the override is
+    being used), all as YYYY-MM-DD."""
+    local = _central(now_utc or _utcnow())
+    auto = _auto_ready_date(local, forced_open=settings.get("orderingMode") == "open")
+    override = _ready_date_override(settings)
+    if override:
+        days_off = abs((datetime.strptime(override, "%Y-%m-%d").date() - auto).days)
+        if days_off <= READY_DATE_OVERRIDE_DAYS:
+            return override, auto.isoformat(), True
+    return auto.isoformat(), auto.isoformat(), False
+
+
 def _ordering_status(settings, now_utc=None):
     """Whether customers can order right now, and why:
     reason is "schedule" (the Monday-Friday window), "forced" (the admin's
-    override), or "ready-date-passed" (the ready date is today or earlier,
-    i.e. still last week's - nothing can be ordered for it)."""
+    override), or "ready-date-passed" (the ready date in effect is today or
+    earlier - nothing can be ordered for a pickup already underway)."""
     local = _central(now_utc or _utcnow())
     mode = settings.get("orderingMode") or "auto"
     if mode == "auto":
         is_open, reason = _in_ordering_window(local), "schedule"
     else:
         is_open, reason = mode == "open", "forced"
-    ready_date = settings.get("nextReadyDate", "")
-    if is_open and ready_date and ready_date <= local.date().isoformat():
+    ready_date, _, _ = _ready_dates(settings, now_utc)
+    if is_open and ready_date <= local.date().isoformat():
         is_open, reason = False, "ready-date-passed"
     return {"open": is_open, "reason": reason}
 
@@ -207,18 +246,31 @@ def get_settings():
         # not break menu browsing for every customer.
         contact_email = ""
     return _response(200, {
-        "nextReadyDate": item.get("nextReadyDate", ""),
-        # Off by default - SMS costs real money per message and this
-        # account's SNS access is currently blocked at the AWS org level
-        # (see README), so there's nothing to accidentally send to yet.
-        "smsEnabled": bool(item.get("smsEnabled", False)),
+        **_settings_out(item),
         # Shown on the About Us page's "contact us" line - the admin's own
         # address, same source as _reply_to(), so it never drifts out of
         # sync with whoever actually holds the Admins-group account.
         "contactEmail": contact_email,
+    })
+
+
+def _settings_out(item):
+    ready_date, auto_ready_date, override_used = _ready_dates(item)
+    return {
+        # The ready date in effect - what new orders are for, which dated
+        # meals are on the weekly menu, and the Prep List's default date.
+        "nextReadyDate": ready_date,
+        "readyDateAuto": auto_ready_date,
+        # As saved, even when it's not for the current week (then unused).
+        "readyDateOverride": _ready_date_override(item),
+        "readyDateOverrideUsed": override_used,
+        # Off by default - SMS costs real money per message and this
+        # account's SNS access is currently blocked at the AWS org level
+        # (see README), so there's nothing to accidentally send to yet.
+        "smsEnabled": bool(item.get("smsEnabled", False)),
         "orderingMode": item.get("orderingMode") or "auto",
         "ordering": _ordering_status(item),
-    })
+    }
 
 
 def update_settings(event):
@@ -226,29 +278,25 @@ def update_settings(event):
     body = _body(event)
     # Merged with the existing item, not blindly overwritten - the Builder
     # page saves each setting from its own button/form, so a request that
-    # only names one field (e.g. just nextReadyDate) must leave the other
+    # only names one field (e.g. just readyDateOverride) must leave the other
     # (e.g. smsEnabled) as it was, not reset it to a default.
     existing = table.get_item(Key=SETTINGS_KEY).get("Item") or {}
 
-    next_ready_date = body.get("nextReadyDate", existing.get("nextReadyDate", ""))
-    if next_ready_date:
+    # Blank clears the override (back to the automatic Monday).
+    override = (body.get("readyDateOverride", _ready_date_override(existing)) or "").strip()
+    if override:
         try:
-            datetime.strptime(next_ready_date, "%Y-%m-%d")
+            datetime.strptime(override, "%Y-%m-%d")
         except ValueError:
-            raise BadRequest("nextReadyDate must be in YYYY-MM-DD format")
+            raise BadRequest("readyDateOverride must be in YYYY-MM-DD format")
     sms_enabled = bool(body.get("smsEnabled", existing.get("smsEnabled", False)))
     ordering_mode = body.get("orderingMode", existing.get("orderingMode") or "auto")
     if ordering_mode not in ORDERING_MODES:
         raise BadRequest(f"orderingMode must be one of {ORDERING_MODES}")
 
-    item = {**SETTINGS_KEY, "nextReadyDate": next_ready_date, "smsEnabled": sms_enabled, "orderingMode": ordering_mode}
+    item = {**SETTINGS_KEY, "readyDateOverride": override, "smsEnabled": sms_enabled, "orderingMode": ordering_mode}
     table.put_item(Item=item)
-    return _response(200, {
-        "nextReadyDate": next_ready_date,
-        "smsEnabled": sms_enabled,
-        "orderingMode": ordering_mode,
-        "ordering": _ordering_status(item),
-    })
+    return _response(200, _settings_out(item))
 
 
 # ---------- menu ----------
@@ -911,7 +959,7 @@ def create_order(event):
         raise BadRequest("Please enter a 10-digit contact phone number, or leave it blank.")
 
     settings = table.get_item(Key=SETTINGS_KEY).get("Item") or {}
-    ready_date_str = settings.get("nextReadyDate", "")
+    ready_date_str, _, _ = _ready_dates(settings)
     if not _ordering_status(settings)["open"]:
         raise BadRequest(
             "Ordering is currently closed. Our next menu opens for ordering Monday at 11:00 AM."

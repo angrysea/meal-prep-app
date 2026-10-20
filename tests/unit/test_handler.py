@@ -303,42 +303,47 @@ def test_update_addon_fails_for_unknown_id(table):
     assert resp["statusCode"] == 404
 
 
-def test_get_settings_defaults_to_empty_ready_date_and_sms_off(table):
+def _settings(**overrides):
+    # GET/PUT /settings on the pinned clock (Wednesday 2026-10-21), when the
+    # automatic ready date is Monday 2026-10-26.
+    return {
+        "nextReadyDate": "2026-10-26", "readyDateAuto": "2026-10-26",
+        "readyDateOverride": "", "readyDateOverrideUsed": False,
+        "smsEnabled": False, "orderingMode": "auto", "ordering": OPEN_STATUS,
+        **overrides,
+    }
+
+
+def _put_settings(index, body, claims=ADMIN_CLAIMS):
+    return index.handler(_event("PUT", "/settings", body, claims=claims), None)
+
+
+def test_get_settings_defaults_to_the_automatic_ready_date_and_sms_off(table):
     from backend.lambda_src import index
 
     resp = index.handler(_event("GET", "/settings"), None)
     assert resp["statusCode"] == 200
-    assert json.loads(resp["body"]) == {
-        "nextReadyDate": "", "smsEnabled": False, "contactEmail": "",
-        "orderingMode": "auto", "ordering": OPEN_STATUS,
-    }
+    assert json.loads(resp["body"]) == {**_settings(), "contactEmail": ""}
 
 
 def test_update_settings_requires_admin(table):
     from backend.lambda_src import index
 
-    resp = index.handler(
-        _event("PUT", "/settings", {"nextReadyDate": "2026-12-01"}, claims=CUSTOMER_CLAIMS), None
-    )
-    assert resp["statusCode"] == 403
+    assert _put_settings(index, {"smsEnabled": True}, claims=CUSTOMER_CLAIMS)["statusCode"] == 403
 
 
 def test_admin_can_update_settings(table):
     from backend.lambda_src import index
 
-    resp = index.handler(
-        _event("PUT", "/settings", {"nextReadyDate": "2026-12-01", "smsEnabled": True}, claims=ADMIN_CLAIMS), None
-    )
+    # Tuesday pickup after a holiday Monday.
+    resp = _put_settings(index, {"readyDateOverride": "2026-10-27", "smsEnabled": True})
     assert resp["statusCode"] == 200
-    assert json.loads(resp["body"]) == {
-        "nextReadyDate": "2026-12-01", "smsEnabled": True, "orderingMode": "auto", "ordering": OPEN_STATUS,
-    }
+    expected = _settings(nextReadyDate="2026-10-27", readyDateOverride="2026-10-27",
+                         readyDateOverrideUsed=True, smsEnabled=True)
+    assert json.loads(resp["body"]) == expected
 
     get_resp = index.handler(_event("GET", "/settings"), None)
-    assert json.loads(get_resp["body"]) == {
-        "nextReadyDate": "2026-12-01", "smsEnabled": True, "contactEmail": "",
-        "orderingMode": "auto", "ordering": OPEN_STATUS,
-    }
+    assert json.loads(get_resp["body"]) == {**expected, "contactEmail": ""}
 
 
 def test_get_settings_reports_the_admin_email_as_contact_email(table):
@@ -354,40 +359,120 @@ def test_get_settings_reports_the_admin_email_as_contact_email(table):
 def test_update_settings_defaults_sms_enabled_to_false_when_omitted(table):
     from backend.lambda_src import index
 
-    resp = index.handler(
-        _event("PUT", "/settings", {"nextReadyDate": "2026-12-01"}, claims=ADMIN_CLAIMS), None
-    )
-    assert json.loads(resp["body"])["smsEnabled"] is False
+    assert json.loads(_put_settings(index, {"orderingMode": "auto"})["body"])["smsEnabled"] is False
 
 
 def test_update_settings_merges_instead_of_overwriting(table):
     from backend.lambda_src import index
 
-    index.handler(_event("PUT", "/settings", {"smsEnabled": True}, claims=ADMIN_CLAIMS), None)
+    _put_settings(index, {"smsEnabled": True})
 
     # Saving just the ready date (as the Builder page's ready-date form
     # does) must not silently reset smsEnabled back to False.
-    resp = index.handler(
-        _event("PUT", "/settings", {"nextReadyDate": "2026-12-01"}, claims=ADMIN_CLAIMS), None
-    )
-    assert json.loads(resp["body"]) == {
-        "nextReadyDate": "2026-12-01", "smsEnabled": True, "orderingMode": "auto", "ordering": OPEN_STATUS,
-    }
+    body = json.loads(_put_settings(index, {"readyDateOverride": "2026-10-27"})["body"])
+    assert (body["readyDateOverride"], body["smsEnabled"]) == ("2026-10-27", True)
 
-    # And saving just smsEnabled must not reset nextReadyDate either.
-    resp = index.handler(_event("PUT", "/settings", {"smsEnabled": False}, claims=ADMIN_CLAIMS), None)
-    assert json.loads(resp["body"]) == {
-        "nextReadyDate": "2026-12-01", "smsEnabled": False, "orderingMode": "auto", "ordering": OPEN_STATUS,
-    }
+    # And saving just smsEnabled must not reset the override either.
+    body = json.loads(_put_settings(index, {"smsEnabled": False})["body"])
+    assert (body["readyDateOverride"], body["smsEnabled"]) == ("2026-10-27", False)
 
 
 def test_update_settings_rejects_bad_date_format(table):
     from backend.lambda_src import index
 
-    resp = index.handler(
-        _event("PUT", "/settings", {"nextReadyDate": "12/01/2026"}, claims=ADMIN_CLAIMS), None
-    )
-    assert resp["statusCode"] == 400
+    assert _put_settings(index, {"readyDateOverride": "12/01/2026"})["statusCode"] == 400
+
+
+# ---------- automatic ready date ----------
+
+
+@pytest.mark.parametrize("when, ready", [
+    ("2026-10-19T15:59:00+00:00", "2026-10-19"),  # Monday 10:59 AM - today's pickup, ordering closed
+    ("2026-10-19T16:00:00+00:00", "2026-10-26"),  # Monday 11:00 AM - ordering opens for next Monday
+    ("2026-10-23T21:30:00+00:00", "2026-10-26"),  # Friday after closing
+    ("2026-10-25T17:00:00+00:00", "2026-10-26"),  # Sunday
+    ("2026-12-28T16:30:00+00:00", "2026-12-28"),  # Monday 10:30 AM CST
+    ("2026-12-28T17:00:00+00:00", "2027-01-04"),  # Monday 11:00 AM CST - across the new year
+])
+def test_ready_date_follows_the_ordering_schedule(table, monkeypatch, when, ready):
+    from backend.lambda_src import index
+
+    _at(monkeypatch, when)
+    body = json.loads(index.handler(_event("GET", "/settings"), None)["body"])
+    assert (body["nextReadyDate"], body["readyDateAuto"]) == (ready, ready)
+
+
+def test_order_is_for_the_automatic_ready_date(table):
+    from backend.lambda_src import index
+
+    resp = _order_for_ready_date(index)
+    assert resp["statusCode"] == 201
+    assert json.loads(resp["body"])["readyDate"] == "2026-10-26"
+
+
+def test_order_uses_the_override_for_its_week(table):
+    from backend.lambda_src import index
+
+    resp = _order_for_ready_date(index, override="2026-10-27")
+    assert json.loads(resp["body"])["readyDate"] == "2026-10-27"
+
+
+@pytest.mark.parametrize("override, used", [
+    ("2026-10-23", True),   # Friday before - 3 days early
+    ("2026-10-29", True),   # Thursday after - 3 days late
+    ("2026-10-22", False),  # 4 days off
+    ("2026-11-02", False),  # next week's Monday - set too early
+    ("2026-10-19", False),  # last week's
+])
+def test_override_only_applies_to_its_own_week(table, override, used):
+    from backend.lambda_src import index
+
+    body = json.loads(_put_settings(index, {"readyDateOverride": override})["body"])
+    assert body["readyDateOverrideUsed"] is used
+    assert body["nextReadyDate"] == (override if used else "2026-10-26")
+    # Kept as saved either way, so the admin sees what's there.
+    assert body["readyDateOverride"] == override
+
+
+def test_holiday_override_doesnt_outlive_its_week(table, monkeypatch):
+    # Tuesday 2026-10-27 pickup. Once ordering reopens Monday 10-26 at 11 AM,
+    # new orders go to 11-02 - not to the Tuesday override the day after.
+    from backend.lambda_src import index
+
+    _put_settings(index, {"readyDateOverride": "2026-10-27"})
+    _at(monkeypatch, "2026-10-26T16:00:00+00:00")  # Monday 11:00 AM
+    body = json.loads(index.handler(_event("GET", "/settings"), None)["body"])
+    assert (body["nextReadyDate"], body["readyDateOverrideUsed"]) == ("2026-11-02", False)
+
+
+def test_clearing_the_override(table):
+    from backend.lambda_src import index
+
+    _put_settings(index, {"readyDateOverride": "2026-10-27"})
+    body = json.loads(_put_settings(index, {"readyDateOverride": ""})["body"])
+    assert (body["nextReadyDate"], body["readyDateOverride"]) == ("2026-10-26", "")
+
+
+def test_ready_date_saved_before_it_was_automatic_reads_as_an_override(table):
+    from backend.lambda_src import index
+
+    index.table.put_item(Item={"PK": "SETTINGS", "SK": "GLOBAL", "nextReadyDate": "2026-10-26", "smsEnabled": False})
+    body = json.loads(index.handler(_event("GET", "/settings"), None)["body"])
+    assert (body["nextReadyDate"], body["readyDateOverride"]) == ("2026-10-26", "2026-10-26")
+    # Saving another setting moves it to the new field.
+    _put_settings(index, {"smsEnabled": True})
+    stored = index.table.get_item(Key={"PK": "SETTINGS", "SK": "GLOBAL"})["Item"]
+    assert stored["readyDateOverride"] == "2026-10-26" and "nextReadyDate" not in stored
+
+
+def test_forced_open_monday_morning_is_for_next_monday(table, monkeypatch):
+    # Nothing can be ordered for a pickup already underway.
+    from backend.lambda_src import index
+
+    _at(monkeypatch, "2026-10-19T14:00:00+00:00")  # Monday 9:00 AM
+    body = json.loads(_put_settings(index, {"orderingMode": "open"})["body"])
+    assert body["nextReadyDate"] == "2026-10-26"
+    assert body["ordering"] == {"open": True, "reason": "forced"}
 
 
 def test_list_meals_is_public(table):
@@ -653,55 +738,15 @@ def test_create_order_rejects_unknown_meal(table):
     assert resp["statusCode"] == 400
 
 
-def test_create_order_stores_the_current_ready_date(table):
-    from backend.lambda_src import index
-
-    index.handler(_event("PUT", "/settings", {"nextReadyDate": "2026-12-25"}, claims=ADMIN_CLAIMS), None)
-    meal = _create_meal(index)
-    resp = index.handler(
-        _event("POST", "/orders", {"contactPhone": PHONE, "items": [{"mealId": meal["mealId"], "quantity": 1}]}, claims=CUSTOMER_CLAIMS),
-        None,
-    )
-    assert resp["statusCode"] == 201
-    assert json.loads(resp["body"])["readyDate"] == "2026-12-25"
-
-
-def test_create_order_allowed_when_no_ready_date_is_set(table):
-    from backend.lambda_src import index
-
-    meal = _create_meal(index)
-    resp = index.handler(
-        _event("POST", "/orders", {"contactPhone": PHONE, "items": [{"mealId": meal["mealId"], "quantity": 1}]}, claims=CUSTOMER_CLAIMS),
-        None,
-    )
-    assert resp["statusCode"] == 201
-    assert json.loads(resp["body"])["readyDate"] == ""
-
-
-def _order_for_ready_date(index, ready_date="2026-10-26"):
-    if ready_date:
-        index.handler(_event("PUT", "/settings", {"nextReadyDate": ready_date}, claims=ADMIN_CLAIMS), None)
+def _order_for_ready_date(index, override=None):
+    if override:
+        _put_settings(index, {"readyDateOverride": override})
     meal = _create_meal(index)
     return index.handler(
         _event("POST", "/orders", {"contactPhone": PHONE, "items": [{"mealId": meal["mealId"], "quantity": 1}]},
                claims=CUSTOMER_CLAIMS),
         None,
     )
-
-
-def test_create_order_rejected_once_the_ready_date_has_arrived(table):
-    # Still last week's ready date - the admin hasn't set the new one yet.
-    from backend.lambda_src import index
-
-    resp = _order_for_ready_date(index, ready_date="2026-10-21")
-    assert resp["statusCode"] == 400
-
-
-def test_create_order_rejected_after_the_ready_date_has_passed(table):
-    from backend.lambda_src import index
-
-    resp = _order_for_ready_date(index, ready_date="2026-10-19")
-    assert resp["statusCode"] == 400
 
 
 # ---------- ordering schedule: Monday 11:00 AM to Friday 4:00 PM Central ----------
@@ -728,7 +773,7 @@ def test_ordering_schedule_in_central_time(monkeypatch, when, is_open):
     from backend.lambda_src import index
 
     _at(monkeypatch, when)
-    assert index._ordering_status({"nextReadyDate": "2027-01-04"}) == {"open": is_open, "reason": "schedule"}
+    assert index._ordering_status({}) == {"open": is_open, "reason": "schedule"}
 
 
 @pytest.mark.parametrize("when, expected_offset", [
@@ -795,13 +840,6 @@ def test_force_open_allows_orders_on_the_weekend(table, monkeypatch):
     assert _order_for_ready_date(index)["statusCode"] == 201
 
 
-def test_force_open_still_needs_a_future_ready_date(table, monkeypatch):
-    from backend.lambda_src import index
-
-    _set_mode(index, "open")
-    assert _order_for_ready_date(index, ready_date="2026-10-21")["statusCode"] == 400
-
-
 def test_back_to_automatic_follows_the_schedule_again(table, monkeypatch):
     from backend.lambda_src import index
 
@@ -814,9 +852,9 @@ def test_back_to_automatic_follows_the_schedule_again(table, monkeypatch):
 def test_saving_the_mode_keeps_the_other_settings(table):
     from backend.lambda_src import index
 
-    index.handler(_event("PUT", "/settings", {"nextReadyDate": "2026-12-01", "smsEnabled": True}, claims=ADMIN_CLAIMS), None)
+    _put_settings(index, {"readyDateOverride": "2026-10-27", "smsEnabled": True})
     body = json.loads(_set_mode(index, "closed")["body"])
-    assert (body["nextReadyDate"], body["smsEnabled"], body["orderingMode"]) == ("2026-12-01", True, "closed")
+    assert (body["readyDateOverride"], body["smsEnabled"], body["orderingMode"]) == ("2026-10-27", True, "closed")
     # ...and saving another setting keeps the mode.
     body = json.loads(index.handler(_event("PUT", "/settings", {"smsEnabled": False}, claims=ADMIN_CLAIMS), None)["body"])
     assert body["orderingMode"] == "closed"
@@ -1940,7 +1978,7 @@ def test_orders_placed_before_the_split_show_the_addon_name(table):
 
 def _order_for_monday(index):
     # Placed Wednesday 2026-10-21 (the pinned clock) for Monday 2026-10-26.
-    order = json.loads(_order_for_ready_date(index, ready_date="2026-10-26")["body"])
+    order = json.loads(_order_for_ready_date(index)["body"])
     assert order["readyDate"] == "2026-10-26"
     return order
 

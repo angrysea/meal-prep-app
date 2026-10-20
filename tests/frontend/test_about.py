@@ -23,3 +23,21 @@ def test_browse_our_menu_goes_to_the_ordering_page(customer_page):
     button.click()
 
     page.wait_for_url("**/index.html")
+
+
+def test_about_us_is_public(anonymous_page):
+    page = anonymous_page
+    page.open("/about.html")
+
+    assert page.url.endswith("/about.html")  # no redirect to log in
+    expect(page.locator("h1")).to_have_text("Meet Christian & Liz")
+    page.get_by_role("link", name="Browse Our Menu").click()
+    page.wait_for_url("**/index.html")
+
+
+def test_logged_out_nav_links_to_about_us(anonymous_page):
+    page = anonymous_page
+    page.open("/index.html")
+
+    links = page.locator("#nav-links a").all_text_contents()
+    assert [l.strip() for l in links] == ["Menu", "About Us", "Log in / Sign up"]

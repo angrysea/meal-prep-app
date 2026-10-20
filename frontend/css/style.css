@@ -1166,3 +1166,9 @@ body.admin-page dialog {
 .addon-detail input {
   width: 100%;
 }
+
+/* Manage menu: which pickup date orders are for right now. */
+.ready-date-status {
+  font-weight: bold;
+  margin: 0 0 0.75rem;
+}

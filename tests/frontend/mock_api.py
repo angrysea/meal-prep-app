@@ -29,7 +29,8 @@ SEED = {
     # The signed-in customer's own profile (GET/PUT /profile).
     "profile": {"name": "Test Customer", "email": "customer@example.com", "phone": "(555) 222-3333",
                 "address": "5 Pine Rd", "preferredContact": "text", "unsubscribed": False},
-    "settings": {"nextReadyDate": READY_DATE, "smsEnabled": False, "contactEmail": "admin@example.com",
+    # READY_DATE stands in for the real API's automatic ready date.
+    "settings": {"readyDateOverride": "", "smsEnabled": False, "contactEmail": "admin@example.com",
                  "orderingMode": "auto"},
     # Stands in for the real API's clock: whether Monday 11 AM - Friday 4 PM
     # is "now". Set False to simulate the weekend.
@@ -134,7 +135,15 @@ class MockApi:
                 {"open": s["schedule_open"], "reason": "schedule"} if mode == "auto"
                 else {"open": mode == "open", "reason": "forced"}
             )
-            return 200, {**s["settings"], "ordering": ordering}
+            # Like the real API: an override only replaces the automatic
+            # date it's within 3 days of.
+            override = s["settings"].get("readyDateOverride", "")
+            used = bool(override) and abs((date.fromisoformat(override) - date.fromisoformat(READY_DATE)).days) <= 3
+            return 200, {
+                **s["settings"], "ordering": ordering,
+                "nextReadyDate": override if used else READY_DATE,
+                "readyDateAuto": READY_DATE, "readyDateOverrideUsed": used,
+            }
 
         if path == "/profile":
             if method == "PUT":
