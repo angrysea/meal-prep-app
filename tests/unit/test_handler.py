@@ -159,9 +159,10 @@ def test_update_meal_rejects_invalid_week_of_format(table):
     assert resp["statusCode"] == 400
 
 
-def _create_addon(index, description="Large", price_cents=300):
+def _create_addon(index, name="Large", price_cents=300, description=""):
     resp = index.handler(
-        _event("POST", "/addons", {"description": description, "priceCents": price_cents}, claims=ADMIN_CLAIMS),
+        _event("POST", "/addons", {"name": name, "description": description, "priceCents": price_cents},
+               claims=ADMIN_CLAIMS),
         None,
     )
     return json.loads(resp["body"])
@@ -179,7 +180,7 @@ def test_create_addon_requires_admin(table):
     from backend.lambda_src import index
 
     resp = index.handler(
-        _event("POST", "/addons", {"description": "Large", "priceCents": 300}, claims=CUSTOMER_CLAIMS), None
+        _event("POST", "/addons", {"name": "Large", "priceCents": 300}, claims=CUSTOMER_CLAIMS), None
     )
     assert resp["statusCode"] == 403
 
@@ -191,7 +192,7 @@ def test_create_addon_with_macros(table):
         _event(
             "POST", "/addons",
             {
-                "description": "Cauliflower Rice",
+                "name": "Cauliflower Rice",
                 "priceCents": 100,
                 "macros": {"calories": 25, "proteinG": 1, "carbsG": 5, "fatG": 0},
             },
@@ -231,7 +232,7 @@ def test_admin_can_create_and_delete_addon(table):
     from backend.lambda_src import index
 
     addon = _create_addon(index)
-    assert addon["description"] == "Large"
+    assert addon["name"] == "Large"
     assert addon["priceCents"] == 300
 
     list_resp = index.handler(_event("GET", "/addons"), None)
@@ -279,7 +280,7 @@ def test_admin_can_hide_and_show_addon(table):
     updated = json.loads(resp["body"])
     assert updated["available"] is False
     # Hiding doesn't touch description/price.
-    assert updated["description"] == "Large"
+    assert updated["name"] == "Large"
     assert updated["priceCents"] == 300
 
     list_resp = index.handler(_event("GET", "/addons"), None)
@@ -466,7 +467,7 @@ def test_create_order_adds_global_addon_price(table):
     assert order["totalCents"] == 1500  # 1200 base + 300 for Large
     assert order["items"][0]["selectedAddOns"] == [
         {
-            "addOnId": large["addOnId"], "description": "Large", "priceCents": 300,
+            "addOnId": large["addOnId"], "name": "Large", "priceCents": 300,
             "macros": {"calories": 0, "proteinG": 0, "carbsG": 0, "fatG": 0},
         }
     ]
@@ -479,7 +480,7 @@ def test_create_order_snapshots_addon_macros(table):
     resp = index.handler(
         _event(
             "POST", "/addons",
-            {"description": "Cauliflower Rice", "priceCents": 100,
+            {"name": "Cauliflower Rice", "priceCents": 100,
              "macros": {"calories": 25, "proteinG": 1, "carbsG": 5, "fatG": 0}},
             claims=ADMIN_CLAIMS,
         ),
@@ -1700,3 +1701,103 @@ def table_resource_scan_orders(sub):
         ExpressionAttributeValues={":pk": f"USER#{sub}", ":sk": "ORDER#"},
     )
     return resp.get("Items", [])
+
+
+# ---------- add-on name + description ----------
+
+
+def _put_addon(index, addon_id, body):
+    return index.handler(
+        _event("PUT", f"/addons/{addon_id}", body, path_params={"addOnId": addon_id}, claims=ADMIN_CLAIMS), None
+    )
+
+
+def test_addon_has_separate_name_and_description(table):
+    from backend.lambda_src import index
+
+    addon = _create_addon(index, name="  Large ", description=" Includes 2 extra ounces of protein. ")
+    assert (addon["name"], addon["description"]) == ("Large", "Includes 2 extra ounces of protein.")
+    [listed] = json.loads(index.handler(_event("GET", "/addons"), None)["body"])["addOns"]
+    assert (listed["name"], listed["description"]) == ("Large", "Includes 2 extra ounces of protein.")
+
+
+def test_addon_description_is_optional(table):
+    from backend.lambda_src import index
+
+    addon = _create_addon(index, name="Extra Protein")
+    assert addon["description"] == ""
+
+
+@pytest.mark.parametrize("body", [{"priceCents": 100}, {"name": "  ", "priceCents": 100}])
+def test_addon_name_is_required(table, body):
+    from backend.lambda_src import index
+
+    resp = index.handler(_event("POST", "/addons", body, claims=ADMIN_CLAIMS), None)
+    assert resp["statusCode"] == 400
+    assert json.loads(resp["body"])["message"] == "Add-on name is required"
+
+
+def test_updating_only_the_description_keeps_the_name(table):
+    from backend.lambda_src import index
+
+    addon = _create_addon(index, name="Large")
+    updated = json.loads(_put_addon(index, addon["addOnId"], {"description": "Bigger portion"})["body"])
+    assert (updated["name"], updated["description"]) == ("Large", "Bigger portion")
+
+
+def test_updating_with_a_blank_name_is_rejected(table):
+    from backend.lambda_src import index
+
+    addon = _create_addon(index, name="Large")
+    assert _put_addon(index, addon["addOnId"], {"name": ""})["statusCode"] == 400
+
+
+def _put_legacy_addon(index):
+    # Saved before the split: the short name lived in "description".
+    index.table.put_item(Item={
+        "PK": "ADDON", "SK": "old-addon", "addOnId": "old-addon",
+        "description": "Large", "priceCents": 300, "available": True,
+    })
+
+
+def test_legacy_addon_reads_its_description_as_the_name(table):
+    from backend.lambda_src import index
+
+    _put_legacy_addon(index)
+    [addon] = json.loads(index.handler(_event("GET", "/addons"), None)["body"])["addOns"]
+    assert (addon["name"], addon["description"]) == ("Large", "")
+
+
+def test_editing_a_legacy_addon_adds_a_description_without_losing_the_name(table):
+    from backend.lambda_src import index
+
+    _put_legacy_addon(index)
+    updated = json.loads(_put_addon(index, "old-addon", {"description": "Includes 2 extra ounces of protein."})["body"])
+    assert (updated["name"], updated["description"]) == ("Large", "Includes 2 extra ounces of protein.")
+    stored = index.table.get_item(Key={"PK": "ADDON", "SK": "old-addon"})["Item"]
+    assert (stored["name"], stored["description"]) == ("Large", "Includes 2 extra ounces of protein.")
+
+
+def test_ordering_a_legacy_addon_snapshots_its_name(table):
+    from backend.lambda_src import index
+
+    _put_legacy_addon(index)
+    meal = _create_meal(index)
+    resp = index.handler(_event("POST", "/orders", {
+        "contactPhone": PHONE,
+        "items": [{"mealId": meal["mealId"], "quantity": 1, "selectedAddOnIds": ["old-addon"]}],
+    }, claims=CUSTOMER_CLAIMS), None)
+    assert json.loads(resp["body"])["items"][0]["selectedAddOns"][0]["name"] == "Large"
+
+
+def test_orders_placed_before_the_split_show_the_addon_name(table):
+    from backend.lambda_src import index
+
+    index.table.put_item(Item={
+        "PK": "USER#user-1", "SK": "ORDER#2026-01-01T00:00:00+00:00#old2", "orderId": "old2",
+        "createdAt": "2026-01-01T00:00:00+00:00", "totalCents": 1500, "status": "delivered",
+        "items": [{"mealId": "m1", "name": "Bowl", "unitPriceCents": 1500, "quantity": 1, "note": "",
+                   "selectedAddOns": [{"addOnId": "a1", "description": "Large", "priceCents": 300}]}],
+    })
+    [order] = json.loads(index.handler(_event("GET", "/orders", claims=CUSTOMER_CLAIMS), None)["body"])["orders"]
+    assert order["items"][0]["selectedAddOns"] == [{"addOnId": "a1", "name": "Large", "priceCents": 300}]

@@ -272,7 +272,8 @@ def create_addon(event):
         "PK": "ADDON",
         "SK": addon_id,
         "addOnId": addon_id,
-        "description": body["description"],
+        "name": _addon_name(body.get("name")),
+        "description": (body.get("description") or "").strip(),
         "priceCents": int(body["priceCents"]),
         "available": bool(body.get("available", True)),
         "macros": _parse_macros(body.get("macros")),
@@ -288,9 +289,11 @@ def update_addon(event, addon_id):
     if not existing:
         return _response(404, {"message": "add-on not found"})
 
+    current = _addon_out(existing)
     updated = {
         **existing,
-        "description": body.get("description", existing["description"]),
+        "name": _addon_name(body["name"]) if "name" in body else current["name"],
+        "description": (body.get("description") or "").strip() if "description" in body else current["description"],
         "priceCents": int(body.get("priceCents", existing["priceCents"])),
         "available": bool(body.get("available", existing.get("available", True))),
         "macros": _parse_macros(body["macros"]) if "macros" in body else existing.get("macros", _parse_macros(None)),
@@ -305,10 +308,25 @@ def delete_addon(event, addon_id):
     return _response(204, None)
 
 
+def _addon_name(raw):
+    name = (raw or "").strip()
+    if not name:
+        raise BadRequest("Add-on name is required")
+    return name
+
+
 def _addon_out(item):
+    # Add-ons saved before the name/description split kept their short name
+    # (e.g. "Large") in "description" - read that as the name, with no
+    # description yet.
+    if "name" in item:
+        name, description = item["name"], item.get("description", "")
+    else:
+        name, description = item["description"], ""
     return {
         "addOnId": item["SK"],
-        "description": item["description"],
+        "name": name,
+        "description": description,
         "priceCents": int(item["priceCents"]),
         "available": bool(item.get("available", True)),
         "macros": {field: int(item.get("macros", {}).get(field, 0)) for field in MACRO_FIELDS},
@@ -944,10 +962,10 @@ def _reply_to():
 
 def _resolve_addons(requested_addon_ids):
     """Validates the client's add-on id picks against the current global
-    add-on list and returns (resolved add-ons with description/price/macros
+    add-on list and returns (resolved add-ons with name/price/macros
     snapshotted, total price delta in cents). Raises BadRequest for any id
     that doesn't currently exist. Macros are snapshotted (not looked up live)
-    for the same reason description/price are - so a past order's label is
+    for the same reason name/price are - so a past order's label is
     unaffected by the add-on's nutrition info changing later.
     """
     resolved = []
@@ -960,18 +978,30 @@ def _resolve_addons(requested_addon_ids):
         total_cents += price_cents
         resolved.append({
             "addOnId": addon_id,
-            "description": addon["description"],
+            "name": _addon_out(addon)["name"],
             "priceCents": price_cents,
             "macros": {field: int(addon.get("macros", {}).get(field, 0)) for field in MACRO_FIELDS},
         })
     return resolved, total_cents
 
 
+def _line_item_out(line):
+    # Orders placed before add-ons had a separate name snapshotted the
+    # add-on's name as "description".
+    return {
+        **line,
+        "selectedAddOns": [
+            {k: v for k, v in {**a, "name": a.get("name") or a.get("description", "")}.items() if k != "description"}
+            for a in line.get("selectedAddOns") or []
+        ],
+    }
+
+
 def _order_out(item):
     return {
         "orderId": item["orderId"],
         "createdAt": item["createdAt"],
-        "items": [dict(i) for i in item["items"]],
+        "items": [_line_item_out(i) for i in item["items"]],
         "totalCents": int(item["totalCents"]),
         # Orders placed before these fields existed stored deliveryName /
         # deliveryPhone instead - fall back so they still show who and how

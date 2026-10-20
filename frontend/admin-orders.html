@@ -81,7 +81,7 @@
         .map((i) => {
           const addOnParts = (i.selectedAddOns || []).map((a) => {
             const macrosText = formatMacros(a.macros);
-            return `${escapeHtml(a.description)}${macrosText ? ` [${macrosText}]` : ""}`;
+            return `${escapeHtml(a.name)}${macrosText ? ` [${macrosText}]` : ""}`;
           });
           const addOnText = addOnParts.length ? ` <span class="muted">(${addOnParts.join(", ")})</span>` : "";
           const noteText = i.note ? ` <span class="muted">- Note: ${escapeHtml(i.note)}</span>` : "";

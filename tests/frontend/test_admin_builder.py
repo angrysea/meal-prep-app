@@ -1,7 +1,8 @@
 """Builder page (admin.html): menu settings, meals, and add-ons."""
 from playwright.sync_api import expect
 
-from .helpers import expect_toast
+from .helpers import assert_no_xss, expect_toast
+from .mock_api import XSS
 
 MEAL_ROW = '#meals-body tr[data-meal-id="{}"]'
 ADDON_ROW = '#addons-body tr[data-addon-id="{}"]'
@@ -188,13 +189,77 @@ def test_cancel_button_cancels_delete(admin_page, mock_api):
 def test_enter_adds_addon(admin_page, mock_api):
     page = admin_page
     page.open("/admin.html")
-    page.fill("#addon-description", "Extra Protein")
+    page.fill("#addon-name", "Extra Protein")
     page.fill("#addon-price", "4")
     page.press("#addon-price", "Enter")
 
     expect_toast(page, 'Added the "Extra Protein" add-on')
     assert mock_api.writes()[-1]["body"]["priceCents"] == 400
     expect(page.locator("#addons-body tr")).to_have_count(2)
+
+
+# ---------- Add-on name + description ----------
+
+
+def test_add_addon_form_has_name_then_description(admin_page):
+    page = admin_page
+    page.open("/admin.html")
+
+    labels = page.locator("#addon-create-form label").all_text_contents()
+    assert [l.strip() for l in labels[:2]] == ["Name", "Description (optional)"]
+
+
+def test_adding_an_addon_sends_name_and_description(admin_page, mock_api):
+    page = admin_page
+    page.open("/admin.html")
+    page.fill("#addon-name", "Cauliflower Rice")
+    page.fill("#addon-description", "Replaces the jasmine rice.")
+    page.fill("#addon-price", "1")
+    page.press("#addon-description", "Enter")
+
+    expect_toast(page, 'Added the "Cauliflower Rice" add-on')
+    body = mock_api.writes()[-1]["body"]
+    assert (body["name"], body["description"]) == ("Cauliflower Rice", "Replaces the jasmine rice.")
+    expect(page.locator("#addon-name")).to_be_focused()
+
+
+def test_addon_table_shows_name_with_description_under_it(admin_page):
+    page = admin_page
+    page.open("/admin.html")
+
+    row = page.locator(ADDON_ROW.format("a1"))
+    expect(page.locator("#addons-table th").first).to_have_text("Name")
+    expect(row.locator("strong")).to_have_text("Large")
+    expect(row.locator(".addon-row-description")).to_have_text(
+        "Includes 2 extra ounces of protein and 1 extra ounce of vegetables."
+    )
+
+
+def test_edit_addon_dialog_edits_name_and_description(admin_page, mock_api):
+    page = admin_page
+    page.open("/admin.html")
+    page.click(f"{ADDON_ROW.format('a1')} .edit-addon")
+
+    expect(page.locator("#edit-addon-name")).to_have_value("Large")
+    expect(page.locator("#edit-addon-description")).to_have_value(
+        "Includes 2 extra ounces of protein and 1 extra ounce of vegetables."
+    )
+    page.fill("#edit-addon-name", "Large Portion")
+    page.fill("#edit-addon-description", "2 extra oz of protein.")
+    page.press("#edit-addon-description", "Enter")
+
+    expect_toast(page, 'Saved changes to "Large Portion"')
+    body = mock_api.writes()[-1]["body"]
+    assert (body["name"], body["description"]) == ("Large Portion", "2 extra oz of protein.")
+
+
+def test_addon_name_and_description_are_escaped(admin_page, mock_api):
+    mock_api.state["addOns"][0].update(name="Big " + XSS, description="desc " + XSS)
+    page = admin_page
+    page.open("/admin.html")
+
+    expect(page.locator(ADDON_ROW.format("a1"))).to_contain_text("desc <img")
+    assert_no_xss(page)
 
 
 def test_edit_addon_dialog_saves_on_enter(admin_page, mock_api):

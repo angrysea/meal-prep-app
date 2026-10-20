@@ -15,7 +15,7 @@ export function describeAddOns(allAddOns, selectedAddOnIds) {
   return selectedAddOnIds
     .map((id) => allAddOns.find((a) => a.addOnId === id))
     .filter(Boolean)
-    .map((a) => a.description);
+    .map((a) => a.name);
 }
 
 // Same compact macro summary everywhere one's shown - meals and add-ons

@@ -102,8 +102,10 @@
         <div class="admin-split">
           <form class="card" id="addon-create-form">
             <h2>Add an add-on</h2>
-            <label for="addon-description">Description</label>
-            <input id="addon-description" type="text" placeholder="e.g. Large, Extra Protein" required />
+            <label for="addon-name">Name</label>
+            <input id="addon-name" type="text" placeholder="e.g. Large, Extra Protein" required />
+            <label for="addon-description">Description <span class="muted">(optional)</span></label>
+            <input id="addon-description" type="text" placeholder="e.g. Includes 2 extra ounces of protein and 1 extra ounce of vegetables." />
             <label for="addon-price">Price (USD)</label>
             <input id="addon-price" type="number" step="0.01" min="0" required />
 
@@ -124,7 +126,7 @@
           <div class="table-card">
             <table class="data-table" id="addons-table">
               <thead>
-                <tr><th>Description</th><th class="num">Price</th><th>Macros</th><th>Available</th><th></th></tr>
+                <tr><th>Name</th><th class="num">Price</th><th>Macros</th><th>Available</th><th></th></tr>
               </thead>
               <tbody id="addons-body"></tbody>
             </table>
@@ -179,8 +181,10 @@
     <dialog id="addon-edit-dialog">
       <form id="addon-edit-form">
         <h2>Edit add-on</h2>
-        <label for="edit-addon-description">Description</label>
-        <input id="edit-addon-description" type="text" required />
+        <label for="edit-addon-name">Name</label>
+        <input id="edit-addon-name" type="text" required />
+        <label for="edit-addon-description">Description <span class="muted">(optional)</span></label>
+        <input id="edit-addon-description" type="text" placeholder="e.g. Includes 2 extra ounces of protein and 1 extra ounce of vegetables." />
 
         <label for="edit-addon-price">Price (USD)</label>
         <input id="edit-addon-price" type="number" step="0.01" min="0" required style="max-width:160px;" />
@@ -386,7 +390,10 @@
           .map(
             (addOn) => `
           <tr data-addon-id="${escapeHtml(addOn.addOnId)}">
-            <td><strong>${escapeHtml(addOn.description)}</strong></td>
+            <td>
+              <strong>${escapeHtml(addOn.name)}</strong>
+              ${addOn.description ? `<div class="muted addon-row-description">${escapeHtml(addOn.description)}</div>` : ""}
+            </td>
             <td class="num">${formatPrice(addOn.priceCents)}</td>
             <td>${formatMacros(addOn.macros) || "-"}</td>
             <td>${addOn.available ? "Yes" : "No"}</td>
@@ -414,7 +421,7 @@
                 token,
                 body: { available: !addOn.available },
               });
-              showToast(addOn.available ? `"${addOn.description}" is now hidden` : `"${addOn.description}" is now offered`);
+              showToast(addOn.available ? `"${addOn.name}" is now hidden` : `"${addOn.name}" is now offered`);
               await refreshAddOns();
             })
           );
@@ -423,10 +430,10 @@
         body.querySelectorAll(".delete-addon").forEach((btn) => {
           btn.addEventListener("click", async () => {
             const addOn = addOnFor(btn);
-            if (!(await confirmAction(`Delete the "${addOn.description}" add-on?`))) return;
+            if (!(await confirmAction(`Delete the "${addOn.name}" add-on?`))) return;
             await rowAction(btn, async () => {
               await apiRequest(config.apiUrl, `/addons/${addOn.addOnId}`, { method: "DELETE", token });
-              showToast(`Deleted "${addOn.description}"`);
+              showToast(`Deleted "${addOn.name}"`);
               await refreshAddOns();
             });
           });
@@ -474,7 +481,8 @@
 
       function openAddOnEditDialog(addOn) {
         editingAddOnId = addOn.addOnId;
-        document.getElementById("edit-addon-description").value = addOn.description;
+        document.getElementById("edit-addon-name").value = addOn.name;
+        document.getElementById("edit-addon-description").value = addOn.description || "";
         document.getElementById("edit-addon-price").value = (addOn.priceCents / 100).toFixed(2);
         setMacros("edit-addon", addOn.macros);
         openDialog(addOnEditDialog);
@@ -483,18 +491,19 @@
       document.getElementById("addon-edit-cancel-button").addEventListener("click", () => addOnEditDialog.close());
 
       handleSubmit(document.getElementById("addon-edit-form"), async () => {
-        const description = value("edit-addon-description");
+        const name = value("edit-addon-name");
         await apiRequest(config.apiUrl, `/addons/${editingAddOnId}`, {
           method: "PUT",
           token,
           body: {
-            description,
+            name,
+            description: value("edit-addon-description"),
             priceCents: priceCentsFrom("edit-addon-price"),
             macros: macrosFrom("edit-addon"),
           },
         });
         addOnEditDialog.close();
-        showToast(`Saved changes to "${description}"`);
+        showToast(`Saved changes to "${name}"`);
         refreshAddOns();
       });
 
@@ -522,19 +531,20 @@
 
       const addOnCreateForm = document.getElementById("addon-create-form");
       handleSubmit(addOnCreateForm, async () => {
-        const description = value("addon-description");
+        const name = value("addon-name");
         await apiRequest(config.apiUrl, "/addons", {
           method: "POST",
           token,
           body: {
-            description,
+            name,
+            description: value("addon-description"),
             priceCents: priceCentsFrom("addon-price"),
             macros: macrosFrom("addon"),
           },
         });
         addOnCreateForm.reset();
-        document.getElementById("addon-description").focus();
-        showToast(`Added the "${description}" add-on`);
+        document.getElementById("addon-name").focus();
+        showToast(`Added the "${name}" add-on`);
         refreshAddOns();
       });
 

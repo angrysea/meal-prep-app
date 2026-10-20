@@ -1058,3 +1058,16 @@ body.admin-page dialog {
   text-align: center;
   margin: 1.5rem 0 0.25rem;
 }
+
+/* Add-on descriptions: under the checkbox on the menu, under the name in
+   the Manage menu table. */
+.option-choice .addon-description {
+  margin: 0.15rem 0 0 1.4rem;
+  font-size: 0.85rem;
+}
+
+.addon-row-description {
+  font-size: 0.85rem;
+  margin-top: 0.15rem;
+  max-width: 36rem;
+}

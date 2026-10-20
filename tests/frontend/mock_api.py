@@ -38,7 +38,8 @@ SEED = {
          "staple": False, "weekOf": READY_DATE, "available": False},
     ],
     "addOns": [
-        {"addOnId": "a1", "description": "Large", "priceCents": 300,
+        {"addOnId": "a1", "name": "Large", "priceCents": 300,
+         "description": "Includes 2 extra ounces of protein and 1 extra ounce of vegetables.",
          "macros": {"calories": 200, "proteinG": 15, "carbsG": 20, "fatG": 5}, "available": True},
     ],
     "orders": [
@@ -47,7 +48,7 @@ SEED = {
          "readyDate": READY_DATE, "totalCents": 3198,
          "items": [{"mealId": "m1", "name": "Chicken Teriyaki Bowl", "quantity": 2, "unitPriceCents": 1599,
                     "note": "hold the sauce " + XSS,
-                    "selectedAddOns": [{"addOnId": "a1", "description": "Large", "macros": {"calories": 200}}]}]},
+                    "selectedAddOns": [{"addOnId": "a1", "name": "Large", "macros": {"calories": 200}}]}]},
         {"orderId": "o2", "customerSub": "u2", "createdAt": "2026-10-16T12:00:00Z", "status": "placed",
          "customerName": "Bob Smith", "contactPhone": "(555) 555-9876", "pickupName": "",
          "readyDate": READY_DATE, "totalCents": 1150,
@@ -133,8 +134,14 @@ class MockApi:
             if digits and len(digits) != 10:
                 return 400, {"message": "Please enter a 10-digit contact phone number, or leave it blank."}
             meals = {m["mealId"]: m for m in s["meals"]}
+            add_ons = {a["addOnId"]: a for a in s["addOns"]}
             items = [{"mealId": i["mealId"], "name": meals[i["mealId"]]["name"], "quantity": i["quantity"],
-                      "unitPriceCents": meals[i["mealId"]]["priceCents"], "selectedAddOns": [],
+                      "unitPriceCents": meals[i["mealId"]]["priceCents"],
+                      # Snapshots the add-on's name, like the real API.
+                      "selectedAddOns": [
+                          {"addOnId": a, "name": add_ons[a]["name"], "priceCents": add_ons[a]["priceCents"]}
+                          for a in i.get("selectedAddOnIds", [])
+                      ],
                       "note": i.get("note", "")} for i in body["items"]]
             order = {
                 "items": items, "customerName": s["profile"]["name"],
@@ -150,7 +157,7 @@ class MockApi:
 
         if parts[0] in ("meals", "addons"):
             key, id_key, required = (
-                ("meals", "mealId", "name") if parts[0] == "meals" else ("addOns", "addOnId", "description")
+                ("meals", "mealId", "name") if parts[0] == "meals" else ("addOns", "addOnId", "name")
             )
             if method == "GET":
                 return 200, {key: s[key]}

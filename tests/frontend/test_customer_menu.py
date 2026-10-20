@@ -305,3 +305,52 @@ def test_payment_reminder_sits_under_not_a_checkout(customer_page):
     # Customers see it before they submit.
     assert _top(page, "#payment-warning") < _top(page, "#checkout-button") + 200
     expect(warning).to_be_visible()
+
+
+# ---------- Add-on name + description ----------
+
+
+def test_addon_shows_name_price_and_description(customer_page):
+    page = customer_page
+    page.open("/index.html")
+
+    choice = page.locator('.meal-card:has(.add-to-order[data-meal-id="m1"]) .option-choice').first
+    expect(choice).to_contain_text("Large (+$3.00)")
+    expect(choice.locator(".addon-description")).to_have_text(
+        "Includes 2 extra ounces of protein and 1 extra ounce of vegetables."
+    )
+
+
+def test_addon_without_description_shows_just_the_name(customer_page, mock_api):
+    mock_api.state["addOns"][0]["description"] = ""
+    page = customer_page
+    page.open("/index.html")
+
+    expect(page.locator(".option-choice").first).to_contain_text("Large (+$3.00)")
+    expect(page.locator(".addon-description")).to_have_count(0)
+
+
+def test_ordered_addon_shows_its_name(customer_page, mock_api):
+    page = customer_page
+    page.open("/index.html")
+    card = page.locator('.meal-card:has(.add-to-order[data-meal-id="m1"])')
+    card.locator(".addon-choice").check()
+    card.locator(".add-to-order").click()
+
+    expect(page.locator("#cart-lines")).to_contain_text("Large")
+    expect(page.locator("#cart-lines")).not_to_contain_text("Includes 2 extra")
+    page.click("#checkout-button")
+    page.wait_for_url("**/orders.html")
+    expect(page.locator(".order-card")).to_contain_text("Large")
+
+
+def test_addon_text_is_escaped_on_the_menu(customer_page, mock_api):
+    from .helpers import assert_no_xss
+    from .mock_api import XSS
+
+    mock_api.state["addOns"][0].update(name="Big " + XSS, description="desc " + XSS)
+    page = customer_page
+    page.open("/index.html")
+
+    expect(page.locator(".addon-description").first).to_contain_text("desc <img")
+    assert_no_xss(page)

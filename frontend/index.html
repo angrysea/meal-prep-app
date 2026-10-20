@@ -126,6 +126,7 @@
     wireHowItWorks();
     import { computeUnitPriceCents, selectionsKey, formatMacros, formatPhone } from "/js/pricing.js";
     import { showToast } from "/js/toast.js";
+    import { escapeHtml } from "/js/admin.js";
 
     renderNav();
 
@@ -161,7 +162,7 @@
           const addOnText = selectedAddOns
             .map((a) => {
               const macrosText = formatMacros(a.macros);
-              return `<div class="muted" style="font-size:0.85rem;">${a.description}${macrosText ? ` - ${macrosText}` : ""}</div>`;
+              return `<div class="muted" style="font-size:0.85rem;">${escapeHtml(a.name)}${macrosText ? ` - ${macrosText}` : ""}</div>`;
             })
             .join("");
           const noteText = note ? `<div class="muted" style="font-size:0.85rem;">Note: ${note}</div>` : "";
@@ -274,7 +275,8 @@
             return `
           <label class="option-choice">
             <input type="checkbox" class="addon-choice" data-addon-id="${a.addOnId}" ${disabled ? "disabled" : ""} />
-            ${a.description} (+${formatPrice(a.priceCents)})
+            ${escapeHtml(a.name)} (+${formatPrice(a.priceCents)})
+            ${a.description ? `<div class="muted addon-description">${escapeHtml(a.description)}</div>` : ""}
             ${macrosText ? `<div class="muted addon-macros">${macrosText}</div>` : ""}
           </label>`;
           })

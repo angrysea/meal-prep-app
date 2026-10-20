@@ -88,8 +88,8 @@
         order.items.forEach((item) => {
           const addOns = (item.selectedAddOns || [])
             .map((a) => ({ ...a, macros: (addOnsById.get(a.addOnId) || {}).macros || a.macros }))
-            .sort((a, b) => a.description.localeCompare(b.description));
-          const addOnKey = addOns.map((a) => a.description).join(",");
+            .sort((a, b) => a.name.localeCompare(b.name));
+          const addOnKey = addOns.map((a) => a.name).join(",");
           const note = item.note || "";
           const key = `${item.mealId}|${addOnKey}|${note}`;
           if (!totals.has(key)) {
@@ -133,8 +133,8 @@
       if (m.proteinG) parts.push(`${m.proteinG}g Protein`);
       if (m.carbsG) parts.push(`${m.carbsG}g Carbs`);
       if (m.fatG) parts.push(`${m.fatG}g Fat`);
-      const description = escapeHtml(addOn.description);
-      const text = parts.length ? `${description}: ${parts.join(" | ")}` : description;
+      const name = escapeHtml(addOn.name);
+      const text = parts.length ? `${name}: ${parts.join(" | ")}` : name;
       return `<div class="label-addon-line">${text}</div>`;
     }
 
@@ -146,7 +146,7 @@
       const labels = [];
       orders.forEach((order) => {
         order.items.forEach((item) => {
-          const addOns = (item.selectedAddOns || []).slice().sort((a, b) => a.description.localeCompare(b.description));
+          const addOns = (item.selectedAddOns || []).slice().sort((a, b) => a.name.localeCompare(b.name));
           const macros = (mealsById.get(item.mealId) || {}).macros;
           for (let i = 0; i < item.quantity; i++) {
             labels.push({
@@ -163,8 +163,8 @@
       labels.sort((a, b) => {
         const byName = a.name.localeCompare(b.name);
         if (byName !== 0) return byName;
-        const addOnKeyA = a.addOns.map((x) => x.description).join(",");
-        const addOnKeyB = b.addOns.map((x) => x.description).join(",");
+        const addOnKeyA = a.addOns.map((x) => x.name).join(",");
+        const addOnKeyB = b.addOns.map((x) => x.name).join(",");
         const byAddOns = addOnKeyA.localeCompare(addOnKeyB);
         if (byAddOns !== 0) return byAddOns;
         const byNote = a.note.localeCompare(b.note);
@@ -281,7 +281,7 @@
                 ? row.addOns
                     .map((a) => {
                       const m = formatMacros(a.macros);
-                      return `<div>${escapeHtml(a.description)}${m ? `<div class="muted" style="font-size:0.75rem;">${m}</div>` : ""}</div>`;
+                      return `<div>${escapeHtml(a.name)}${m ? `<div class="muted" style="font-size:0.75rem;">${m}</div>` : ""}</div>`;
                     })
                     .join("")
                 : "-"
