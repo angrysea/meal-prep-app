@@ -251,6 +251,7 @@ def test_how_it_works_sits_above_this_weeks_menu(customer_page):
 def test_how_it_works_links(customer_page):
     page = customer_page
     page.open("/index.html")
+    section = page.locator("#how-it-works")
 
     directions = page.locator("#pickup-directions")
     expect(directions).to_have_text("4112 Williams Drive #105, Georgetown TX 78628")
@@ -260,6 +261,9 @@ def test_how_it_works_links(customer_page):
     expect(directions).to_have_attribute("target", "_blank")
     expect(page.locator("#venmo-link")).to_have_attribute("href", "https://venmo.com/u/lgraffeo88")
     expect(page.locator("#contact-email-link")).to_have_attribute("href", "mailto:gtxmeals@gmail.com")
+    expect(section.locator("p").filter(has_text="Questions or Other Payment Options?")).to_have_text(
+        "Questions or Other Payment Options? Email us at gtxmeals@gmail.com."
+    )
 
 
 def test_how_it_works_shows_for_logged_out_visitors(anonymous_page):
