@@ -36,7 +36,7 @@
     </details>
 
     <h1>This Week's Menu</h1>
-    <p class="muted">Pick your meals, then check out below.</p>
+    <p class="muted" id="menu-intro">Pick your meals, then check out below.</p>
     <!-- Admin only: the flyer pages are where the admin sends the weekly or
          monthly menu to customers. Customers reach the monthly menu from
          the nav instead (see nav.js). -->
@@ -57,6 +57,24 @@
         <strong>Total: <span id="cart-total">$0.00</span></strong>
         <a class="button-link" href="#checkout-section" id="checkout-jump">Check out</a>
       </div>
+    </section>
+
+    <!-- Shown instead of the menu while ordering is closed (Friday 4:00 PM
+         to Monday 11:00 AM, or when the admin forces it closed). The open/
+         closed decision comes from the API (GET /settings -> ordering). -->
+    <section class="card ordering-closed" id="ordering-closed" style="display:none;">
+      <svg class="ordering-closed-icon" viewBox="0 0 24 24" width="32" height="32" aria-hidden="true"
+           fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="4.5" width="15" height="14" rx="2" />
+        <path d="M3 9h15M7.5 2.5v4M13.5 2.5v4" />
+        <circle cx="17.5" cy="17.5" r="4.5" fill="var(--color-card)" />
+        <path d="M17.5 15.5v2l1.4 1.2" />
+      </svg>
+      <h2>Ordering Is Currently Closed</h2>
+      <p>Orders for this coming Monday's pickup are now closed.</p>
+      <p>Our next menu opens for ordering <strong>Monday at 11:00 AM</strong>, with pickup the following Monday.</p>
+      <p class="muted ordering-closed-hint">Want to see what's coming up? Take a look at our monthly menu!</p>
+      <a class="button-link ordering-closed-button" id="view-monthly-menu" href="/menu-flyer.html?period=monthly">View Monthly Menu</a>
     </section>
 
     <div id="meals" class="meal-grid">
@@ -294,35 +312,23 @@
       });
     }
 
-    // Orders must be placed at least this many days before the ready date -
-    // mirrors the server's ORDER_CUTOFF_DAYS so the UI can head off an order
-    // that the API would reject anyway, with a clearer explanation.
-    const ORDER_CUTOFF_DAYS = 2;
-
-    function isOrderingClosed(nextReadyDate) {
-      if (!nextReadyDate) return false;
-      const [y, m, d] = nextReadyDate.split("-").map(Number);
-      const cutoff = new Date(y, m - 1, d);
-      cutoff.setDate(cutoff.getDate() - ORDER_CUTOFF_DAYS);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      return today > cutoff;
-    }
-
-    async function loadMenu(config, loggedIn, admin, nextReadyDate) {
+    async function loadMenu(config, loggedIn, admin, nextReadyDate, orderingClosed) {
       const container = document.getElementById("meals");
       const loginPrompt = document.getElementById("login-prompt");
-      const orderingClosed = !admin && isOrderingClosed(nextReadyDate);
       const interactive = loggedIn && !admin && !orderingClosed;
 
       if (admin) {
         loginPrompt.style.display = "block";
         loginPrompt.textContent =
-          "Viewing as admin - read-only. This is just to check the menu looks right; orders are placed by customer accounts.";
+          "Viewing as admin - read-only. This is just to check the menu looks right; orders are placed by customer accounts." +
+          (orderingClosed ? " Ordering is closed right now, so customers see the closed message instead of this menu." : "");
       } else if (orderingClosed) {
-        loginPrompt.style.display = "block";
-        loginPrompt.textContent =
-          `Ordering is closed for the ${formatReadyDate(nextReadyDate)} ready date - check back soon for the next one.`;
+        // Customers get the closed card in place of the menu.
+        loginPrompt.style.display = "none";
+        container.style.display = "none";
+        document.getElementById("menu-intro").style.display = "none";
+        document.getElementById("ordering-closed").style.display = "block";
+        return;
       } else {
         loginPrompt.style.display = loggedIn ? "none" : "block";
         loginPrompt.innerHTML = loggedIn
@@ -456,19 +462,22 @@
       const session = await getValidSession({ region: config.region, clientId: config.userPoolClientId });
       const admin = isAdmin(session);
       document.getElementById("admin-flyer-links").style.display = admin ? "block" : "none";
-      const { nextReadyDate } = await apiRequest(config.apiUrl, "/settings").catch(() => ({ nextReadyDate: "" }));
+      const { nextReadyDate, ordering } = await apiRequest(config.apiUrl, "/settings").catch(() => ({ nextReadyDate: "" }));
+      // If settings couldn't load, leave ordering open - the API still
+      // refuses an order placed while it's actually closed.
+      const orderingClosed = !!ordering && !ordering.open;
 
       const readyInfo = document.getElementById("ready-date-info");
-      if (nextReadyDate) {
+      if (nextReadyDate && !(orderingClosed && !admin)) {
         readyInfo.style.display = "block";
         readyInfo.textContent = `Next ready date: ${formatReadyDate(nextReadyDate)}`;
       }
 
       await Promise.all([
-        loadMenu(config, !!session, admin, nextReadyDate),
+        loadMenu(config, !!session, admin, nextReadyDate, orderingClosed),
         admin ? Promise.resolve() : prefillFromProfile(config, session),
       ]);
-      if (!admin) {
+      if (!admin && !orderingClosed) {
         applyEditCart();
         document.getElementById("checkout-button").addEventListener("click", () => placeOrder(config));
         document.getElementById("cancel-order-button").addEventListener("click", cancelOrder);

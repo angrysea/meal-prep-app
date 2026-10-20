@@ -1,6 +1,6 @@
 import json
 import os
-from datetime import date, timedelta
+from datetime import datetime, timezone
 
 import boto3
 import pytest
@@ -16,6 +16,29 @@ os.environ.setdefault("USER_POOL_ID", "placeholder")
 # Mirrors the deployed stack's sender on the site's verified domain; tests
 # that send email verify example.com in moto's SES (see _verify_sender_domain).
 os.environ.setdefault("FROM_EMAIL", "GTX Meals <menu@example.com>")
+
+
+# Wednesday 2026-10-21 at 12:00 PM CDT - inside the ordering window, so
+# tests that place orders don't depend on when they're run. Tests about the
+# schedule itself set their own time with _at().
+OPEN_TIME = datetime(2026, 10, 21, 17, 0, tzinfo=timezone.utc)
+OPEN_STATUS = {"open": True, "reason": "schedule"}
+
+
+@pytest.fixture(autouse=True)
+def _pinned_clock(monkeypatch):
+    # Imported under moto (like every test does) - the module creates its
+    # boto3 clients at import time.
+    with mock_aws():
+        from backend.lambda_src import index
+
+    monkeypatch.setattr(index, "_utcnow", lambda: OPEN_TIME)
+
+
+def _at(monkeypatch, iso_utc):
+    from backend.lambda_src import index
+
+    monkeypatch.setattr(index, "_utcnow", lambda: datetime.fromisoformat(iso_utc))
 
 
 @pytest.fixture
@@ -310,7 +333,10 @@ def test_get_settings_defaults_to_empty_ready_date_and_sms_off(table):
 
     resp = index.handler(_event("GET", "/settings"), None)
     assert resp["statusCode"] == 200
-    assert json.loads(resp["body"]) == {"nextReadyDate": "", "smsEnabled": False, "contactEmail": ""}
+    assert json.loads(resp["body"]) == {
+        "nextReadyDate": "", "smsEnabled": False, "contactEmail": "",
+        "orderingMode": "auto", "ordering": OPEN_STATUS,
+    }
 
 
 def test_update_settings_requires_admin(table):
@@ -329,10 +355,15 @@ def test_admin_can_update_settings(table):
         _event("PUT", "/settings", {"nextReadyDate": "2026-12-01", "smsEnabled": True}, claims=ADMIN_CLAIMS), None
     )
     assert resp["statusCode"] == 200
-    assert json.loads(resp["body"]) == {"nextReadyDate": "2026-12-01", "smsEnabled": True}
+    assert json.loads(resp["body"]) == {
+        "nextReadyDate": "2026-12-01", "smsEnabled": True, "orderingMode": "auto", "ordering": OPEN_STATUS,
+    }
 
     get_resp = index.handler(_event("GET", "/settings"), None)
-    assert json.loads(get_resp["body"]) == {"nextReadyDate": "2026-12-01", "smsEnabled": True, "contactEmail": ""}
+    assert json.loads(get_resp["body"]) == {
+        "nextReadyDate": "2026-12-01", "smsEnabled": True, "contactEmail": "",
+        "orderingMode": "auto", "ordering": OPEN_STATUS,
+    }
 
 
 def test_get_settings_reports_the_admin_email_as_contact_email(table):
@@ -364,11 +395,15 @@ def test_update_settings_merges_instead_of_overwriting(table):
     resp = index.handler(
         _event("PUT", "/settings", {"nextReadyDate": "2026-12-01"}, claims=ADMIN_CLAIMS), None
     )
-    assert json.loads(resp["body"]) == {"nextReadyDate": "2026-12-01", "smsEnabled": True}
+    assert json.loads(resp["body"]) == {
+        "nextReadyDate": "2026-12-01", "smsEnabled": True, "orderingMode": "auto", "ordering": OPEN_STATUS,
+    }
 
     # And saving just smsEnabled must not reset nextReadyDate either.
     resp = index.handler(_event("PUT", "/settings", {"smsEnabled": False}, claims=ADMIN_CLAIMS), None)
-    assert json.loads(resp["body"]) == {"nextReadyDate": "2026-12-01", "smsEnabled": False}
+    assert json.loads(resp["body"]) == {
+        "nextReadyDate": "2026-12-01", "smsEnabled": False, "orderingMode": "auto", "ordering": OPEN_STATUS,
+    }
 
 
 def test_update_settings_rejects_bad_date_format(table):
@@ -663,43 +698,160 @@ def test_create_order_allowed_when_no_ready_date_is_set(table):
     assert json.loads(resp["body"])["readyDate"] == ""
 
 
-def test_create_order_allowed_exactly_at_the_cutoff(table):
-    from backend.lambda_src import index
-
-    ready_date = (date.today() + timedelta(days=2)).isoformat()
-    index.handler(_event("PUT", "/settings", {"nextReadyDate": ready_date}, claims=ADMIN_CLAIMS), None)
+def _order_for_ready_date(index, ready_date="2026-10-26"):
+    if ready_date:
+        index.handler(_event("PUT", "/settings", {"nextReadyDate": ready_date}, claims=ADMIN_CLAIMS), None)
     meal = _create_meal(index)
-    resp = index.handler(
-        _event("POST", "/orders", {"contactPhone": PHONE, "items": [{"mealId": meal["mealId"], "quantity": 1}]}, claims=CUSTOMER_CLAIMS),
+    return index.handler(
+        _event("POST", "/orders", {"contactPhone": PHONE, "items": [{"mealId": meal["mealId"], "quantity": 1}]},
+               claims=CUSTOMER_CLAIMS),
         None,
     )
-    assert resp["statusCode"] == 201
 
 
-def test_create_order_rejected_inside_the_cutoff(table):
+def test_create_order_rejected_once_the_ready_date_has_arrived(table):
+    # Still last week's ready date - the admin hasn't set the new one yet.
     from backend.lambda_src import index
 
-    ready_date = (date.today() + timedelta(days=1)).isoformat()
-    index.handler(_event("PUT", "/settings", {"nextReadyDate": ready_date}, claims=ADMIN_CLAIMS), None)
-    meal = _create_meal(index)
-    resp = index.handler(
-        _event("POST", "/orders", {"contactPhone": PHONE, "items": [{"mealId": meal["mealId"], "quantity": 1}]}, claims=CUSTOMER_CLAIMS),
-        None,
-    )
+    resp = _order_for_ready_date(index, ready_date="2026-10-21")
     assert resp["statusCode"] == 400
 
 
 def test_create_order_rejected_after_the_ready_date_has_passed(table):
     from backend.lambda_src import index
 
-    ready_date = (date.today() - timedelta(days=1)).isoformat()
-    index.handler(_event("PUT", "/settings", {"nextReadyDate": ready_date}, claims=ADMIN_CLAIMS), None)
-    meal = _create_meal(index)
-    resp = index.handler(
-        _event("POST", "/orders", {"contactPhone": PHONE, "items": [{"mealId": meal["mealId"], "quantity": 1}]}, claims=CUSTOMER_CLAIMS),
-        None,
-    )
+    resp = _order_for_ready_date(index, ready_date="2026-10-19")
     assert resp["statusCode"] == 400
+
+
+# ---------- ordering schedule: Monday 11:00 AM to Friday 4:00 PM Central ----------
+
+
+@pytest.mark.parametrize("when, is_open", [
+    # October 2026 is daylight time (CDT, UTC-5).
+    ("2026-10-19T15:59:00+00:00", False),  # Monday 10:59 AM
+    ("2026-10-19T16:00:00+00:00", True),   # Monday 11:00 AM - opens
+    ("2026-10-21T17:00:00+00:00", True),   # Wednesday noon
+    ("2026-10-23T18:59:00+00:00", True),   # Friday 1:59 PM
+    ("2026-10-23T19:30:00+00:00", True),   # Friday 2:30 PM - the grace period
+    ("2026-10-23T20:59:00+00:00", True),   # Friday 3:59 PM
+    ("2026-10-23T21:00:00+00:00", False),  # Friday 4:00 PM - closes
+    ("2026-10-24T17:00:00+00:00", False),  # Saturday
+    ("2026-10-25T17:00:00+00:00", False),  # Sunday
+    # December is standard time (CST, UTC-6).
+    ("2026-12-07T16:30:00+00:00", False),  # Monday 10:30 AM
+    ("2026-12-07T17:00:00+00:00", True),   # Monday 11:00 AM
+    ("2026-12-11T21:59:00+00:00", True),   # Friday 3:59 PM
+    ("2026-12-11T22:00:00+00:00", False),  # Friday 4:00 PM
+])
+def test_ordering_schedule_in_central_time(monkeypatch, when, is_open):
+    from backend.lambda_src import index
+
+    _at(monkeypatch, when)
+    assert index._ordering_status({"nextReadyDate": "2027-01-04"}) == {"open": is_open, "reason": "schedule"}
+
+
+@pytest.mark.parametrize("when, expected_offset", [
+    ("2026-03-08T07:59:00+00:00", -6),  # 1:59 AM CST, just before clocks spring forward
+    ("2026-03-08T08:00:00+00:00", -5),  # 3:00 AM CDT
+    ("2026-11-01T06:59:00+00:00", -5),  # 1:59 AM CDT, just before clocks fall back
+    ("2026-11-01T07:00:00+00:00", -6),  # 1:00 AM CST
+])
+def test_central_time_follows_daylight_saving(when, expected_offset):
+    from backend.lambda_src import index
+
+    local = index._central(datetime.fromisoformat(when))
+    assert local.utcoffset().total_seconds() == expected_offset * 3600
+
+
+def test_order_placed_in_the_grace_period_is_accepted(table, monkeypatch):
+    from backend.lambda_src import index
+
+    _at(monkeypatch, "2026-10-23T20:30:00+00:00")  # Friday 3:30 PM
+    assert _order_for_ready_date(index)["statusCode"] == 201
+
+
+def test_order_placed_after_friday_4pm_is_rejected(table, monkeypatch):
+    from backend.lambda_src import index
+
+    _at(monkeypatch, "2026-10-23T21:00:00+00:00")  # Friday 4:00 PM
+    resp = _order_for_ready_date(index)
+    assert resp["statusCode"] == 400
+    assert json.loads(resp["body"])["message"] == (
+        "Ordering is currently closed. Our next menu opens for ordering Monday at 11:00 AM."
+    )
+
+
+def test_settings_report_ordering_closed_on_the_weekend(table, monkeypatch):
+    from backend.lambda_src import index
+
+    _at(monkeypatch, "2026-10-24T17:00:00+00:00")  # Saturday
+    settings = json.loads(index.handler(_event("GET", "/settings"), None)["body"])
+    assert settings["ordering"] == {"open": False, "reason": "schedule"}
+
+
+# ---------- admin override ----------
+
+
+def _set_mode(index, mode, claims=ADMIN_CLAIMS):
+    return index.handler(_event("PUT", "/settings", {"orderingMode": mode}, claims=claims), None)
+
+
+def test_force_closed_stops_orders_during_the_week(table):
+    from backend.lambda_src import index
+
+    resp = _set_mode(index, "closed")
+    assert json.loads(resp["body"])["ordering"] == {"open": False, "reason": "forced"}
+    assert _order_for_ready_date(index)["statusCode"] == 400
+
+
+def test_force_open_allows_orders_on_the_weekend(table, monkeypatch):
+    from backend.lambda_src import index
+
+    _at(monkeypatch, "2026-10-24T17:00:00+00:00")  # Saturday
+    _set_mode(index, "open")
+    settings = json.loads(index.handler(_event("GET", "/settings"), None)["body"])
+    assert (settings["orderingMode"], settings["ordering"]) == ("open", {"open": True, "reason": "forced"})
+    assert _order_for_ready_date(index)["statusCode"] == 201
+
+
+def test_force_open_still_needs_a_future_ready_date(table, monkeypatch):
+    from backend.lambda_src import index
+
+    _set_mode(index, "open")
+    assert _order_for_ready_date(index, ready_date="2026-10-21")["statusCode"] == 400
+
+
+def test_back_to_automatic_follows_the_schedule_again(table, monkeypatch):
+    from backend.lambda_src import index
+
+    _at(monkeypatch, "2026-10-24T17:00:00+00:00")  # Saturday
+    _set_mode(index, "open")
+    resp = _set_mode(index, "auto")
+    assert json.loads(resp["body"])["ordering"] == {"open": False, "reason": "schedule"}
+
+
+def test_saving_the_mode_keeps_the_other_settings(table):
+    from backend.lambda_src import index
+
+    index.handler(_event("PUT", "/settings", {"nextReadyDate": "2026-12-01", "smsEnabled": True}, claims=ADMIN_CLAIMS), None)
+    body = json.loads(_set_mode(index, "closed")["body"])
+    assert (body["nextReadyDate"], body["smsEnabled"], body["orderingMode"]) == ("2026-12-01", True, "closed")
+    # ...and saving another setting keeps the mode.
+    body = json.loads(index.handler(_event("PUT", "/settings", {"smsEnabled": False}, claims=ADMIN_CLAIMS), None)["body"])
+    assert body["orderingMode"] == "closed"
+
+
+def test_invalid_ordering_mode_is_rejected(table):
+    from backend.lambda_src import index
+
+    assert _set_mode(index, "sometimes")["statusCode"] == 400
+
+
+def test_only_admin_can_override_ordering(table):
+    from backend.lambda_src import index
+
+    assert _set_mode(index, "open", claims=CUSTOMER_CLAIMS)["statusCode"] == 403
 
 
 def test_admin_cannot_place_an_order(table):

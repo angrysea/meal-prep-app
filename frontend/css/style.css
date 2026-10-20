@@ -854,7 +854,7 @@ body.admin-page dialog {
 /* Side-by-side settings cards. */
 .settings-row {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1.5rem;
   margin-bottom: 2.5rem;
 }
@@ -1070,4 +1070,49 @@ body.admin-page dialog {
   font-size: 0.85rem;
   margin-top: 0.15rem;
   max-width: 36rem;
+}
+
+/* Customer menu page: replaces the menu while ordering is closed. */
+.ordering-closed {
+  text-align: center;
+  padding: 1.75rem 1.25rem;
+  margin-top: 1rem;
+}
+
+.ordering-closed-icon {
+  color: var(--color-muted);
+}
+
+.ordering-closed h2 {
+  margin: 0.4rem 0 0.75rem;
+}
+
+.ordering-closed p {
+  margin: 0 0 0.6rem;
+}
+
+.ordering-closed-hint {
+  font-size: 0.9rem;
+}
+
+.ordering-closed-button {
+  margin-top: 0.5rem;
+}
+
+/* Manage menu: whether customers can order right now. */
+.ordering-status {
+  font-weight: bold;
+  color: var(--color-error);
+  margin: 0.75rem 0 0;
+}
+
+.ordering-status.is-open {
+  color: #1d7a35;
+}
+
+/* A forced mode is easy to forget to switch back - flag it. */
+.ordering-status.is-forced::after {
+  content: " Remember to switch back to Automatic.";
+  font-weight: normal;
+  color: var(--color-muted);
 }

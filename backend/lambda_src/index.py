@@ -7,7 +7,7 @@ import re
 import urllib.parse
 import urllib.request
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 
 import boto3
@@ -52,7 +52,13 @@ ORDER_STATUSES = ("placed", "cancelled", "prepared", "delivered")
 SETTINGS_KEY = {"PK": "SETTINGS", "SK": "GLOBAL"}
 # Customers can't place an order within this many days of the ready date -
 # the kitchen needs lead time to shop/prep.
-ORDER_CUTOFF_DAYS = 2
+# Ordering is open Monday 11:00 AM to Friday 4:00 PM, Central time. Customers
+# are told the deadline is Friday 2:00 PM - the extra two hours are a quiet
+# grace period. The admin can force ordering open or closed instead (e.g. for
+# a holiday week) with the orderingMode setting.
+ORDERING_OPENS = (0, time(11, 0))  # (weekday, time) - Monday
+ORDERING_CLOSES = (4, time(16, 0))  # Friday
+ORDERING_MODES = ("auto", "open", "closed")
 
 
 def handler(event, context):
@@ -123,6 +129,53 @@ def handler(event, context):
 # lifecycle (admin sets it on the Builder page, every order placed before it
 # next changes is prepped for that date).
 
+def _utcnow():
+    # Its own function so tests can pin the clock.
+    return datetime.now(timezone.utc)
+
+
+def _central(now_utc):
+    """now_utc in US Central time. US daylight saving rules are worked out
+    here rather than via zoneinfo, so the Lambda doesn't depend on the
+    runtime shipping a time zone database: CDT (UTC-5) from 2:00 AM on the
+    second Sunday in March to 2:00 AM on the first Sunday in November,
+    otherwise CST (UTC-6)."""
+    def nth_sunday(month, n):
+        first = date(now_utc.year, month, 1)
+        return first + timedelta(days=(6 - first.weekday()) % 7, weeks=n - 1)
+
+    dst_starts = datetime.combine(nth_sunday(3, 2), time(8, 0), timezone.utc)  # 2:00 AM CST
+    dst_ends = datetime.combine(nth_sunday(11, 1), time(7, 0), timezone.utc)  # 2:00 AM CDT
+    offset = -5 if dst_starts <= now_utc < dst_ends else -6
+    return now_utc.astimezone(timezone(timedelta(hours=offset)))
+
+
+def _week_minutes(weekday, at):
+    return weekday * 24 * 60 + at.hour * 60 + at.minute
+
+
+def _in_ordering_window(local):
+    now = _week_minutes(local.weekday(), local.time())
+    return _week_minutes(*ORDERING_OPENS) <= now < _week_minutes(*ORDERING_CLOSES)
+
+
+def _ordering_status(settings, now_utc=None):
+    """Whether customers can order right now, and why:
+    reason is "schedule" (the Monday-Friday window), "forced" (the admin's
+    override), or "ready-date-passed" (the ready date is today or earlier,
+    i.e. still last week's - nothing can be ordered for it)."""
+    local = _central(now_utc or _utcnow())
+    mode = settings.get("orderingMode") or "auto"
+    if mode == "auto":
+        is_open, reason = _in_ordering_window(local), "schedule"
+    else:
+        is_open, reason = mode == "open", "forced"
+    ready_date = settings.get("nextReadyDate", "")
+    if is_open and ready_date and ready_date <= local.date().isoformat():
+        is_open, reason = False, "ready-date-passed"
+    return {"open": is_open, "reason": reason}
+
+
 def get_settings():
     item = table.get_item(Key=SETTINGS_KEY).get("Item") or {}
     try:
@@ -142,6 +195,8 @@ def get_settings():
         # address, same source as _reply_to(), so it never drifts out of
         # sync with whoever actually holds the Admins-group account.
         "contactEmail": contact_email,
+        "orderingMode": item.get("orderingMode") or "auto",
+        "ordering": _ordering_status(item),
     })
 
 
@@ -161,9 +216,18 @@ def update_settings(event):
         except ValueError:
             raise BadRequest("nextReadyDate must be in YYYY-MM-DD format")
     sms_enabled = bool(body.get("smsEnabled", existing.get("smsEnabled", False)))
+    ordering_mode = body.get("orderingMode", existing.get("orderingMode") or "auto")
+    if ordering_mode not in ORDERING_MODES:
+        raise BadRequest(f"orderingMode must be one of {ORDERING_MODES}")
 
-    table.put_item(Item={**SETTINGS_KEY, "nextReadyDate": next_ready_date, "smsEnabled": sms_enabled})
-    return _response(200, {"nextReadyDate": next_ready_date, "smsEnabled": sms_enabled})
+    item = {**SETTINGS_KEY, "nextReadyDate": next_ready_date, "smsEnabled": sms_enabled, "orderingMode": ordering_mode}
+    table.put_item(Item=item)
+    return _response(200, {
+        "nextReadyDate": next_ready_date,
+        "smsEnabled": sms_enabled,
+        "orderingMode": ordering_mode,
+        "ordering": _ordering_status(item),
+    })
 
 
 # ---------- menu ----------
@@ -793,15 +857,12 @@ def create_order(event):
     if contact_phone and len(re.sub(r"\D", "", contact_phone)) != 10:
         raise BadRequest("Please enter a 10-digit contact phone number, or leave it blank.")
 
-    ready_date_str = (table.get_item(Key=SETTINGS_KEY).get("Item") or {}).get("nextReadyDate", "")
-    if ready_date_str:
-        ready_date = datetime.strptime(ready_date_str, "%Y-%m-%d").date()
-        days_out = (ready_date - date.today()).days
-        if days_out < ORDER_CUTOFF_DAYS:
-            raise BadRequest(
-                f"Ordering is closed for the {ready_date_str} ready date - orders must be "
-                f"placed at least {ORDER_CUTOFF_DAYS} days ahead."
-            )
+    settings = table.get_item(Key=SETTINGS_KEY).get("Item") or {}
+    ready_date_str = settings.get("nextReadyDate", "")
+    if not _ordering_status(settings)["open"]:
+        raise BadRequest(
+            "Ordering is currently closed. Our next menu opens for ordering Monday at 11:00 AM."
+        )
 
     # Prices (and add-ons) are recomputed from the current menu/add-on list,
     # never trusted from the client.

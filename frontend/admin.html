@@ -18,12 +18,32 @@
 
     <div id="admin-content" style="display:none;">
       <div class="settings-row">
+        <form class="card" id="ordering-form">
+          <h2>Ordering</h2>
+          <p class="muted">
+            Automatic: open Monday 11:00 AM to Friday 4:00 PM (Central).
+            Customers are told Friday 2:00 PM - the extra two hours are a
+            grace period. Force it open or closed for holidays or special weeks.
+          </p>
+          <label for="ordering-mode">Ordering is</label>
+          <select id="ordering-mode" style="max-width:260px;">
+            <option value="auto">Automatic (on schedule)</option>
+            <option value="open">Forced open</option>
+            <option value="closed">Forced closed</option>
+          </select>
+          <p class="ordering-status" id="ordering-status"></p>
+          <p class="error" style="display:none;"></p>
+          <div class="form-actions">
+            <button type="submit">Save</button>
+          </div>
+        </form>
+
         <form class="card" id="ready-date-form">
           <h2>Next ready date</h2>
           <p class="muted">
             The next date meals will be ready for pickup. Orders placed between
-            now and then are prepped for this date; customers can't order within
-            2 days of it.
+            now and then are prepped for this date. Set the new date each week -
+            ordering stays closed while this date is today or earlier.
           </p>
           <label for="next-ready-date">Next ready date</label>
           <input id="next-ready-date" type="date" required style="max-width:220px;" />
@@ -302,15 +322,42 @@
       let editingAddOnId = null;
       let editingMealId = null;
 
-      async function refreshSettings() {
-        const { nextReadyDate, smsEnabled } = await apiRequest(config.apiUrl, "/settings");
-        document.getElementById("next-ready-date").value = nextReadyDate;
-        document.getElementById("sms-enabled").checked = smsEnabled;
+      // What customers see right now, under the Ordering dropdown.
+      function showOrderingStatus({ ordering, orderingMode }) {
+        const el = document.getElementById("ordering-status");
+        const reasons = {
+          schedule: "",
+          forced: " (forced)",
+          "ready-date-passed": " - set the next ready date to reopen it",
+        };
+        el.textContent = ordering.open
+          ? `Customers can order right now${reasons[ordering.reason] || ""}.`
+          : `Ordering is closed right now${reasons[ordering.reason] || ""}.`;
+        el.classList.toggle("is-open", ordering.open);
+        el.classList.toggle("is-forced", orderingMode !== "auto");
       }
+
+      async function refreshSettings() {
+        const settings = await apiRequest(config.apiUrl, "/settings");
+        document.getElementById("next-ready-date").value = settings.nextReadyDate;
+        document.getElementById("sms-enabled").checked = settings.smsEnabled;
+        document.getElementById("ordering-mode").value = settings.orderingMode || "auto";
+        showOrderingStatus(settings);
+      }
+
+      handleSubmit(document.getElementById("ordering-form"), async () => {
+        const orderingMode = value("ordering-mode");
+        const saved = await apiRequest(config.apiUrl, "/settings", { method: "PUT", token, body: { orderingMode } });
+        showOrderingStatus(saved);
+        showToast(
+          { auto: "Ordering is back on the automatic schedule", open: "Ordering forced open", closed: "Ordering forced closed" }[orderingMode]
+        );
+      });
 
       handleSubmit(document.getElementById("ready-date-form"), async () => {
         const nextReadyDate = value("next-ready-date");
-        await apiRequest(config.apiUrl, "/settings", { method: "PUT", token, body: { nextReadyDate } });
+        const saved = await apiRequest(config.apiUrl, "/settings", { method: "PUT", token, body: { nextReadyDate } });
+        showOrderingStatus(saved);
         showToast(`Next ready date set to ${nextReadyDate}`);
       });
 
