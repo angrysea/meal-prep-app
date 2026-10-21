@@ -513,3 +513,17 @@ def test_deleted_addon_is_not_offered_even_though_the_meal_kept_it(customer_page
 
     expect(page.locator(CARD).get_by_label("Large (+$3.00)", exact=True)).to_have_count(0)
     expect(page.locator(f"{CARD} .addon-choice")).to_have_count(2)  # Regular + the combo
+
+
+def test_how_it_works_links_to_the_personal_training_facility(anonymous_page):
+    page = anonymous_page
+    page.open("/index.html")
+
+    line = page.locator("#how-it-works p").filter(has_text="fitness journey")
+    expect(line).to_have_text(
+        "To help you along your fitness journey, visit our personal training facility: thegymgeorgetowntx.com"
+    )
+    link = page.locator("#gym-link")
+    expect(link).to_have_attribute("href", "https://thegymgeorgetowntx.com")
+    expect(link).to_have_attribute("target", "_blank")
+    assert _top(page, "#gym-link") < _top(page, "#how-it-works p:has-text('Thank you for supporting')")
