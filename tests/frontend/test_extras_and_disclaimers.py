@@ -314,3 +314,19 @@ def test_manage_menu_edits_an_extra(admin_page, mock_api):
         "auth": mock_api.writes()[-1]["auth"],
     }
     expect(page.locator(EXTRA_TABLE_ROW.format("e2"))).to_contain_text("$0.35")
+
+
+# ---------- Staple / rotating markers ----------
+
+
+def test_menu_marks_staple_and_rotating_meals(customer_page, mock_api):
+    mock_api.state["meals"][1]["available"] = True  # Turkey Chili: this week only
+    page = customer_page
+    page.open("/index.html")
+
+    staple = page.locator('.meal-card[data-meal-id="m1"] h3')
+    rotating = page.locator('.meal-card[data-meal-id="m2"] h3')
+    expect(staple).to_have_text("⭐️ Chicken Teriyaki Bowl")
+    expect(rotating).to_have_text("🔄 Turkey Chili")
+    expect(staple.get_by_role("img", name="Staple meal")).to_have_count(1)
+    expect(rotating.get_by_role("img", name="Rotating meal")).to_have_count(1)

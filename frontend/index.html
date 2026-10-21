@@ -375,6 +375,14 @@
       renderCart();
     }
 
+    // ⭐️ staple meals (always on the menu) and 🔄 rotating ones (this week
+    // only), as described in How It Works - from the meal's Staple setting,
+    // so meal names don't need the icons typed in.
+    function mealMarker(meal) {
+      const [icon, label] = meal.staple ? ["⭐️", "Staple meal"] : ["🔄", "Rotating meal"];
+      return `<span class="meal-marker" role="img" aria-label="${label}" title="${label}">${icon}</span> `;
+    }
+
     function renderMacros(macros) {
       const text = formatMacros(macros);
       return `<p class="macros muted"${text ? "" : " hidden"}>${text}</p>`;
@@ -490,7 +498,7 @@
           .map(
             (meal) => `
           <div class="card meal-card" data-meal-id="${meal.mealId}">
-            <h3>${meal.name}</h3>
+            <h3>${mealMarker(meal)}${meal.name}</h3>
             <p class="description">${meal.description || ""}</p>
             ${renderMacros(meal.macros)}
             <p class="price">${formatPrice(meal.priceCents)}</p>
