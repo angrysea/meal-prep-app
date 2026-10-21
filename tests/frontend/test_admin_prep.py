@@ -151,3 +151,39 @@ def test_prep_table_shows_macros_for_the_meal_or_its_addon(admin_page):
     expect(bowl.locator(".prep-macros")).to_have_text("750 cal · 60g protein · 70g carbs · 18g fat")
     chili = page.locator("#prep-body tr").filter(has_text="Turkey Chili")
     expect(chili.locator(".prep-macros")).to_have_text("480 cal · 38g protein · 40g carbs · 14g fat")
+
+
+def test_labels_are_only_for_the_selected_ready_date(admin_page, mock_api):
+    # An order for a later week must not print with this week's labels.
+    later = dict(mock_api.state["orders"][0], orderId="later", readyDate="2099-01-05",
+                 customerName="Later Customer", pickupName="")
+    mock_api.state["orders"].append(later)
+    page = admin_page
+    page.open("/admin-prep.html")
+
+    page.click("#print-labels-button")
+    expect_toast(page, f"Sent 3 labels (1 sheet) for {READY_DATE} to print")
+    expect(page.locator("#print-labels .label", has_text="Later Customer")).to_have_count(0)
+
+    page.select_option("#ready-date-filter", "2099-01-05")
+    page.click("#print-labels-button")
+    expect_toast(page, "Sent 2 labels (1 sheet) for 2099-01-05 to print")
+    expect(page.locator("#print-labels .label")).to_have_count(2)
+    expect(page.locator("#print-labels .label", has_text="Later Customer")).to_have_count(2)
+
+
+def test_browser_print_after_changing_the_date_prints_that_dates_labels(admin_page, mock_api):
+    # Printing with Cmd+P / File > Print (not the button) must match the picker too.
+    later = dict(mock_api.state["orders"][0], orderId="later", readyDate="2099-01-05",
+                 customerName="Later Customer", pickupName="")
+    mock_api.state["orders"].append(later)
+    page = admin_page
+    page.open("/admin-prep.html")
+    expect(page.locator("#print-labels .label")).to_have_count(3)  # ready before any click
+
+    page.click("#print-labels-button")
+    page.select_option("#ready-date-filter", "2099-01-05")
+
+    labels = page.locator("#print-labels .label")
+    expect(labels).to_have_count(2)
+    expect(labels.filter(has_text="Later Customer")).to_have_count(2)

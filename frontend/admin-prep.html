@@ -235,11 +235,19 @@
         printForm.requestSubmit();
       });
 
+      // The labels always match the picked date - built whenever it changes,
+      // not only on the button - so printing with Cmd+P / File > Print never
+      // reprints an earlier date's labels.
+      let currentLabels = { html: "", labelCount: 0, sheetCount: 0 };
+      function fillLabels() {
+        currentLabels = buildLabelsHtml(currentOrders, mealsById, addOnsById);
+        document.getElementById("print-labels").innerHTML = currentLabels.html;
+      }
+
       printForm.addEventListener("submit", (e) => {
         e.preventDefault();
         if (printButton.disabled) return;
-        const { html, labelCount, sheetCount } = buildLabelsHtml(currentOrders, mealsById, addOnsById);
-        document.getElementById("print-labels").innerHTML = html;
+        const { labelCount, sheetCount } = currentLabels;
         window.print();
         showToast(`Sent ${labelCount} label${labelCount === 1 ? "" : "s"} (${sheetCount} sheet${sheetCount === 1 ? "" : "s"}) for ${select.value} to print`);
       });
@@ -277,6 +285,7 @@
       function renderForSelectedDate() {
         const filtered = orders.filter((o) => o.readyDate === select.value);
         currentOrders = filtered;
+        fillLabels();
         if (filtered.length === 0) {
           printButton.disabled = true;
           body.innerHTML = `<tr class="empty-row"><td colspan="5">No placed orders for this date.</td></tr>`;
