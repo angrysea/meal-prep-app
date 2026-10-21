@@ -69,17 +69,23 @@ weekly reminder email/text to subscribed customers.
 
 ## Menu data model
 
-Each meal has a flat `macros` object (`calories`, `proteinG`, `carbsG`,
-`fatG`). Add-ons (e.g. "Large" +$3.00, "Extra Protein" +$1.50) are a single
-**global** list — `{addOnId, description, priceCents}` — managed on
-`admin.html` and offered as independent, optional checkboxes on *every* meal;
-there's no per-meal configuration and no mutual exclusivity (picking "Large"
-doesn't prevent also picking something else). At order time, the client sends
-only `selectedAddOnIds: [id, ...]` — the Lambda resolves each id against the
-*current* global add-on list and sums `priceCents`, the same
-never-trust-the-client principle the base price already had. Note: macros are
-per-meal only, not affected by add-on selection — if "Large" should actually
-change the displayed calories, that'd need its own mechanism; not implemented.
+- **Meals** have a price, a flat `macros` object (`calories`, `proteinG`,
+  `carbsG`, `fatG`), and are either a staple or tied to one ready date.
+- **Add-ons** (e.g. "Large", "Large with Cauliflower Rice") are one global
+  list - `{addOnId, name, description, priceCents, available}` - managed on
+  `admin.html`. Each meal keeps its own copy per add-on in `addOnDetails`
+  (`name`, `priceCents` - blank means the add-on's default price -
+  `description`, and the whole meal's `macros` with it). Customers pick at
+  most one add-on per meal; it's offered only if it's available and the meal
+  has a description or macros for it.
+- **Extras & sauces** (e.g. Salsa Verde $0.25) are a separate global list -
+  `{extraId, name, priceCents, available}` at `/extras` - bought by quantity
+  at the bottom of the menu, alongside at least one meal. Orders store them
+  in `extras: [{extraId, name, priceCents, quantity}]`.
+- At order time the client sends only ids and quantities
+  (`items[].selectedAddOnIds`, `extras[]`); the Lambda prices everything from
+  the current menu and snapshots names, prices and macros onto the order, so
+  later menu changes don't alter past orders or their labels.
 
 ## Weekly reminders
 

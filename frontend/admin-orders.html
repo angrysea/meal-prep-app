@@ -76,7 +76,11 @@
       }
     });
 
-    function itemsHtml(items) {
+    function itemsHtml(items, extras = []) {
+      // Extras & sauces after the meals, one line each.
+      const extraLines = extras
+        .map((e) => `<li class="order-extra">${e.quantity} x ${escapeHtml(e.name)} - ${formatPrice(e.priceCents * e.quantity)}</li>`)
+        .join("");
       return `<ul>${items
         .map((i) => {
           // The chosen add-on gets its own line under the item, then the note.
@@ -91,7 +95,7 @@
           const noteText = i.note ? `<div class="item-addon muted">Note: ${escapeHtml(i.note)}</div>` : "";
           return `<li>${i.quantity} x ${escapeHtml(i.name)} - ${formatPrice(i.unitPriceCents * i.quantity)}${addOnLines}${noteText}</li>`;
         })
-        .join("")}</ul>`;
+        .join("")}${extraLines}</ul>`;
     }
 
     function initOrders(config, token) {
@@ -157,7 +161,7 @@
             </td>
             <td class="nowrap">${escapeHtml(order.contactPhone) || "-"}</td>
             <td style="white-space:nowrap;">${escapeHtml(order.readyDate) || "-"}</td>
-            <td>${itemsHtml(order.items)}</td>
+            <td>${itemsHtml(order.items, order.extras || [])}</td>
             <td class="num"><strong>${formatPrice(order.totalCents)}</strong></td>
             <td>
               <select class="status-select" aria-label="Status for ${escapeHtml(order.customerName)}'s order placed ${escapeHtml(createdAt)}">

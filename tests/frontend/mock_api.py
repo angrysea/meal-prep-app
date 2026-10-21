@@ -56,6 +56,12 @@ SEED = {
         {"addOnId": "a2", "name": "Large with Cauliflower Rice", "priceCents": 400,
          "description": "Large, with cauliflower rice instead of rice.", "available": True},
     ],
+    # Extras & sauces, sold by quantity. e3 is hidden from customers.
+    "extras": [
+        {"extraId": "e1", "name": "Salsa Verde", "priceCents": 25, "available": True},
+        {"extraId": "e2", "name": "BBQ Sauce", "priceCents": 25, "available": True},
+        {"extraId": "e3", "name": "Sriracha", "priceCents": 25, "available": False},
+    ],
     "orders": [
         {"orderId": "o1", "customerSub": "u1", "createdAt": "2026-10-17T15:04:00Z", "status": "placed",
          "customerName": "Jane " + XSS, "contactPhone": "(555) 555-1234", "pickupName": "",
@@ -63,7 +69,8 @@ SEED = {
          "items": [{"mealId": "m1", "name": "Chicken Teriyaki Bowl", "quantity": 2, "unitPriceCents": 1599,
                     "note": "hold the sauce " + XSS,
                     "selectedAddOns": [{"addOnId": "a1", "name": "Large",
-                                        "macros": {"calories": 740, "proteinG": 59, "carbsG": 70, "fatG": 18}}]}]},
+                                        "macros": {"calories": 740, "proteinG": 59, "carbsG": 70, "fatG": 18}}]}],
+         "extras": [{"extraId": "e1", "name": "Salsa Verde", "priceCents": 25, "quantity": 2}]},
         {"orderId": "o2", "customerSub": "u2", "createdAt": "2026-10-16T12:00:00Z", "status": "placed",
          "customerName": "Bob Smith", "contactPhone": "(555) 555-9876", "pickupName": "",
          "readyDate": READY_DATE, "totalCents": 1150,
@@ -174,11 +181,17 @@ class MockApi:
                           for a in i.get("selectedAddOnIds", [])
                       ],
                       "note": i.get("note", "")} for i in body["items"]]
+            extras_by_id = {e["extraId"]: e for e in s["extras"]}
+            extras = [{"extraId": e["extraId"], "name": extras_by_id[e["extraId"]]["name"],
+                       "priceCents": extras_by_id[e["extraId"]]["priceCents"], "quantity": e["quantity"]}
+                      for e in body.get("extras", []) if e["quantity"] > 0]
             order = {
-                "items": items, "customerName": s["profile"]["name"],
+                "items": items, "extras": extras, "customerName": s["profile"]["name"],
                 "contactPhone": body["contactPhone"], "pickupName": body.get("pickupName", ""),
                 "orderId": uuid.uuid4().hex[:8], "status": "placed", "readyDate": READY_DATE,
-                "createdAt": "2026-10-18T12:00:00Z", "totalCents": 1299,
+                "createdAt": "2026-10-18T12:00:00Z",
+                "totalCents": sum(i["unitPriceCents"] * i["quantity"] for i in items)
+                + sum(e["priceCents"] * e["quantity"] for e in extras),
             }
             s.setdefault("placed", []).append(order)
             return 201, order
@@ -198,12 +211,14 @@ class MockApi:
             order["status"] = body["status"]
             return 200, order
 
-        if parts[0] in ("meals", "addons"):
-            key, id_key, required = (
-                ("meals", "mealId", "name") if parts[0] == "meals" else ("addOns", "addOnId", "name")
-            )
+        if parts[0] in ("meals", "addons", "extras"):
+            key, id_key, required = {
+                "meals": ("meals", "mealId", "name"),
+                "addons": ("addOns", "addOnId", "name"),
+                "extras": ("extras", "extraId", "name"),
+            }[parts[0]]
             if method == "GET":
-                if key == "addOns":  # alphabetical, like the real API
+                if key in ("addOns", "extras"):  # alphabetical, like the real API
                     return 200, {key: sorted(s[key], key=lambda a: a["name"].strip().casefold())}
                 return 200, {key: s[key]}
             if method == "POST":

@@ -35,6 +35,19 @@
           <tbody id="prep-body"></tbody>
         </table>
       </div>
+
+      <!-- Extras & sauces to pack for the selected date: no labels, just totals. -->
+      <section id="extras-card" style="display:none;">
+        <h2>Extras &amp; Sauces</h2>
+        <div class="table-card">
+          <table class="data-table" id="extras-table">
+            <thead>
+              <tr><th>Item</th><th class="num">Quantity</th></tr>
+            </thead>
+            <tbody id="extras-body"></tbody>
+          </table>
+        </div>
+      </section>
     </div>
   </main>
 
@@ -150,6 +163,33 @@
       return `<div class="label-addon-line">${text}</div>`;
     }
 
+    // Printed at the bottom of every label.
+    const LABEL_DISCLAIMER =
+      "Prepared where common allergens are present. Cross-contact possible. Not guaranteed allergen-free. " +
+      "Nutrition values are estimates.";
+
+    // Meal names may start with a ⭐️ (staple) or 🔄 (rotating) marker for the
+    // menu; a color emoji in the label's heading font prints poorly, so
+    // labels leave it off.
+    function labelMealName(name) {
+      return name.replace(/^(?:\s|\u2B50|\u{1F504}|\uFE0F)+/u, "");
+    }
+
+    // Extras & sauces across the selected date's orders, totalled per
+    // extra, alphabetical. Named from the orders' own copies, so a deleted
+    // extra still shows.
+    function totalExtras(orders) {
+      const totals = new Map();
+      orders.forEach((order) => {
+        (order.extras || []).forEach((e) => {
+          const row = totals.get(e.extraId) || { name: e.name, quantity: 0 };
+          row.quantity += e.quantity;
+          totals.set(e.extraId, row);
+        });
+      });
+      return [...totals.values()].sort((a, b) => a.name.localeCompare(b.name));
+    }
+
     // One label per physical meal, built straight from the orders (not the
     // aggregated table rows) so each label can carry its own customer name -
     // 2 Chicken Bowls for 2 different customers means 2 labels, each naming
@@ -186,7 +226,7 @@
       const labelsHtml = labels.map(
         (row) => `
         <div class="label">
-          <div class="label-meal">${escapeHtml(row.name)}</div>
+          <div class="label-meal">${escapeHtml(labelMealName(row.name))}</div>
           ${row.customerName ? `<div class="label-customer">${escapeHtml(row.customerName)}${
             row.pickupName ? ` (pickup: ${escapeHtml(row.pickupName)})` : ""
           }</div>` : ""}
@@ -196,6 +236,7 @@
           </div>
           ${row.addOns.map(addOnLineHtml).join("")}
           ${row.note ? `<div class="label-note">Note: ${escapeHtml(row.note)}</div>` : ""}
+          <div class="label-disclaimer">${LABEL_DISCLAIMER}</div>
         </div>`
       );
 
@@ -305,10 +346,19 @@
         .map((d) => `<option value="${escapeHtml(d)}" ${d === nextReadyDate ? "selected" : ""}>${escapeHtml(d)}</option>`)
         .join("");
 
+      function renderExtrasTotals(dateOrders) {
+        const rows = totalExtras(dateOrders);
+        document.getElementById("extras-card").style.display = rows.length ? "block" : "none";
+        document.getElementById("extras-body").innerHTML = rows
+          .map((r) => `<tr><td><strong>${escapeHtml(r.name)}</strong></td><td class="num"><strong>${r.quantity}</strong></td></tr>`)
+          .join("");
+      }
+
       function renderForSelectedDate() {
         const filtered = orders.filter((o) => o.readyDate === select.value);
         currentOrders = filtered;
         fillLabels();
+        renderExtrasTotals(filtered);
         if (filtered.length === 0) {
           printButton.disabled = true;
           body.innerHTML = `<tr class="empty-row"><td colspan="5">No placed orders for this date.</td></tr>`;

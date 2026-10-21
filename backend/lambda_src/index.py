@@ -93,6 +93,14 @@ def handler(event, context):
             return update_addon(event, path_params["addOnId"])
         if path.startswith("/addons/") and method == "DELETE":
             return delete_addon(event, path_params["addOnId"])
+        if path == "/extras" and method == "GET":
+            return list_extras()
+        if path == "/extras" and method == "POST":
+            return create_extra(event)
+        if path.startswith("/extras/") and method == "PUT":
+            return update_extra(event, path_params["extraId"])
+        if path.startswith("/extras/") and method == "DELETE":
+            return delete_extra(event, path_params["extraId"])
         if path == "/orders" and method == "GET":
             return list_orders(event)
         if path == "/orders" and method == "POST":
@@ -533,6 +541,116 @@ def _addon_out(item):
         "priceCents": int(item["priceCents"]),
         "available": bool(item.get("available", True)),
     }
+
+
+# ---------- extras & sauces ----------
+# Condiments and other extras sold on their own, by quantity (e.g. 2 Salsa
+# Verdes), rather than as an option on a meal like an add-on.
+
+def list_extras():
+    items = table.query(
+        KeyConditionExpression="PK = :pk",
+        ExpressionAttributeValues={":pk": "EXTRA"},
+    ).get("Items", [])
+    extras = sorted((_extra_out(item) for item in items), key=lambda e: e["name"].strip().casefold())
+    return _response(200, {"extras": extras})
+
+
+def create_extra(event):
+    _require_admin(event)
+    body = _body(event)
+    extra_id = uuid.uuid4().hex[:12]
+    item = {
+        "PK": "EXTRA",
+        "SK": extra_id,
+        "name": _extra_name(body.get("name")),
+        "priceCents": _extra_price(body.get("priceCents")),
+        "available": bool(body.get("available", True)),
+    }
+    table.put_item(Item=item)
+    return _response(201, _extra_out(item))
+
+
+def update_extra(event, extra_id):
+    _require_admin(event)
+    body = _body(event)
+    existing = table.get_item(Key={"PK": "EXTRA", "SK": extra_id}).get("Item")
+    if not existing:
+        return _response(404, {"message": "extra not found"})
+    updated = {
+        **existing,
+        "name": _extra_name(body["name"]) if "name" in body else existing["name"],
+        "priceCents": _extra_price(body["priceCents"]) if "priceCents" in body else int(existing["priceCents"]),
+        "available": bool(body.get("available", existing.get("available", True))),
+    }
+    table.put_item(Item=updated)
+    return _response(200, _extra_out(updated))
+
+
+def delete_extra(event, extra_id):
+    # Past orders keep their own copy of the name and price.
+    _require_admin(event)
+    table.delete_item(Key={"PK": "EXTRA", "SK": extra_id})
+    return _response(204, None)
+
+
+def _extra_name(raw):
+    name = (raw or "").strip()
+    if not name:
+        raise BadRequest("Extra name is required")
+    return name
+
+
+def _extra_price(raw):
+    try:
+        price_cents = int(raw)
+    except (TypeError, ValueError):
+        raise BadRequest("Extra price is required")
+    if price_cents < 0:
+        raise BadRequest("Extra price can't be negative")
+    return price_cents
+
+
+def _extra_out(item):
+    return {
+        "extraId": item["SK"],
+        "name": item["name"],
+        "priceCents": int(item["priceCents"]),
+        "available": bool(item.get("available", True)),
+    }
+
+
+def _resolve_extras(requested):
+    """Validates the extras on an order ([{extraId, quantity}]) against the
+    current list and returns (extras with name and price snapshotted, total
+    in cents). Prices come from the server, never the client. A hidden or
+    deleted extra can't be ordered. Quantities of 0 are dropped.
+    """
+    resolved = []
+    total_cents = 0
+    seen = set()
+    for entry in requested:
+        extra_id = entry["extraId"]
+        try:
+            quantity = int(entry.get("quantity", 1))
+        except (TypeError, ValueError):
+            raise BadRequest("Extra quantities must be whole numbers")
+        if quantity < 0:
+            raise BadRequest("Extra quantities can't be negative")
+        if quantity == 0:
+            continue
+        if extra_id in seen:
+            raise BadRequest(f"extra listed twice: {extra_id}")
+        seen.add(extra_id)
+        item = table.get_item(Key={"PK": "EXTRA", "SK": extra_id}).get("Item")
+        if not item or not item.get("available", True):
+            raise BadRequest("One of the extras you picked is no longer available - please remove it and try again.")
+        extra = _extra_out(item)
+        total_cents += extra["priceCents"] * quantity
+        resolved.append({
+            "extraId": extra_id, "name": extra["name"], "priceCents": extra["priceCents"], "quantity": quantity,
+        })
+    return resolved, total_cents
 
 
 # ---------- customer profile ----------
@@ -986,7 +1104,8 @@ def create_order(event):
     body = _body(event)
     requested_items = body.get("items") or []
     if not requested_items:
-        return _response(400, {"message": "order must include at least one item"})
+        # Extras & sauces go with a meal order, not on their own.
+        return _response(400, {"message": "order must include at least one meal"})
 
     # The name always comes from the customer's own profile (falling back to
     # their sign-up name) - never from the request, so it can't be changed
@@ -1035,6 +1154,9 @@ def create_order(event):
             "note": (requested.get("note") or "").strip(),
         })
 
+    extras, extras_total_cents = _resolve_extras(body.get("extras") or [])
+    total_cents += extras_total_cents
+
     order_id = uuid.uuid4().hex[:12]
     created_at = datetime.now(timezone.utc).isoformat()
     item = {
@@ -1043,6 +1165,8 @@ def create_order(event):
         "orderId": order_id,
         "createdAt": created_at,
         "items": line_items,
+        # Extras & sauces: [{extraId, name, priceCents, quantity}].
+        "extras": extras,
         "totalCents": total_cents,
         "customerName": customer_name,
         "contactPhone": contact_phone,
@@ -1221,6 +1345,10 @@ def _order_out(item):
         "orderId": item["orderId"],
         "createdAt": item["createdAt"],
         "items": [_line_item_out(i) for i in item["items"]],
+        "extras": [
+            {**e, "priceCents": int(e["priceCents"]), "quantity": int(e["quantity"])}
+            for e in item.get("extras") or []
+        ],
         "totalCents": int(item["totalCents"]),
         # Orders placed before these fields existed stored deliveryName /
         # deliveryPhone instead - fall back so they still show who and how

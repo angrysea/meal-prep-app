@@ -54,7 +54,11 @@
               <button type="button" class="secondary edit-order">Edit</button>
               <button type="button" class="secondary cancel-order">Cancel order</button>
             </div>
-            <p class="muted order-deadline-note">You can edit or cancel this order until Friday at 2:00 PM.</p>`;
+            <p class="muted order-deadline-note">You can edit or cancel this order until Friday at 2:00 PM.</p>
+            <div class="allergen-note">
+              <strong>Please Note</strong>
+              <p>Meals are prepared in a kitchen that handles common allergens and cannot be guaranteed allergen-free. All nutritional information is estimated and may vary.</p>
+            </div>`;
         }
         if (order.status === "placed") {
           return `
@@ -112,6 +116,9 @@
                   return `<li>${i.quantity} x ${i.name}${addOnText} - ${formatPrice(i.unitPriceCents * i.quantity)}${noteText}</li>`;
                 })
                 .join("")}
+              ${(order.extras || [])
+                .map((e) => `<li class="order-extra">${e.quantity} x ${escapeHtml(e.name)} - ${formatPrice(e.priceCents * e.quantity)}</li>`)
+                .join("")}
             </ul>
             <p>Total: <strong>${formatPrice(order.totalCents)}</strong></p>
             <p class="muted">${escapeHtml(order.customerName)}${order.contactPhone ? ` - ${escapeHtml(order.contactPhone)}` : ""}</p>
@@ -140,6 +147,7 @@
                   selectedAddOnIds: (i.selectedAddOns || []).map((a) => a.addOnId),
                   note: i.note || "",
                 })),
+                extras: (order.extras || []).map((e) => ({ extraId: e.extraId, quantity: e.quantity })),
                 delivery: {
                   phone: order.contactPhone,
                   pickupName: order.pickupName,

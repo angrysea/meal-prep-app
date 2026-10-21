@@ -2245,3 +2245,131 @@ def test_deleting_an_addon_keeps_the_meals_copy_but_it_cant_be_ordered(table):
     assert listed["addOnDetails"][large["addOnId"]]["name"] == "Large"
     assert listed["addOnDetails"][large["addOnId"]]["priceCents"] == 450
     assert _order_meal(index, meal, large)["statusCode"] == 400
+
+
+# ---------- extras & sauces ----------
+
+
+def _create_extra(index, name="Salsa Verde", price_cents=25, **extra):
+    resp = index.handler(
+        _event("POST", "/extras", {"name": name, "priceCents": price_cents, **extra}, claims=ADMIN_CLAIMS), None
+    )
+    assert resp["statusCode"] == 201, resp
+    return json.loads(resp["body"])
+
+
+def _order_with_extras(index, extras, meal=None):
+    meal = meal or _create_meal(index, price_cents=1200)
+    return index.handler(_event("POST", "/orders", {
+        "contactPhone": PHONE, "items": [{"mealId": meal["mealId"], "quantity": 1}], "extras": extras,
+    }, claims=CUSTOMER_CLAIMS), None)
+
+
+def test_extras_are_listed_alphabetically_for_everyone(table):
+    from backend.lambda_src import index
+
+    _create_extra(index, name="Sriracha")
+    _create_extra(index, name="  bbq Sauce ", price_cents=30)
+    extras = json.loads(index.handler(_event("GET", "/extras"), None)["body"])["extras"]
+    assert [(e["name"], e["priceCents"], e["available"]) for e in extras] == [
+        ("bbq Sauce", 30, True), ("Sriracha", 25, True),
+    ]
+
+
+@pytest.mark.parametrize("body,message", [
+    ({"name": " ", "priceCents": 25}, "Extra name is required"),
+    ({"name": "Sriracha"}, "Extra price is required"),
+    ({"name": "Sriracha", "priceCents": -1}, "Extra price can't be negative"),
+])
+def test_extra_needs_a_name_and_price(table, body, message):
+    from backend.lambda_src import index
+
+    resp = index.handler(_event("POST", "/extras", body, claims=ADMIN_CLAIMS), None)
+    assert resp["statusCode"] == 400
+    assert json.loads(resp["body"])["message"] == message
+
+
+def test_only_admins_manage_extras(table):
+    from backend.lambda_src import index
+
+    resp = index.handler(_event("POST", "/extras", {"name": "Sriracha", "priceCents": 25}, claims=CUSTOMER_CLAIMS), None)
+    assert resp["statusCode"] == 403
+
+
+def test_extras_can_be_edited_hidden_and_deleted(table):
+    from backend.lambda_src import index
+
+    extra = _create_extra(index)
+    path = f"/extras/{extra['extraId']}"
+    params = {"extraId": extra["extraId"]}
+    resp = index.handler(_event("PUT", path, {"priceCents": 50, "available": False}, path_params=params, claims=ADMIN_CLAIMS), None)
+    assert json.loads(resp["body"]) == {**extra, "priceCents": 50, "available": False}
+
+    index.handler(_event("DELETE", path, path_params=params, claims=ADMIN_CLAIMS), None)
+    assert json.loads(index.handler(_event("GET", "/extras"), None)["body"])["extras"] == []
+
+
+def test_order_adds_extras_by_quantity_at_the_servers_price(table):
+    from backend.lambda_src import index
+
+    salsa = _create_extra(index, name="Salsa Verde", price_cents=25)
+    bbq = _create_extra(index, name="BBQ Sauce", price_cents=25)
+    resp = _order_with_extras(index, [
+        {"extraId": salsa["extraId"], "quantity": 2, "priceCents": 1},  # client price ignored
+        {"extraId": bbq["extraId"], "quantity": 3},
+    ])
+
+    assert resp["statusCode"] == 201
+    order = json.loads(resp["body"])
+    assert order["extras"] == [
+        {"extraId": salsa["extraId"], "name": "Salsa Verde", "priceCents": 25, "quantity": 2},
+        {"extraId": bbq["extraId"], "name": "BBQ Sauce", "priceCents": 25, "quantity": 3},
+    ]
+    assert order["totalCents"] == 1200 + 5 * 25
+    # Saved with the order (a later price change doesn't touch it).
+    [listed] = json.loads(index.handler(_event("GET", "/orders", claims=CUSTOMER_CLAIMS), None)["body"])["orders"]
+    assert listed["extras"] == order["extras"]
+
+
+def test_extras_with_zero_quantity_are_dropped(table):
+    from backend.lambda_src import index
+
+    salsa = _create_extra(index)
+    order = json.loads(_order_with_extras(index, [{"extraId": salsa["extraId"], "quantity": 0}])["body"])
+    assert order["extras"] == [] and order["totalCents"] == 1200
+
+
+def test_hidden_or_unknown_extras_cant_be_ordered(table):
+    from backend.lambda_src import index
+
+    hidden = _create_extra(index, available=False)
+    for extra_id in (hidden["extraId"], "nope"):
+        resp = _order_with_extras(index, [{"extraId": extra_id, "quantity": 1}])
+        assert resp["statusCode"] == 400
+        assert "no longer available" in json.loads(resp["body"])["message"]
+
+
+@pytest.mark.parametrize("quantity", [-1, "two"])
+def test_extra_quantity_must_be_a_whole_number(table, quantity):
+    from backend.lambda_src import index
+
+    salsa = _create_extra(index)
+    assert _order_with_extras(index, [{"extraId": salsa["extraId"], "quantity": quantity}])["statusCode"] == 400
+
+
+def test_extras_alone_are_not_an_order(table):
+    from backend.lambda_src import index
+
+    salsa = _create_extra(index)
+    resp = index.handler(_event("POST", "/orders", {
+        "contactPhone": PHONE, "items": [], "extras": [{"extraId": salsa["extraId"], "quantity": 2}],
+    }, claims=CUSTOMER_CLAIMS), None)
+    assert resp["statusCode"] == 400
+    assert json.loads(resp["body"])["message"] == "order must include at least one meal"
+
+
+def test_orders_from_before_extras_list_none(table):
+    from backend.lambda_src import index
+
+    order = _place_order(index, CUSTOMER_CLAIMS)
+    assert order["extras"] == []

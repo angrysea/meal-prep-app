@@ -18,13 +18,18 @@
     <details class="card how-it-works" id="how-it-works" open>
       <summary><h2>How It Works</h2></summary>
       <p><strong>Ordering:</strong> Our weekly menu is updated every Monday by 11:00 AM. Orders placed during the week will be ready for pickup the following Monday.</p>
+      <p><strong>Our Weekly Menu:</strong> We offer four meals each week:</p>
+      <ul>
+        <li><strong>⭐️ 2 Staple Meals:</strong> One rotates every three months between our Chicken Fajita Protein Bowl, Taco Bowl, and Green Chicken Enchilada Bowl. The other is a chicken dish featuring a different seasoning each month.</li>
+        <li><strong>🔄 2 Rotating Meals:</strong> Two additional meals that change every week, giving you something new to try!</li>
+      </ul>
       <p><strong>Order Deadline:</strong> Friday at 2:00 PM or when all available spots are filled. <strong>Limited spots available each week!</strong></p>
       <p><strong>Monday Pickup:</strong></p>
       <ul>
         <li>
           <strong>Georgetown:</strong> 8:00 AM&ndash;1:00 PM or 3:30 PM&ndash;6:30 PM at The Gym TX<br />
           <a id="pickup-directions" target="_blank" rel="noopener"
-             href="https://www.google.com/maps/dir/?api=1&amp;destination=The+Gym+TX%2C+4112+Williams+Drive+%23105%2C+Georgetown+TX+78628">4112 Williams Drive #105, Georgetown TX 78628</a>
+             href="https://www.google.com/maps/dir/?api=1&amp;destination=The+Gym+TX%2C+4112+Williams+Drive+%23105%2C+Georgetown+TX+78628">4112 Williams Drive #105, Georgetown, TX 78628</a>
         </li>
         <li><strong>Elgin:</strong> Pickup may be available upon request. Please email us to make arrangements before placing your order.</li>
       </ul>
@@ -81,6 +86,15 @@
       <p class="muted">Loading menu...</p>
     </div>
 
+    <!-- Condiments and other extras, bought by quantity on their own rather
+         than as an option on one meal. Shown with the menu; hidden while
+         ordering is closed or when there are none. -->
+    <section class="card extras-section" id="extras-section" style="display:none;">
+      <h2>Extras &amp; Sauces</h2>
+      <p class="muted">Add extra sauces and condiments to your order.</p>
+      <div id="extras-list"></div>
+    </section>
+
     <section class="card" id="checkout-section" style="display:none;">
       <h2>Check out</h2>
       <div id="checkout-form">
@@ -114,6 +128,12 @@
           IMPORTANT: If payment is not received by Saturday morning and you have not made prior payment arrangements with us, your order will be canceled.
         </p>
       </div>
+    </section>
+
+    <section class="allergen-disclaimer" id="allergen-disclaimer">
+      <h2>Allergen &amp; Nutrition Disclaimer</h2>
+      <p>Our meals are prepared in a kitchen where common allergens, including nuts, dairy, soy, wheat (gluten), and other allergens may be present. Cross-contact is possible, and we cannot guarantee that any meal is allergen-free.</p>
+      <p>Calories and macronutrients are estimates based on ingredients and portion sizes. Actual values may vary slightly due to preparation methods and ingredient variations.</p>
     </section>
   </main>
 
@@ -149,7 +169,10 @@
     renderNav();
 
     const cart = {}; // selectionsKey -> { meal, selectedAddOnIds, quantity }
+    // Extras & sauces: extraId -> quantity (only those above 0).
+    const extrasCart = {};
     let allAddOns = [];
+    let orderableExtras = []; // available extras, alphabetical
     let loadedMeals = [];
 
     const contactPhoneInput = document.getElementById("contact-phone");
@@ -162,8 +185,9 @@
       const checkoutSection = document.getElementById("checkout-section");
       const lines = document.getElementById("cart-lines");
       const entries = Object.entries(cart);
+      const extraEntries = orderableExtras.filter((e) => extrasCart[e.extraId] > 0);
 
-      if (entries.length === 0) {
+      if (entries.length === 0 && extraEntries.length === 0) {
         section.style.display = "none";
         checkoutSection.style.display = "none";
         return;
@@ -199,26 +223,90 @@
           </div>`;
         })
         .join("");
+      lines.innerHTML += extraEntries
+        .map((extra) => {
+          const quantity = extrasCart[extra.extraId];
+          total += extra.priceCents * quantity;
+          return `<div class="cart-line-wrap cart-extra" data-extra-id="${escapeHtml(extra.extraId)}">
+            <div class="cart-line">
+              <span>${escapeHtml(extra.name)}</span>
+              ${extraQuantityControl(extra, quantity)}
+              <span>${formatPrice(extra.priceCents * quantity)}</span>
+            </div>
+          </div>`;
+        })
+        .join("");
       document.getElementById("cart-total").textContent = formatPrice(total);
+      wireExtraQuantityControls(lines);
 
-      lines.querySelectorAll(".qty-minus").forEach((btn) => {
+      lines.querySelectorAll(".cart-line-wrap:not(.cart-extra) .qty-minus").forEach((btn) => {
         btn.addEventListener("click", () => {
           const key = btn.closest(".cart-line-wrap").dataset.cartKey;
           setQuantity(key, cart[key].quantity - 1);
         });
       });
-      lines.querySelectorAll(".qty-plus").forEach((btn) => {
+      lines.querySelectorAll(".cart-line-wrap:not(.cart-extra) .qty-plus").forEach((btn) => {
         btn.addEventListener("click", () => {
           const key = btn.closest(".cart-line-wrap").dataset.cartKey;
           setQuantity(key, cart[key].quantity + 1);
         });
       });
-      lines.querySelectorAll(".qty-input").forEach((input) => {
+      lines.querySelectorAll(".cart-line-wrap:not(.cart-extra) .qty-input").forEach((input) => {
         input.addEventListener("change", () => {
           const key = input.closest(".cart-line-wrap").dataset.cartKey;
           setQuantity(key, parseInt(input.value, 10) || 0);
         });
       });
+    }
+
+    // The same - [n] + control in the Extras & Sauces section and the cart;
+    // both change extrasCart and redraw both.
+    function extraQuantityControl(extra, quantity, disabled = false) {
+      const name = escapeHtml(extra.name);
+      const off = disabled ? " disabled" : "";
+      return `<div class="qty-control extra-qty" data-extra-id="${escapeHtml(extra.extraId)}">
+        <button type="button" class="secondary extra-minus" aria-label="One fewer ${name}"${off}>-</button>
+        <input type="number" class="qty-input extra-qty-input" aria-label="Quantity of ${name}" min="0" value="${quantity}"${off} />
+        <button type="button" class="secondary extra-plus" aria-label="One more ${name}"${off}>+</button>
+      </div>`;
+    }
+
+    function wireExtraQuantityControls(container) {
+      container.querySelectorAll(".extra-qty").forEach((control) => {
+        const extraId = control.dataset.extraId;
+        const current = () => extrasCart[extraId] || 0;
+        control.querySelector(".extra-minus").addEventListener("click", () => setExtraQuantity(extraId, current() - 1));
+        control.querySelector(".extra-plus").addEventListener("click", () => setExtraQuantity(extraId, current() + 1));
+        const input = control.querySelector(".extra-qty-input");
+        input.addEventListener("change", () => setExtraQuantity(extraId, parseInt(input.value, 10) || 0));
+      });
+    }
+
+    function setExtraQuantity(extraId, quantity) {
+      if (quantity > 0) extrasCart[extraId] = quantity;
+      else delete extrasCart[extraId];
+      renderExtras();
+      renderCart();
+    }
+
+    let extrasInteractive = false;
+    function renderExtras() {
+      const section = document.getElementById("extras-section");
+      if (orderableExtras.length === 0) {
+        section.style.display = "none";
+        return;
+      }
+      section.style.display = "block";
+      const list = document.getElementById("extras-list");
+      list.innerHTML = orderableExtras
+        .map((extra) => `
+          <div class="extra-row">
+            <span class="extra-name">${escapeHtml(extra.name)}</span>
+            <span class="extra-price">${formatPrice(extra.priceCents)}</span>
+            ${extraQuantityControl(extra, extrasCart[extra.extraId] || 0, !extrasInteractive)}
+          </div>`)
+        .join("");
+      if (extrasInteractive) wireExtraQuantityControls(list);
     }
 
     function setQuantity(key, quantity) {
@@ -263,6 +351,13 @@
         setCartItem(meal, item.selectedAddOnIds || [], item.note || "", item.quantity || 1);
       });
 
+      (data.extras || []).forEach(({ extraId, quantity }) => {
+        // A hidden or deleted extra can't be ordered again.
+        if (orderableExtras.some((e) => e.extraId === extraId) && quantity > 0) extrasCart[extraId] = quantity;
+      });
+      renderExtras();
+      renderCart();
+
       const delivery = data.delivery || {};
       // Editing a previous order keeps that order's own phone and pickup
       // person rather than the profile's.
@@ -274,7 +369,9 @@
 
     function cancelOrder() {
       Object.keys(cart).forEach((key) => delete cart[key]);
+      Object.keys(extrasCart).forEach((id) => delete extrasCart[id]);
       document.getElementById("checkout-error").style.display = "none";
+      renderExtras();
       renderCart();
     }
 
@@ -368,11 +465,14 @@
       }
 
       try {
-        const [{ meals }, { addOns }] = await Promise.all([
+        const [{ meals }, { addOns }, { extras }] = await Promise.all([
           apiRequest(config.apiUrl, "/meals"),
           apiRequest(config.apiUrl, "/addons"),
+          apiRequest(config.apiUrl, "/extras").catch(() => ({ extras: [] })),
         ]);
         allAddOns = addOns;
+        orderableExtras = extras.filter((e) => e.available);
+        extrasInteractive = interactive;
 
         // On the menu if it's always available, or its week-of date matches
         // the current ready date - a meal with neither (e.g. a future week's
@@ -385,6 +485,7 @@
           container.innerHTML = `<p class="muted">No meals on the menu right now - check back soon.</p>`;
           return;
         }
+        renderExtras();
         container.innerHTML = available
           .map(
             (meal) => `
@@ -473,6 +574,13 @@
         note,
       }));
 
+      const extras = Object.entries(extrasCart).map(([extraId, quantity]) => ({ extraId, quantity }));
+      if (items.length === 0) {
+        errorEl.textContent = "Please add at least one meal - extras and sauces are added to a meal order.";
+        errorEl.style.display = "block";
+        return;
+      }
+
       const contactPhone = contactPhoneInput.value;
       const pickupName = document.getElementById("pickup-name").value.trim();
       const phoneDigits = contactPhone.replace(/\D/g, "").length;
@@ -490,7 +598,7 @@
         await apiRequest(config.apiUrl, "/orders", {
           method: "POST",
           token: session.idToken,
-          body: { items, contactPhone, pickupName },
+          body: { items, extras, contactPhone, pickupName },
         });
         window.location.href = "/orders.html";
       } catch (err) {

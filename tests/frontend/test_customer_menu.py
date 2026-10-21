@@ -113,6 +113,7 @@ def test_place_order_sends_phone_and_pickup_but_not_name(customer_page, mock_api
     page.wait_for_url("**/orders.html")
     assert _placed_order(mock_api)["body"] == {
         "items": [{"mealId": "m1", "quantity": 1, "selectedAddOnIds": [], "note": ""}],
+        "extras": [],
         "contactPhone": "(555) 999-8888",
         "pickupName": "Sam Lee",
     }
@@ -254,7 +255,7 @@ def test_how_it_works_links(customer_page):
     section = page.locator("#how-it-works")
 
     directions = page.locator("#pickup-directions")
-    expect(directions).to_have_text("4112 Williams Drive #105, Georgetown TX 78628")
+    expect(directions).to_have_text("4112 Williams Drive #105, Georgetown, TX 78628")
     href = directions.get_attribute("href")
     assert href.startswith("https://www.google.com/maps/dir/?api=1&destination=")
     assert "4112+Williams+Drive+%23105" in href

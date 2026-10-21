@@ -79,6 +79,10 @@ def test_api_routes_have_expected_authorization():
     assert routes_by_key["POST /reminders/send"]["AuthorizationType"] == "JWT"
     assert routes_by_key["PUT /orders/{orderId}"]["AuthorizationType"] == "JWT"
     assert routes_by_key["GET /admin/orders"]["AuthorizationType"] == "JWT"
+    assert routes_by_key["GET /extras"]["AuthorizationType"] == "NONE"
+    assert routes_by_key["POST /extras"]["AuthorizationType"] == "JWT"
+    assert routes_by_key["PUT /extras/{extraId}"]["AuthorizationType"] == "JWT"
+    assert routes_by_key["DELETE /extras/{extraId}"]["AuthorizationType"] == "JWT"
     assert routes_by_key["PUT /admin/orders/{sub}/{orderId}"]["AuthorizationType"] == "JWT"
 
 

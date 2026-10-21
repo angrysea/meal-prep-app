@@ -307,6 +307,20 @@ class MealPrepAppStack(Stack):
             integration=integration, authorizer=jwt_authorizer,
         )
 
+        # Extras & sauces (condiments sold by quantity): browsing is public;
+        # managing the list is admin-only.
+        http_api.add_routes(
+            path="/extras", methods=[apigwv2.HttpMethod.GET], integration=integration,
+        )
+        http_api.add_routes(
+            path="/extras", methods=[apigwv2.HttpMethod.POST], integration=integration,
+            authorizer=jwt_authorizer,
+        )
+        http_api.add_routes(
+            path="/extras/{extraId}", methods=[apigwv2.HttpMethod.PUT, apigwv2.HttpMethod.DELETE],
+            integration=integration, authorizer=jwt_authorizer,
+        )
+
         # Weekly reminders: admin-triggered broadcast (checked in the Lambda
         # via the Admins group, same as the other admin-only routes).
         http_api.add_routes(

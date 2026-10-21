@@ -638,6 +638,14 @@ table.customers-table th {
   margin-top: 0.03in;
 }
 
+/* Pinned to the bottom of the label. */
+#print-labels .label-disclaimer {
+  margin-top: auto;
+  padding-top: 0.03in;
+  font-size: 0.667em; /* 6pt */
+  line-height: 1.15;
+}
+
 /* Monthly menu flyer preview (admin-monthly-menu.html) - on-screen only;
    the version actually emailed is built separately with inline styles,
    since email clients don't load external stylesheets. */
@@ -1299,4 +1307,48 @@ body.admin-page dialog {
 .item-addon {
   font-size: 0.85rem;
   padding-left: 1rem;
+}
+
+/* Extras & sauces (index.html): one row per extra - name, price, quantity. */
+.extra-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.extra-row:first-child {
+  border-top: 0;
+}
+
+.extra-name {
+  font-weight: 600;
+}
+
+.extra-price {
+  color: var(--color-muted);
+}
+
+/* Allergen & nutrition disclaimer at the bottom of the menu, and the short
+   "Please Note" under an order on My Orders. */
+.allergen-disclaimer {
+  margin-top: 2rem;
+  font-size: 0.85rem;
+  color: var(--color-muted);
+}
+
+.allergen-disclaimer h2 {
+  font-size: 1rem;
+  margin-bottom: 0.25rem;
+}
+
+.allergen-note {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.allergen-note p {
+  margin: 0.15rem 0 0;
 }
