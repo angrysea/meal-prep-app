@@ -177,10 +177,9 @@ in `app.py` (gtxmeals@gmail.com):
 | Lambda (API) | `ApiErrors`, `ApiThrottles`, `ApiNearTimeout` (over 8 of its 10 seconds) |
 | Lambda logs | `ApiLogErrors` - any `ERROR`, timeout or crash line in the API's logs, including errors it recovers from (`print(f"ERROR ...")`) |
 | API Gateway | `Api5xx` |
-| DynamoDB | `DatabaseErrors`, `DatabaseThrottles` |
-| SES | `EmailBounceRate` (5%), `EmailComplaintRate` (0.1%), `EmailDailyLimit` (160 of the sandbox's 200 a day) |
-| Website + API | `SiteDown`, `ApiDown` - a health-check Lambda loads the site and `GET /settings` every 5 minutes |
-| Monitoring | `MonitoringErrors` - the alert or health-check Lambda failed |
+| DynamoDB | `DatabaseErrors` |
+| SES | `EmailBounceRate` (5%), `EmailDailyLimit` (160 of the sandbox's 200 a day) |
+| Website + API | `SiteDown`, `ApiDown` - a health-check Lambda loads the site and `GET /settings` every 15 minutes; alarms after 2 failures in a row |
 
 - **Alerts go through SES, not SNS** - the SCP blocks `sns:Publish`. An
   EventBridge rule sends each `GTXMeals-*` alarm change to
@@ -193,6 +192,9 @@ in `app.py` (gtxmeals@gmail.com):
   them end to end.
 - **Cognito** publishes no error metrics without its paid advanced security
   features; failures that reach the API show up under `ApiLogErrors`.
+- **Kept to 10 alarms**, CloudWatch's free allowance: DynamoDB throttling,
+  SES spam complaints and the monitoring Lambdas' own errors have no alarm
+  (throttles and complaints are on the dashboard).
 - To check the email path, trigger an alarm by hand (it resets on the next
   evaluation):
   ```

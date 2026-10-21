@@ -11,6 +11,9 @@ Not alarmed directly:
   site through CloudFront every few minutes covers it instead.
 - Cognito: it publishes no error metrics without its paid advanced security
   features. Sign-in failures that reach the API show up in the API's logs.
+- DynamoDB throttling, SES spam complaints and the monitoring Lambdas' own
+  errors: left off to keep within CloudWatch's 10 free alarms. Throttling
+  is unlikely at this traffic; complaints and throttles are on the dashboard.
 """
 from aws_cdk import (
     Duration,
@@ -39,6 +42,7 @@ SES_DAILY_SEND_WARNING = 160
 API_SLOW_MS = 8000
 
 FIVE_MINUTES = Duration.minutes(5)
+HEALTH_CHECK_EVERY = Duration.minutes(15)
 
 
 class Monitoring(Construct):
@@ -102,14 +106,14 @@ class Monitoring(Construct):
         ))
         events.Rule(
             self, "HealthCheckSchedule",
-            schedule=events.Schedule.rate(FIVE_MINUTES),
+            schedule=events.Schedule.rate(HEALTH_CHECK_EVERY),
             targets=[targets.LambdaFunction(health_fn)],
         )
 
         def health_metric(check):
             return cloudwatch.Metric(
                 namespace=METRIC_NAMESPACE, metric_name="HealthCheck",
-                dimensions_map={"Check": check}, statistic="Minimum", period=FIVE_MINUTES,
+                dimensions_map={"Check": check}, statistic="Minimum", period=HEALTH_CHECK_EVERY,
             )
 
         # ---------- Alert emails ----------
@@ -210,20 +214,6 @@ class Monitoring(Construct):
             "DynamoDB failed requests on its side. These are usually brief AWS issues; check "
             "the AWS Health Dashboard if it continues.",
         )
-        alarm(
-            "DatabaseThrottles",
-            cloudwatch.MathExpression(
-                expression="reads + writes",
-                using_metrics={
-                    "reads": table.metric("ReadThrottleEvents", statistic="Sum", period=FIVE_MINUTES),
-                    "writes": table.metric("WriteThrottleEvents", statistic="Sum", period=FIVE_MINUTES),
-                },
-                period=FIVE_MINUTES,
-                label="Throttled reads + writes",
-            ), 1,
-            "The database is being throttled",
-            "DynamoDB turned away reads or writes because of a sudden burst of traffic.",
-        )
         # SES
         alarm(
             "EmailBounceRate",
@@ -232,14 +222,6 @@ class Monitoring(Construct):
             "Too many emails are bouncing",
             "Over 5% of emails sent have bounced. AWS reviews accounts at 5% and can pause "
             "sending at 10%. Check the Customers page for mistyped email addresses.",
-        )
-        alarm(
-            "EmailComplaintRate",
-            cloudwatch.Metric(namespace="AWS/SES", metric_name="Reputation.ComplaintRate",
-                              statistic="Maximum", period=Duration.hours(1)), 0.001,
-            "Customers are marking emails as spam",
-            "Over 0.1% of emails sent were reported as spam. AWS reviews accounts at 0.1% and "
-            "can pause sending at 0.5%.",
         )
         alarm(
             "EmailDailyLimit",
@@ -253,7 +235,7 @@ class Monitoring(Construct):
         alarm(
             "SiteDown", health_metric("Site"), 1,
             "The website is down",
-            "gtxmeals.com failed to load twice in a row (10 minutes). CloudFront, the S3 bucket "
+            "gtxmeals.com failed to load twice in a row (30 minutes). CloudFront, the S3 bucket "
             "or the domain's DNS may have a problem.",
             comparison=cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD, periods=2,
             missing=cloudwatch.TreatMissingData.MISSING,
@@ -261,28 +243,11 @@ class Monitoring(Construct):
         alarm(
             "ApiDown", health_metric("Api"), 1,
             "The API is down",
-            "The API failed to answer twice in a row (10 minutes), so the menu can't load and "
+            "The API failed to answer twice in a row (30 minutes), so the menu can't load and "
             "orders can't be placed.",
             comparison=cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD, periods=2,
             missing=cloudwatch.TreatMissingData.MISSING,
         )
-        # The monitoring itself
-        alarm(
-            "MonitoringErrors",
-            cloudwatch.MathExpression(
-                expression="alerts + health",
-                using_metrics={
-                    "alerts": alerts_fn.metric_errors(statistic="Sum", period=FIVE_MINUTES),
-                    "health": health_fn.metric_errors(statistic="Sum", period=FIVE_MINUTES),
-                },
-                period=FIVE_MINUTES,
-                label="Monitoring Lambda errors",
-            ), 1,
-            "The monitoring itself failed",
-            "The alert-email or health-check Lambda failed, so other alerts may not arrive. "
-            "Check their logs in CloudWatch.",
-        )
-
         # ---------- Dashboard ----------
         def graph(title, *metrics, **kwargs):
             return cloudwatch.GraphWidget(title=title, left=list(metrics), width=8, height=6, **kwargs)
@@ -314,7 +279,9 @@ class Monitoring(Construct):
                           api_fn.metric_duration(statistic="Maximum", period=FIVE_MINUTES)),
                     graph("Database",
                           table.metric_consumed_read_capacity_units(statistic="Sum", period=FIVE_MINUTES),
-                          table.metric_consumed_write_capacity_units(statistic="Sum", period=FIVE_MINUTES)),
+                          table.metric_consumed_write_capacity_units(statistic="Sum", period=FIVE_MINUTES),
+                          table.metric("ReadThrottleEvents", statistic="Sum", period=FIVE_MINUTES),
+                          table.metric("WriteThrottleEvents", statistic="Sum", period=FIVE_MINUTES)),
                 ],
                 [
                     graph("Emails",

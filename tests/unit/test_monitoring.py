@@ -27,10 +27,10 @@ def test_every_service_has_its_alarms(template):
     names = {a["Properties"]["AlarmName"] for a in template.find_resources("AWS::CloudWatch::Alarm").values()}
     assert names == {f"GTXMeals-{n}" for n in (
         "ApiErrors", "ApiThrottles", "ApiNearTimeout", "ApiLogErrors", "Api5xx",
-        "DatabaseErrors", "DatabaseThrottles",
-        "EmailBounceRate", "EmailComplaintRate", "EmailDailyLimit",
-        "SiteDown", "ApiDown", "MonitoringErrors",
-    )}
+        "DatabaseErrors",
+        "EmailBounceRate", "EmailDailyLimit",
+        "SiteDown", "ApiDown",
+    )}  # 10 - CloudWatch's free allowance
 
 
 def test_api_log_errors_are_counted(template):
@@ -59,8 +59,11 @@ def test_alarm_changes_trigger_the_alert_email(template):
     })
 
 
-def test_health_check_runs_every_five_minutes(template):
-    template.has_resource_properties("AWS::Events::Rule", {"ScheduleExpression": "rate(5 minutes)"})
+def test_health_check_runs_every_fifteen_minutes(template):
+    template.has_resource_properties("AWS::Events::Rule", {"ScheduleExpression": "rate(15 minutes)"})
+    template.has_resource_properties("AWS::CloudWatch::Alarm", {
+        "AlarmName": "GTXMeals-SiteDown", "Period": 900, "EvaluationPeriods": 2,
+    })
     template.has_resource_properties("AWS::Lambda::Function", {"Handler": "health.handler"})
 
 
