@@ -177,7 +177,9 @@ def test_my_orders_lists_extras_and_the_allergen_note(customer_page):
     page.wait_for_url("**/orders.html")
 
     card = page.locator(".order-card")
-    expect(card.locator(".order-extra")).to_have_text("2 x Salsa Verde - $0.50")
+    expect(card.locator(".order-extra")).to_have_text(
+        "2 x Salsa Verde - $0.50 (2 oz. tangy tomatillo salsa - 20 cal · 4g carbs each)"
+    )
     note = card.locator(".allergen-note")
     expect(note.locator("strong")).to_have_text("Please Note")
     expect(note.locator("p")).to_have_text(PLEASE_NOTE)
@@ -276,7 +278,10 @@ def test_manage_menu_adds_an_extra(admin_page, mock_api):
     page.click("#extra-create-form button[type=submit]")
 
     expect_toast(page, 'Added "Ranch" to Extras & Sauces')
-    assert mock_api.writes()[-1]["body"] == {"name": "Ranch", "priceCents": 50}
+    assert mock_api.writes()[-1]["body"] == {
+        "name": "Ranch", "description": "", "priceCents": 50,
+        "macros": {"calories": 0, "proteinG": 0, "carbsG": 0, "fatG": 0},
+    }
     expect(page.locator("#extras-body tr").filter(has_text="Ranch")).to_contain_text("$0.50")
 
 
@@ -284,7 +289,7 @@ def test_manage_menu_lists_hides_and_deletes_extras(admin_page, mock_api):
     page = admin_page
     page.open("/admin.html")
 
-    expect(page.locator("#extras-body tr td:first-child")).to_have_text(["BBQ Sauce", "Salsa Verde", "Sriracha"])
+    expect(page.locator("#extras-body tr td:first-child strong")).to_have_text(["BBQ Sauce", "Salsa Verde", "Sriracha"])
     row = page.locator(EXTRA_TABLE_ROW.format("e1"))
     expect(row.get_by_role("button")).to_have_text(["Edit", "Hide", "Delete"])
 
@@ -309,9 +314,10 @@ def test_manage_menu_edits_an_extra(admin_page, mock_api):
     page.press("#edit-extra-name", "Enter")
 
     expect_toast(page, 'Saved changes to "BBQ Sauce"')
-    assert mock_api.writes()[-1] == {
-        "method": "PUT", "path": "/extras/e2", "body": {"name": "BBQ Sauce", "priceCents": 35},
-        "auth": mock_api.writes()[-1]["auth"],
+    assert mock_api.writes()[-1]["path"] == "/extras/e2"
+    assert mock_api.writes()[-1]["body"] == {
+        "name": "BBQ Sauce", "description": "", "priceCents": 35,
+        "macros": {"calories": 0, "proteinG": 0, "carbsG": 0, "fatG": 0},
     }
     expect(page.locator(EXTRA_TABLE_ROW.format("e2"))).to_contain_text("$0.35")
 
@@ -330,3 +336,64 @@ def test_menu_marks_staple_and_rotating_meals(customer_page, mock_api):
     expect(rotating).to_have_text("🔄 Turkey Chili")
     expect(staple.get_by_role("img", name="Staple meal")).to_have_count(1)
     expect(rotating.get_by_role("img", name="Rotating meal")).to_have_count(1)
+
+
+
+# ---------- Extras' descriptions and macros ----------
+
+
+def test_menu_shows_an_extras_description_and_macros_only_when_it_has_them(customer_page):
+    page = customer_page
+    page.open("/index.html")
+
+    salsa = page.locator(EXTRA_ROW.format("Salsa Verde"))
+    expect(salsa.locator(".extra-description")).to_have_text("2 oz. tangy tomatillo salsa")
+    expect(salsa.locator(".extra-macros")).to_have_text("20 cal · 4g carbs")
+    bbq = page.locator(EXTRA_ROW.format("BBQ Sauce"))
+    expect(bbq.locator(".extra-description, .extra-macros")).to_have_count(0)
+
+
+def test_cart_shows_an_extras_macros(customer_page):
+    page = customer_page
+    page.open("/index.html")
+    _more(page, "Salsa Verde", 2)
+    _more(page, "BBQ Sauce")
+
+    lines = page.locator("#cart-lines .cart-extra")
+    expect(lines.filter(has_text="Salsa Verde")).to_contain_text("20 cal · 4g carbs each")
+    expect(lines.filter(has_text="BBQ Sauce")).not_to_contain_text("cal")
+
+
+def test_admin_orders_and_prep_list_show_extras_details(admin_page, mock_api):
+    mock_api.state["orders"][0]["extras"][0].update(
+        description="2 oz. tangy tomatillo salsa", macros={"calories": 20, "proteinG": 0, "carbsG": 4, "fatG": 0}
+    )
+    page = admin_page
+    page.open("/admin-orders.html")
+    extra = page.locator("#orders-body .order-extra")
+    expect(extra).to_contain_text("2 oz. tangy tomatillo salsa")
+    expect(extra).to_contain_text("20 cal · 4g carbs each")
+
+    page.open("/admin-prep.html")
+    row = page.locator("#extras-body tr")
+    expect(row.locator(".cell-sub")).to_have_text(["2 oz. tangy tomatillo salsa", "20 cal · 4g carbs each"])
+
+
+def test_manage_menu_saves_an_extras_description_and_macros(admin_page, mock_api):
+    page = admin_page
+    page.open("/admin.html")
+    expect(page.locator(EXTRA_TABLE_ROW.format("e1"))).to_contain_text("2 oz. tangy tomatillo salsa")
+    expect(page.locator(EXTRA_TABLE_ROW.format("e1"))).to_contain_text("20 cal · 4g carbs")
+
+    page.locator(EXTRA_TABLE_ROW.format("e1")).get_by_role("button", name="Edit").click()
+    expect(page.locator("#edit-extra-description")).to_have_value("2 oz. tangy tomatillo salsa")
+    expect(page.locator("#edit-extra-calories")).to_have_value("20")
+    page.fill("#edit-extra-description", "3 oz. cup")
+    page.fill("#edit-extra-fat", "1")
+    page.press("#edit-extra-name", "Enter")
+
+    expect_toast(page, 'Saved changes to "Salsa Verde"')
+    assert mock_api.writes()[-1]["body"] == {
+        "name": "Salsa Verde", "description": "3 oz. cup", "priceCents": 25,
+        "macros": {"calories": 20, "proteinG": 0, "carbsG": 4, "fatG": 1},
+    }

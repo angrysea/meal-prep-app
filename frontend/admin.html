@@ -116,7 +116,7 @@
             </div>
           </form>
 
-          <!-- As tall as the Add a meal form beside it, scrolling inside. -->
+          <!-- Each list is as tall as the form beside it, scrolling inside. -->
           <div class="match-form-height">
           <div class="table-card">
             <table class="data-table" id="meals-table">
@@ -151,6 +151,7 @@
             </div>
           </form>
 
+          <div class="match-form-height">
           <div class="table-card">
             <table class="data-table" id="addons-table">
               <thead>
@@ -158,6 +159,7 @@
               </thead>
               <tbody id="addons-body"></tbody>
             </table>
+          </div>
           </div>
         </div>
       </section>
@@ -169,8 +171,17 @@
             <h2>Add an extra</h2>
             <label for="extra-name">Name</label>
             <input id="extra-name" type="text" placeholder="e.g. Salsa Verde, BBQ Sauce" required />
+            <label for="extra-description">Description <span class="muted">(optional)</span></label>
+            <input id="extra-description" type="text" placeholder="e.g. 2 oz. cup of tangy tomatillo salsa" />
             <label for="extra-price">Price (USD)</label>
             <input id="extra-price" type="number" step="0.01" min="0" required />
+            <h3>Macros <span class="muted" style="text-transform:none; letter-spacing:0;">(optional, for one)</span></h3>
+            <div class="field-grid">
+              <div><label for="extra-calories">Calories</label><input id="extra-calories" type="number" min="0" /></div>
+              <div><label for="extra-protein">Protein (g)</label><input id="extra-protein" type="number" min="0" /></div>
+              <div><label for="extra-carbs">Carbs (g)</label><input id="extra-carbs" type="number" min="0" /></div>
+              <div><label for="extra-fat">Fat (g)</label><input id="extra-fat" type="number" min="0" /></div>
+            </div>
 
             <p class="error" style="display:none;"></p>
             <div class="form-actions">
@@ -178,6 +189,7 @@
             </div>
           </form>
 
+          <div class="match-form-height">
           <div class="table-card">
             <table class="data-table" id="extras-table">
               <thead>
@@ -185,6 +197,7 @@
               </thead>
               <tbody id="extras-body"></tbody>
             </table>
+          </div>
           </div>
         </div>
       </section>
@@ -261,8 +274,17 @@
         <h2>Edit extra</h2>
         <label for="edit-extra-name">Name</label>
         <input id="edit-extra-name" type="text" required />
+        <label for="edit-extra-description">Description <span class="muted">(optional)</span></label>
+        <input id="edit-extra-description" type="text" placeholder="e.g. 2 oz. cup of tangy tomatillo salsa" />
         <label for="edit-extra-price">Price (USD)</label>
         <input id="edit-extra-price" type="number" step="0.01" min="0" required style="max-width:160px;" />
+        <h3>Macros <span class="muted" style="text-transform:none; letter-spacing:0;">(optional, for one)</span></h3>
+        <div class="field-grid">
+          <div><label for="edit-extra-calories">Calories</label><input id="edit-extra-calories" type="number" min="0" /></div>
+          <div><label for="edit-extra-protein">Protein (g)</label><input id="edit-extra-protein" type="number" min="0" /></div>
+          <div><label for="edit-extra-carbs">Carbs (g)</label><input id="edit-extra-carbs" type="number" min="0" /></div>
+          <div><label for="edit-extra-fat">Fat (g)</label><input id="edit-extra-fat" type="number" min="0" /></div>
+        </div>
 
         <p class="error" style="display:none;"></p>
         <div class="dialog-actions">
@@ -817,7 +839,11 @@
           .map(
             (extra) => `
           <tr data-extra-id="${escapeHtml(extra.extraId)}">
-            <td><strong>${escapeHtml(extra.name)}</strong></td>
+            <td>
+              <strong>${escapeHtml(extra.name)}</strong>
+              ${extra.description ? `<div class="muted addon-row-description">${escapeHtml(extra.description)}</div>` : ""}
+              ${formatMacros(extra.macros) ? `<div class="muted addon-row-description">${formatMacros(extra.macros)}</div>` : ""}
+            </td>
             <td class="num">${formatPrice(extra.priceCents)}</td>
             <td>${extra.available ? "Yes" : "No"}</td>
             <td class="actions">
@@ -836,7 +862,9 @@
             const extra = extraFor(btn);
             editingExtraId = extra.extraId;
             document.getElementById("edit-extra-name").value = extra.name;
+            document.getElementById("edit-extra-description").value = extra.description || "";
             document.getElementById("edit-extra-price").value = (extra.priceCents / 100).toFixed(2);
+            setMacros("edit-extra", extra.macros || {});
             openDialog(extraEditDialog);
           });
         });
@@ -877,7 +905,12 @@
         await apiRequest(config.apiUrl, `/extras/${editingExtraId}`, {
           method: "PUT",
           token,
-          body: { name, priceCents: priceCentsFrom("edit-extra-price") },
+          body: {
+            name,
+            description: value("edit-extra-description"),
+            priceCents: priceCentsFrom("edit-extra-price"),
+            macros: macrosFrom("edit-extra"),
+          },
         });
         extraEditDialog.close();
         showToast(`Saved changes to "${name}"`);
@@ -890,7 +923,12 @@
         await apiRequest(config.apiUrl, "/extras", {
           method: "POST",
           token,
-          body: { name, priceCents: priceCentsFrom("extra-price") },
+          body: {
+            name,
+            description: value("extra-description"),
+            priceCents: priceCentsFrom("extra-price"),
+            macros: macrosFrom("extra"),
+          },
         });
         extraCreateForm.reset();
         document.getElementById("extra-name").focus();

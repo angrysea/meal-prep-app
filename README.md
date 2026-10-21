@@ -79,9 +79,10 @@ weekly reminder email/text to subscribed customers.
   most one add-on per meal; it's offered only if it's available and the meal
   has a description or macros for it.
 - **Extras & sauces** (e.g. Salsa Verde $0.25) are a separate global list -
-  `{extraId, name, priceCents, available}` at `/extras` - bought by quantity
+  `{extraId, name, description, macros, priceCents, available}` at `/extras`
+  (description and macros optional, macros for one) - bought by quantity
   at the bottom of the menu, alongside at least one meal. Orders store them
-  in `extras: [{extraId, name, priceCents, quantity}]`.
+  in `extras: [{extraId, name, priceCents, quantity, description, macros}]`.
 - At order time the client sends only ids and quantities
   (`items[].selectedAddOnIds`, `extras[]`); the Lambda prices everything from
   the current menu and snapshots names, prices and macros onto the order, so

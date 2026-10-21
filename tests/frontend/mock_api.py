@@ -58,8 +58,11 @@ SEED = {
     ],
     # Extras & sauces, sold by quantity. e3 is hidden from customers.
     "extras": [
-        {"extraId": "e1", "name": "Salsa Verde", "priceCents": 25, "available": True},
-        {"extraId": "e2", "name": "BBQ Sauce", "priceCents": 25, "available": True},
+        # Salsa Verde has a description and macros; BBQ Sauce has neither.
+        {"extraId": "e1", "name": "Salsa Verde", "priceCents": 25, "available": True,
+         "description": "2 oz. tangy tomatillo salsa", "macros": {"calories": 20, "proteinG": 0, "carbsG": 4, "fatG": 0}},
+        {"extraId": "e2", "name": "BBQ Sauce", "priceCents": 25, "available": True,
+         "description": "", "macros": {"calories": 0, "proteinG": 0, "carbsG": 0, "fatG": 0}},
         {"extraId": "e3", "name": "Sriracha", "priceCents": 25, "available": False},
     ],
     "orders": [
@@ -183,7 +186,9 @@ class MockApi:
                       "note": i.get("note", "")} for i in body["items"]]
             extras_by_id = {e["extraId"]: e for e in s["extras"]}
             extras = [{"extraId": e["extraId"], "name": extras_by_id[e["extraId"]]["name"],
-                       "priceCents": extras_by_id[e["extraId"]]["priceCents"], "quantity": e["quantity"]}
+                       "priceCents": extras_by_id[e["extraId"]]["priceCents"], "quantity": e["quantity"],
+                       "description": extras_by_id[e["extraId"]].get("description", ""),
+                       "macros": extras_by_id[e["extraId"]].get("macros")}
                       for e in body.get("extras", []) if e["quantity"] > 0]
             order = {
                 "items": items, "extras": extras, "customerName": s["profile"]["name"],

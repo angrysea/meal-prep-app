@@ -545,7 +545,8 @@ def _addon_out(item):
 
 # ---------- extras & sauces ----------
 # Condiments and other extras sold on their own, by quantity (e.g. 2 Salsa
-# Verdes), rather than as an option on a meal like an add-on.
+# Verdes), rather than as an option on a meal like an add-on. Each can have
+# an optional description and macros (per one), shown wherever it's listed.
 
 def list_extras():
     items = table.query(
@@ -564,6 +565,8 @@ def create_extra(event):
         "PK": "EXTRA",
         "SK": extra_id,
         "name": _extra_name(body.get("name")),
+        "description": (body.get("description") or "").strip(),
+        "macros": _parse_macros(body.get("macros")),
         "priceCents": _extra_price(body.get("priceCents")),
         "available": bool(body.get("available", True)),
     }
@@ -580,6 +583,8 @@ def update_extra(event, extra_id):
     updated = {
         **existing,
         "name": _extra_name(body["name"]) if "name" in body else existing["name"],
+        "description": (body.get("description") or "").strip() if "description" in body else existing.get("description", ""),
+        "macros": _parse_macros(body["macros"] if "macros" in body else existing.get("macros")),
         "priceCents": _extra_price(body["priceCents"]) if "priceCents" in body else int(existing["priceCents"]),
         "available": bool(body.get("available", existing.get("available", True))),
     }
@@ -615,6 +620,8 @@ def _extra_out(item):
     return {
         "extraId": item["SK"],
         "name": item["name"],
+        "description": item.get("description", ""),
+        "macros": _parse_macros(item.get("macros")),
         "priceCents": int(item["priceCents"]),
         "available": bool(item.get("available", True)),
     }
@@ -622,7 +629,8 @@ def _extra_out(item):
 
 def _resolve_extras(requested):
     """Validates the extras on an order ([{extraId, quantity}]) against the
-    current list and returns (extras with name and price snapshotted, total
+    current list and returns (extras with name, price, description and
+    macros snapshotted, total
     in cents). Prices come from the server, never the client. A hidden or
     deleted extra can't be ordered. Quantities of 0 are dropped.
     """
@@ -649,6 +657,7 @@ def _resolve_extras(requested):
         total_cents += extra["priceCents"] * quantity
         resolved.append({
             "extraId": extra_id, "name": extra["name"], "priceCents": extra["priceCents"], "quantity": quantity,
+            "description": extra["description"], "macros": extra["macros"],
         })
     return resolved, total_cents
 
@@ -1346,7 +1355,8 @@ def _order_out(item):
         "createdAt": item["createdAt"],
         "items": [_line_item_out(i) for i in item["items"]],
         "extras": [
-            {**e, "priceCents": int(e["priceCents"]), "quantity": int(e["quantity"])}
+            {**e, "priceCents": int(e["priceCents"]), "quantity": int(e["quantity"]),
+             "description": e.get("description", ""), "macros": _parse_macros(e.get("macros"))}
             for e in item.get("extras") or []
         ],
         "totalCents": int(item["totalCents"]),

@@ -1,6 +1,7 @@
 """Builder page (admin.html): menu settings, meals, and add-ons."""
 from datetime import date, timedelta
 
+import pytest
 from playwright.sync_api import expect
 
 from .helpers import assert_no_xss, expect_toast
@@ -786,3 +787,16 @@ def test_meals_list_is_as_tall_as_the_add_a_meal_form(admin_page, mock_api):
     assert abs(listing["y"] - form["y"]) < 1
     assert abs(listing["height"] - form["height"]) < 1
     assert page.evaluate("(t => t.scrollHeight > t.clientHeight)(document.getElementById('meals-table').parentElement)")
+
+
+
+@pytest.mark.parametrize("form,table", [("#addon-create-form", "#addons-table"), ("#extra-create-form", "#extras-table")])
+def test_addons_and_extras_lists_are_as_tall_as_their_forms(admin_page, form, table):
+    page = admin_page
+    page.open("/admin.html")
+    expect(page.locator(f"{table} tbody tr").first).to_be_visible()
+
+    form_box = page.locator(form).bounding_box()
+    list_box = page.locator(table).locator("xpath=..").bounding_box()
+    assert abs(list_box["y"] - form_box["y"]) < 1
+    assert abs(list_box["height"] - form_box["height"]) < 1

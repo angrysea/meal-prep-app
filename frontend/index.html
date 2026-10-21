@@ -234,6 +234,7 @@
               ${extraQuantityControl(extra, quantity)}
               <span>${formatPrice(extra.priceCents * quantity)}</span>
             </div>
+            ${formatMacros(extra.macros) ? `<div class="muted" style="font-size:0.85rem;">${formatMacros(extra.macros)} each</div>` : ""}
           </div>`;
         })
         .join("");
@@ -290,6 +291,16 @@
       renderCart();
     }
 
+    // An extra's description and macros (for one), each on its own line,
+    // only when it has them.
+    function extraDetailLines(extra) {
+      const macrosText = formatMacros(extra.macros);
+      return [
+        extra.description ? `<span class="muted extra-description">${escapeHtml(extra.description)}</span>` : "",
+        macrosText ? `<span class="muted extra-macros">${macrosText}</span>` : "",
+      ].join("");
+    }
+
     let extrasInteractive = false;
     function renderExtras() {
       const section = document.getElementById("extras-section");
@@ -302,7 +313,10 @@
       list.innerHTML = orderableExtras
         .map((extra) => `
           <div class="extra-row">
-            <span class="extra-name">${escapeHtml(extra.name)}</span>
+            <div class="extra-info">
+              <span class="extra-name">${escapeHtml(extra.name)}</span>
+              ${extraDetailLines(extra)}
+            </div>
             <span class="extra-price">${formatPrice(extra.priceCents)}</span>
             ${extraQuantityControl(extra, extrasCart[extra.extraId] || 0, !extrasInteractive)}
           </div>`)

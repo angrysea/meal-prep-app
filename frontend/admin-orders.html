@@ -79,7 +79,12 @@
     function itemsHtml(items, extras = []) {
       // Extras & sauces after the meals, one line each.
       const extraLines = extras
-        .map((e) => `<li class="order-extra">${e.quantity} x ${escapeHtml(e.name)} - ${formatPrice(e.priceCents * e.quantity)}</li>`)
+        .map((e) => {
+          const macrosText = formatMacros(e.macros);
+          return `<li class="order-extra">${e.quantity} x ${escapeHtml(e.name)} - ${formatPrice(e.priceCents * e.quantity)}${
+            e.description ? `<div class="item-addon muted">${escapeHtml(e.description)}</div>` : ""
+          }${macrosText ? `<div class="item-addon muted">${macrosText} each</div>` : ""}</li>`;
+        })
         .join("");
       return `<ul>${items
         .map((i) => {

@@ -117,7 +117,13 @@
                 })
                 .join("")}
               ${(order.extras || [])
-                .map((e) => `<li class="order-extra">${e.quantity} x ${escapeHtml(e.name)} - ${formatPrice(e.priceCents * e.quantity)}</li>`)
+                .map((e) => {
+                  const macrosText = formatMacros(e.macros);
+                  const details = [e.description && escapeHtml(e.description), macrosText && `${macrosText} each`].filter(Boolean);
+                  return `<li class="order-extra">${e.quantity} x ${escapeHtml(e.name)} - ${formatPrice(e.priceCents * e.quantity)}${
+                    details.length ? ` <span class="muted">(${details.join(" - ")})</span>` : ""
+                  }</li>`;
+                })
                 .join("")}
             </ul>
             <p>Total: <strong>${formatPrice(order.totalCents)}</strong></p>

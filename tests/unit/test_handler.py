@@ -2322,8 +2322,10 @@ def test_order_adds_extras_by_quantity_at_the_servers_price(table):
     assert resp["statusCode"] == 201
     order = json.loads(resp["body"])
     assert order["extras"] == [
-        {"extraId": salsa["extraId"], "name": "Salsa Verde", "priceCents": 25, "quantity": 2},
-        {"extraId": bbq["extraId"], "name": "BBQ Sauce", "priceCents": 25, "quantity": 3},
+        {"extraId": salsa["extraId"], "name": "Salsa Verde", "priceCents": 25, "quantity": 2,
+         "description": "", "macros": NO_MACROS},
+        {"extraId": bbq["extraId"], "name": "BBQ Sauce", "priceCents": 25, "quantity": 3,
+         "description": "", "macros": NO_MACROS},
     ]
     assert order["totalCents"] == 1200 + 5 * 25
     # Saved with the order (a later price change doesn't touch it).
@@ -2373,3 +2375,41 @@ def test_orders_from_before_extras_list_none(table):
 
     order = _place_order(index, CUSTOMER_CLAIMS)
     assert order["extras"] == []
+
+
+NO_MACROS = {"calories": 0, "proteinG": 0, "carbsG": 0, "fatG": 0}
+
+
+def test_extra_has_an_optional_description_and_macros(table):
+    from backend.lambda_src import index
+
+    plain = _create_extra(index, name="Sriracha")
+    assert (plain["description"], plain["macros"]) == ("", NO_MACROS)
+
+    salsa = _create_extra(index, description="  Tangy tomatillo salsa, 2 oz. ",
+                          macros={"calories": "20", "proteinG": 0, "carbsG": 4, "fatG": 0})
+    assert salsa["description"] == "Tangy tomatillo salsa, 2 oz."
+    assert salsa["macros"] == {"calories": 20, "proteinG": 0, "carbsG": 4, "fatG": 0}
+
+    # Editing just the price keeps them; sending them changes them.
+    path, params = f"/extras/{salsa['extraId']}", {"extraId": salsa["extraId"]}
+    kept = json.loads(index.handler(_event("PUT", path, {"priceCents": 30}, path_params=params, claims=ADMIN_CLAIMS), None)["body"])
+    assert (kept["description"], kept["macros"]["calories"]) == ("Tangy tomatillo salsa, 2 oz.", 20)
+    changed = json.loads(index.handler(_event("PUT", path, {"description": "", "macros": {"calories": 25}},
+                                              path_params=params, claims=ADMIN_CLAIMS), None)["body"])
+    assert changed["description"] == "" and changed["macros"] == {**NO_MACROS, "calories": 25}
+
+
+def test_order_saves_each_extras_description_and_macros(table):
+    from backend.lambda_src import index
+
+    salsa = _create_extra(index, description="2 oz.", macros={"calories": 20, "carbsG": 4})
+    order = json.loads(_order_with_extras(index, [{"extraId": salsa["extraId"], "quantity": 2}])["body"])
+    [saved] = order["extras"]
+    assert saved["description"] == "2 oz." and saved["macros"]["calories"] == 20
+
+    # Changing the extra later doesn't change the order.
+    index.handler(_event("PUT", f"/extras/{salsa['extraId']}", {"description": "4 oz."},
+                         path_params={"extraId": salsa["extraId"]}, claims=ADMIN_CLAIMS), None)
+    [listed] = json.loads(index.handler(_event("GET", "/orders", claims=CUSTOMER_CLAIMS), None)["body"])["orders"]
+    assert listed["extras"][0]["description"] == "2 oz."

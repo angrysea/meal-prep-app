@@ -1337,8 +1337,20 @@ body.admin-page dialog {
   border-top: 0;
 }
 
+.extra-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
 .extra-name {
   font-weight: 600;
+}
+
+.extra-description,
+.extra-macros {
+  font-size: 0.85rem;
+  margin-top: 0.1rem;
 }
 
 .extra-price {

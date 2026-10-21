@@ -182,7 +182,9 @@
       const totals = new Map();
       orders.forEach((order) => {
         (order.extras || []).forEach((e) => {
-          const row = totals.get(e.extraId) || { name: e.name, quantity: 0 };
+          const row = totals.get(e.extraId) || {
+            name: e.name, description: e.description || "", macros: e.macros, quantity: 0,
+          };
           row.quantity += e.quantity;
           totals.set(e.extraId, row);
         });
@@ -350,7 +352,12 @@
         const rows = totalExtras(dateOrders);
         document.getElementById("extras-card").style.display = rows.length ? "block" : "none";
         document.getElementById("extras-body").innerHTML = rows
-          .map((r) => `<tr><td><strong>${escapeHtml(r.name)}</strong></td><td class="num"><strong>${r.quantity}</strong></td></tr>`)
+          .map((r) => {
+            const macrosText = formatMacros(r.macros);
+            return `<tr><td><strong>${escapeHtml(r.name)}</strong>${
+              r.description ? `<div class="cell-sub">${escapeHtml(r.description)}</div>` : ""
+            }${macrosText ? `<div class="cell-sub">${macrosText} each</div>` : ""}</td><td class="num"><strong>${r.quantity}</strong></td></tr>`;
+          })
           .join("");
       }
 
