@@ -554,6 +554,90 @@ table.customers-table th {
   display: none;
 }
 
+/* Laid out for print here rather than inside @media print, so fitLabels()
+   in admin-prep.html can measure each label off screen (.measuring) and
+   shrink the text of any whose content is too long for 2 inches. Text
+   sizes are in em of the label's font size, which fitLabels() lowers. */
+#print-labels.measuring {
+  display: block;
+  position: absolute;
+  left: -10000px;
+  top: 0;
+  visibility: hidden;
+}
+
+/* SpartanIndustrial R011, measured from its template: 0.25" top and bottom,
+   1.2" left and right, 0.1" between columns, 0.125" between rows - with
+   the @page margin below, 0.25 + 5 x 2 + 4 x 0.125 + 0.25 = 11". */
+#print-labels .label-sheet {
+  display: grid;
+  grid-template-columns: 3in 3in;
+  grid-auto-rows: 2in;
+  column-gap: 0.1in;
+  row-gap: 0.125in;
+}
+
+#print-labels .label {
+  width: 3in;
+  height: 2in;
+  box-sizing: border-box;
+  padding: 0.13in 0.16in;
+  display: flex;
+  flex-direction: column;
+  text-align: center;
+  border: 1px solid #ccc;
+  border-radius: 10px;
+  font-size: 9pt;
+  /* Last resort: never spill onto the next label. */
+  overflow: hidden;
+}
+
+#print-labels .label-meal {
+  font-family: var(--font-display);
+  font-size: 1.444em; /* 13pt */
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+}
+
+#print-labels .label-customer {
+  font-weight: bold;
+  margin-top: 0.03in;
+}
+
+#print-labels .label-body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2in;
+  margin-top: 0.05in;
+}
+
+#print-labels .label-logo-img {
+  height: 0.55in;
+  width: auto;
+  flex-shrink: 0;
+}
+
+#print-labels .label-macros {
+  text-align: left;
+  font-weight: bold;
+  line-height: 1.3;
+}
+
+#print-labels .label-addon-line {
+  font-size: 0.833em; /* 7.5pt */
+  font-weight: bold;
+  text-transform: uppercase;
+  margin-top: 0.03in;
+}
+
+#print-labels .label-note {
+  font-size: 0.889em; /* 8pt */
+  font-weight: bold;
+  margin-top: 0.03in;
+}
+
 /* Monthly menu flyer preview (admin-monthly-menu.html) - on-screen only;
    the version actually emailed is built separately with inline styles,
    since email clients don't load external stylesheets. */
@@ -635,11 +719,6 @@ table.customers-table th {
   }
 
   .label-sheet {
-    display: grid;
-    grid-template-columns: 3in 3in;
-    grid-auto-rows: 2in;
-    column-gap: 0.25in;
-    row-gap: 0;
     page-break-after: always;
     break-after: page;
   }
@@ -649,69 +728,10 @@ table.customers-table th {
     break-after: auto;
   }
 
-  .label {
-    width: 3in;
-    height: 2in;
-    box-sizing: border-box;
-    padding: 0.13in 0.16in;
-    display: flex;
-    flex-direction: column;
-    text-align: center;
-    border: 1px solid #ccc;
-    border-radius: 10px;
-  }
-
-  .label-meal {
-    font-family: var(--font-display);
-    font-size: 13pt;
-    text-transform: uppercase;
-    letter-spacing: 0.02em;
-    line-height: 1.1;
-  }
-
-  .label-customer {
-    font-size: 9pt;
-    font-weight: bold;
-    margin-top: 0.03in;
-  }
-
-  .label-body {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.2in;
-    margin-top: 0.05in;
-  }
-
-  .label-logo-img {
-    height: 0.55in;
-    width: auto;
-    flex-shrink: 0;
-  }
-
-  .label-macros {
-    text-align: left;
-    font-size: 9pt;
-    font-weight: bold;
-    line-height: 1.3;
-  }
-
-  .label-addon-line {
-    font-size: 7.5pt;
-    font-weight: bold;
-    text-transform: uppercase;
-    margin-top: 0.03in;
-  }
-
-  .label-note {
-    font-size: 8pt;
-    font-weight: bold;
-    margin-top: 0.03in;
-  }
-
+  /* Print at 100% scale ("Default"), not "Fit to page", or the labels drift. */
   @page {
     size: letter;
-    margin: 0.5in 1.125in;
+    margin: 0.25in 1.2in;
   }
 }
 

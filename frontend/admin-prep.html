@@ -215,6 +215,26 @@
       };
     }
 
+    // Shrinks the text of any label whose content (a long add-on
+    // description plus a note, say) doesn't fit its 2 inches, a quarter
+    // point at a time, so nothing runs off the bottom. Labels that fit keep
+    // the normal 9pt size. Measured off screen in the print layout.
+    const LABEL_FONT_PT = 9;
+    const LABEL_MIN_FONT_PT = 5.5;
+    function fitLabels() {
+      const container = document.getElementById("print-labels");
+      container.classList.add("measuring");
+      container.querySelectorAll(".label").forEach((label) => {
+        let size = LABEL_FONT_PT;
+        label.style.fontSize = "";
+        while (label.scrollHeight > label.clientHeight && size > LABEL_MIN_FONT_PT) {
+          size -= 0.25;
+          label.style.fontSize = `${size}pt`;
+        }
+      });
+      container.classList.remove("measuring");
+    }
+
     async function initPrepList(config, token) {
       const body = document.getElementById("prep-body");
       const select = document.getElementById("ready-date-filter");
@@ -242,6 +262,9 @@
       function fillLabels() {
         currentLabels = buildLabelsHtml(currentOrders, mealsById, addOnsById);
         document.getElementById("print-labels").innerHTML = currentLabels.html;
+        fitLabels();
+        // The meal name's display font may still be loading - measure again once it has.
+        document.fonts.ready.then(fitLabels);
       }
 
       printForm.addEventListener("submit", (e) => {

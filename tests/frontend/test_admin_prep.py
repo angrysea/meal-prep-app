@@ -187,3 +187,38 @@ def test_browser_print_after_changing_the_date_prints_that_dates_labels(admin_pa
     labels = page.locator("#print-labels .label")
     expect(labels).to_have_count(2)
     expect(labels.filter(has_text="Later Customer")).to_have_count(2)
+
+
+def test_long_labels_shrink_to_fit_and_short_ones_keep_their_size(admin_page, mock_api):
+    # A long add-on description plus a note used to run off the bottom.
+    mock_api.state["meals"][0]["addOnDetails"]["a1"]["description"] = (
+        "Includes 2 extra ounces of chicken thigh and 1 extra ounce of mixed vegetables, "
+        "with cauliflower rice instead of white rice."
+    )
+    page = admin_page
+    page.open("/admin-prep.html")
+    page.emulate_media(media="print")
+
+    labels = page.evaluate("""() => [...document.querySelectorAll('#print-labels .label')].map(l => ({
+        text: l.innerText, fits: l.scrollHeight <= l.clientHeight, font: getComputedStyle(l).fontSize }))""")
+    assert all(label["fits"] for label in labels), labels
+    long_ = next(label for label in labels if "CAULIFLOWER" in label["text"].upper())
+    short = next(label for label in labels if "TURKEY CHILI" in label["text"].upper())
+    assert float(long_["font"].rstrip("px")) < 12  # shrunk below 9pt (12px)
+    assert short["font"] == "12px"
+
+
+def test_labels_line_up_with_the_r011_sheet(admin_page, mock_api):
+    # SpartanIndustrial R011: 3" x 2" labels, 0.1" between columns, 0.125" between rows.
+    for i in range(4):
+        mock_api.state["orders"].append(dict(mock_api.state["orders"][1], orderId=f"extra{i}"))
+    page = admin_page
+    page.open("/admin-prep.html")
+    page.emulate_media(media="print")
+
+    boxes = page.evaluate("""() => [...document.querySelectorAll('#print-labels .label')].slice(0, 4).map(l => {
+        const r = l.getBoundingClientRect(); return [r.left / 96, r.top / 96, r.width / 96, r.height / 96]; })""")
+    (x0, y0, w, h), (x1, _, _, _), (_, y2, _, _) = boxes[0], boxes[1], boxes[2]
+    assert (round(w, 3), round(h, 3)) == (3, 2)
+    assert round(x1 - x0, 3) == 3.1  # 3" label + 0.1" gap
+    assert round(y2 - y0, 3) == 2.125  # 2" label + 0.125" gap
