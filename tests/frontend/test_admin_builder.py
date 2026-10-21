@@ -745,14 +745,22 @@ def test_saving_a_meal_keeps_a_deleted_addons_copy(admin_page, mock_api):
     assert "a2" in details
 
 
-def test_addons_can_be_hidden_but_not_deleted(admin_page):
-    # Hide does everything for customers that Delete did, and keeps the add-on.
+def test_deleting_an_addon_keeps_each_meals_copy(admin_page, mock_api):
     page = admin_page
     page.open("/admin.html")
 
     row = page.locator(ADDON_ROW.format("a1"))
-    expect(row.get_by_role("button")).to_have_text(["Edit", "Hide"])
-    expect(page.locator("#addons-body .delete-addon")).to_have_count(0)
+    expect(row.get_by_role("button")).to_have_text(["Edit", "Hide", "Delete"])
+    row.locator(".delete-addon").click()
+    expect(page.locator("#confirm-dialog-message")).to_have_text('Delete the "Large" add-on?')
+    page.keyboard.press("Enter")
+
+    expect_toast(page, 'Deleted "Large"')
+    assert (mock_api.writes()[-1]["method"], mock_api.writes()[-1]["path"]) == ("DELETE", "/addons/a1")
+    expect(page.locator(ADDON_ROW.format("a1"))).to_have_count(0)
+    # Gone from the add-on list, but still listed under the meal from its copy.
+    deleted = _option_rows(page, "m1").filter(has_text="Large (deleted)")
+    expect(deleted).to_have_count(1)
 
 
 def test_hidden_addon_is_marked_under_each_meal(admin_page, mock_api):

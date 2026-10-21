@@ -493,8 +493,7 @@
             <td class="macro-description">${escapeHtml(description)}</td>
             <td class="macro-values">${formatMacros(macros) || "-"}</td>
           </tr>`;
-        // Add-ons deleted since this meal was saved (before Manage menu
-        // dropped the add-on Delete button - Hide is used instead): still
+        // Add-ons deleted since this meal was saved: still
         // listed from the meal's own copy, but customers don't see them.
         const liveIds = new Set(currentAddOns.map((a) => a.addOnId));
         const deleted = Object.entries(meal.addOnDetails || {})
@@ -606,6 +605,7 @@
             <td class="actions">
               <button type="button" class="secondary edit-addon">Edit</button>
               <button type="button" class="secondary table-action toggle-addon-available">${addOn.available ? "Hide" : "Show"}</button>
+              <button type="button" class="secondary table-action delete-addon">Delete</button>
             </td>
           </tr>`
           )
@@ -630,6 +630,20 @@
               await refreshAddOns();
             })
           );
+        });
+
+        // Deleting only clears it from this list: each meal keeps its own copy
+        // (listed as "deleted" under the meal), and customers no longer see it.
+        body.querySelectorAll(".delete-addon").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            const addOn = addOnFor(btn);
+            if (!(await confirmAction(`Delete the "${addOn.name}" add-on?`))) return;
+            await rowAction(btn, async () => {
+              await apiRequest(config.apiUrl, `/addons/${addOn.addOnId}`, { method: "DELETE", token });
+              showToast(`Deleted "${addOn.name}"`);
+              await refreshAddOns();
+            });
+          });
         });
       }
 
