@@ -192,6 +192,10 @@ in `app.py` (gtxmeals@gmail.com):
   them end to end.
 - **Cognito** publishes no error metrics without its paid advanced security
   features; failures that reach the API show up under `ApiLogErrors`.
+- **Budget**: `GTXMeals-Monthly` emails the same address when AWS spend passes
+  80% and 100% of $20 a month, or is forecast to pass $20. Credits are left
+  out, so it tracks real usage. AWS updates billing data a few times a day,
+  so these can lag by up to about a day.
 - **Kept to 10 alarms**, CloudWatch's free allowance: DynamoDB throttling,
   SES spam complaints and the monitoring Lambdas' own errors have no alarm
   (throttles and complaints are on the dashboard).

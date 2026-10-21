@@ -18,6 +18,7 @@ Not alarmed directly:
 from aws_cdk import (
     Duration,
     RemovalPolicy,
+    aws_budgets as budgets,
     aws_cloudwatch as cloudwatch,
     aws_dynamodb as dynamodb,
     aws_events as events,
@@ -38,6 +39,8 @@ ERROR_PATTERN = '?ERROR ?"Task timed out" ?"Runtime exited"'
 # SES's sandbox allows 200 emails a day. Warn at 80% so a big menu send
 # doesn't get cut off part way. Raise this after SES production access.
 SES_DAILY_SEND_WARNING = 160
+# Monthly AWS spend that triggers the budget emails.
+MONTHLY_BUDGET_USD = 20
 # The API Lambda's timeout is 10 seconds.
 API_SLOW_MS = 8000
 
@@ -248,6 +251,36 @@ class Monitoring(Construct):
             comparison=cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD, periods=2,
             missing=cloudwatch.TreatMissingData.MISSING,
         )
+        # ---------- Budget ----------
+        # AWS Budgets emails alert_email directly - no SNS or SES involved.
+        # Credits are left out so it reports real usage: with them counted,
+        # the bill reads $0 until the project's credits run out.
+        budgets.CfnBudget(
+            self, "MonthlyBudget",
+            budget=budgets.CfnBudget.BudgetDataProperty(
+                budget_name="GTXMeals-Monthly",
+                budget_type="COST",
+                time_unit="MONTHLY",
+                budget_limit=budgets.CfnBudget.SpendProperty(amount=MONTHLY_BUDGET_USD, unit="USD"),
+                cost_types=budgets.CfnBudget.CostTypesProperty(include_credit=False),
+            ),
+            notifications_with_subscribers=[
+                budgets.CfnBudget.NotificationWithSubscribersProperty(
+                    notification=budgets.CfnBudget.NotificationProperty(
+                        notification_type=kind,
+                        comparison_operator="GREATER_THAN",
+                        threshold=percent,
+                        threshold_type="PERCENTAGE",
+                    ),
+                    subscribers=[budgets.CfnBudget.SubscriberProperty(
+                        subscription_type="EMAIL", address=alert_email,
+                    )],
+                )
+                # Spent 80%, spent 100%, and on course to pass 100% this month.
+                for kind, percent in (("ACTUAL", 80), ("ACTUAL", 100), ("FORECASTED", 100))
+            ],
+        )
+
         # ---------- Dashboard ----------
         def graph(title, *metrics, **kwargs):
             return cloudwatch.GraphWidget(title=title, left=list(metrics), width=8, height=6, **kwargs)

@@ -67,6 +67,19 @@ def test_health_check_runs_every_fifteen_minutes(template):
     template.has_resource_properties("AWS::Lambda::Function", {"Handler": "health.handler"})
 
 
+def test_monthly_budget_emails_at_80_and_100_percent(template):
+    budget = next(iter(template.find_resources("AWS::Budgets::Budget").values()))["Properties"]
+    assert budget["Budget"]["BudgetLimit"] == {"Amount": 20, "Unit": "USD"}
+    assert budget["Budget"]["TimeUnit"] == "MONTHLY"
+    assert budget["Budget"]["CostTypes"] == {"IncludeCredit": False}  # real usage, not net of credits
+    alerts_ = [
+        (n["Notification"]["NotificationType"], n["Notification"]["Threshold"], n["Subscribers"])
+        for n in budget["NotificationsWithSubscribers"]
+    ]
+    to = [{"SubscriptionType": "EMAIL", "Address": "alerts@example.org"}]
+    assert alerts_ == [("ACTUAL", 80, to), ("ACTUAL", 100, to), ("FORECASTED", 100, to)]
+
+
 def test_dashboard_created(template):
     template.has_resource_properties("AWS::CloudWatch::Dashboard", {"DashboardName": "GTXMeals"})
 
