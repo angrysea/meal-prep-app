@@ -36,9 +36,10 @@ METRIC_NAMESPACE = "GTXMeals"
 # unhandled exception, the API's "ERROR ..." lines for errors it catches (a
 # failed email to one customer, say), and Lambda's timeout and crash messages.
 ERROR_PATTERN = '?ERROR ?"Task timed out" ?"Runtime exited"'
-# SES's sandbox allows 200 emails a day. Warn at 80% so a big menu send
-# doesn't get cut off part way. Raise this after SES production access.
-SES_DAILY_SEND_WARNING = 160
+# Normal sending is about 30 emails a week. Far more in one day means a bug
+# sending duplicates or a misused account - worth catching early to protect
+# the domain's sender reputation. (SES itself allows 50,000 a day.)
+SES_DAILY_SEND_WARNING = 300
 # Monthly AWS spend that triggers the budget emails.
 MONTHLY_BUDGET_USD = 20
 # The API Lambda's timeout is 10 seconds.
@@ -227,12 +228,12 @@ class Monitoring(Construct):
             "sending at 10%. Check the Customers page for mistyped email addresses.",
         )
         alarm(
-            "EmailDailyLimit",
+            "EmailVolumeHigh",
             cloudwatch.Metric(namespace="AWS/SES", metric_name="Send",
                               statistic="Sum", period=Duration.days(1)), SES_DAILY_SEND_WARNING,
-            "Close to the daily email limit",
-            f"Over {SES_DAILY_SEND_WARNING} emails were sent today. SES allows 200 a day while the "
-            "project is in the SES sandbox; emails past the limit fail.",
+            "Unusually many emails sent today",
+            f"Over {SES_DAILY_SEND_WARNING} emails were sent today - normally it's about 30 a week. "
+            "Check for a menu or reminder sent more than once, or for sending you didn't start.",
         )
         # Website (CloudFront + S3) and API, end to end
         alarm(

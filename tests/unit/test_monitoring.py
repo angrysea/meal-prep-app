@@ -28,7 +28,7 @@ def test_every_service_has_its_alarms(template):
     assert names == {f"GTXMeals-{n}" for n in (
         "ApiErrors", "ApiThrottles", "ApiNearTimeout", "ApiLogErrors", "Api5xx",
         "DatabaseErrors",
-        "EmailBounceRate", "EmailDailyLimit",
+        "EmailBounceRate", "EmailVolumeHigh",
         "SiteDown", "ApiDown",
     )}  # 10 - CloudWatch's free allowance
 

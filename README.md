@@ -111,10 +111,10 @@ one-time setup:
    account's email changes, replies follow it automatically, with no SES
    change or redeploy needed. With no admin configured, emails still send,
    just without a Reply-To.
-2. New accounts start in the **SES sandbox**, which only allows sending to
-   *verified* recipient addresses — fine for testing with your own inbox,
-   but you'll need to request production access (Console → SES → Account
-   dashboard) before real customers can receive these emails.
+2. SES has **production access** in us-east-2 (granted 2026-10-21; 50,000
+   emails a day). New accounts start in the SES sandbox, which only sends to
+   verified addresses - production access is requested from Console → SES →
+   Account dashboard.
 3. **Texting goes through Twilio, not AWS SNS** - this AWS org's SCP blocks
    `sns:Publish`/`sms-voice:*` entirely, so SNS was never usable here. Sign
    up at [twilio.com](https://www.twilio.com), buy a phone number capable of
@@ -178,15 +178,14 @@ in `app.py` (gtxmeals@gmail.com):
 | Lambda logs | `ApiLogErrors` - any `ERROR`, timeout or crash line in the API's logs, including errors it recovers from (`print(f"ERROR ...")`) |
 | API Gateway | `Api5xx` |
 | DynamoDB | `DatabaseErrors` |
-| SES | `EmailBounceRate` (5%), `EmailDailyLimit` (160 of the sandbox's 200 a day) |
+| SES | `EmailBounceRate` (5%), `EmailVolumeHigh` (over 300 in a day; normal is about 30 a week) |
 | Website + API | `SiteDown`, `ApiDown` - a health-check Lambda loads the site and `GET /settings` every 15 minutes; alarms after 2 failures in a row |
 
 - **Alerts go through SES, not SNS** - the SCP blocks `sns:Publish`. An
   EventBridge rule sends each `GTXMeals-*` alarm change to
   `backend/monitor_src/alerts.py`, which emails from `alerts@gtxmeals.com`:
   once when an alarm goes off (with the latest API log errors, for API
-  alarms) and once when it clears. While SES is in its sandbox the alert
-  address must be verified in SES.
+  alarms) and once when it clears.
 - **CloudFront and S3** have no alarms of their own: CloudFront's metrics
   live only in us-east-1, where this project can't deploy. `SiteDown` covers
   them end to end.
