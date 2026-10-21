@@ -907,6 +907,20 @@ body.admin-page dialog {
   margin: 0;
 }
 
+/* A list that's exactly as tall as the form beside it: the form alone sets
+   the row's height (the absolutely placed list adds none), and the list
+   scrolls inside. */
+.admin-split > .match-form-height {
+  position: relative;
+  align-self: stretch;
+}
+
+.match-form-height > .table-card {
+  position: absolute;
+  inset: 0;
+  max-height: none;
+}
+
 .field-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

@@ -771,3 +771,18 @@ def test_hidden_addon_is_marked_under_each_meal(admin_page, mock_api):
     large = _option_rows(page, "m1").nth(1)
     expect(large).to_have_class("macro-line is-hidden")
     expect(large.locator(".macro-label")).to_have_text("Large (hidden)")
+
+
+def test_meals_list_is_as_tall_as_the_add_a_meal_form(admin_page, mock_api):
+    # More meals than fit: the list stops at the form's height and scrolls.
+    for i in range(8):
+        mock_api.state["meals"].append(dict(mock_api.state["meals"][1], mealId=f"x{i}", name=f"Meal {i}"))
+    page = admin_page
+    page.open("/admin.html")
+    expect(page.locator("#meals-body tr.meal-row")).to_have_count(10)
+
+    form = page.locator("#meal-create-form").bounding_box()
+    listing = page.locator("#meals-table").locator("xpath=..").bounding_box()
+    assert abs(listing["y"] - form["y"]) < 1
+    assert abs(listing["height"] - form["height"]) < 1
+    assert page.evaluate("(t => t.scrollHeight > t.clientHeight)(document.getElementById('meals-table').parentElement)")
