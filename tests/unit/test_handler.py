@@ -2111,6 +2111,7 @@ def test_meal_stores_its_own_description_and_macros_per_addon(table):
     }, claims=ADMIN_CLAIMS), None)
     meal = json.loads(resp["body"])
     assert meal["addOnDetails"] == {large["addOnId"]: {
+        "name": "", "priceCents": None,
         "description": "2 extra oz of chicken",
         "macros": {"calories": 750, "proteinG": 60, "carbsG": 70, "fatG": 18},
     }}
@@ -2149,3 +2150,83 @@ def test_addons_are_listed_alphabetically_by_name(table):
     assert [a["name"] for a in addons] == [
         "+ 1oz. Extra Protein", "cauliflower Rice", "Large", "Large with Cauliflower Rice",
     ]
+
+
+# ---------- each meal keeps its own copy of the add-on's name and price ----------
+
+
+def _meal_with_large(index, price_cents=None, addon_price=300):
+    large = _create_addon(index, name="Large", price_cents=addon_price)
+    meal = _create_meal(index, price_cents=1200)
+    detail = {"name": "Large", "description": "Bigger", "macros": {"calories": 700}}
+    if price_cents is not None:
+        detail["priceCents"] = price_cents
+    _put_meal(index, meal["mealId"], {"addOnDetails": {large["addOnId"]: detail}})
+    return meal, large
+
+
+def _order_meal(index, meal, addon):
+    return index.handler(_event("POST", "/orders", {"contactPhone": PHONE, "items": [
+        {"mealId": meal["mealId"], "quantity": 1, "selectedAddOnIds": [addon["addOnId"]]},
+    ]}, claims=CUSTOMER_CLAIMS), None)
+
+
+def test_meal_saves_the_addon_name_and_its_own_price(table):
+    from backend.lambda_src import index
+
+    meal, large = _meal_with_large(index, price_cents=450)
+    [listed] = json.loads(index.handler(_event("GET", "/meals"), None)["body"])["meals"]
+    assert listed["addOnDetails"][large["addOnId"]] == {
+        "name": "Large", "priceCents": 450, "description": "Bigger",
+        "macros": {"calories": 700, "proteinG": 0, "carbsG": 0, "fatG": 0},
+    }
+
+
+def test_order_charges_the_meals_price_for_the_addon(table):
+    from backend.lambda_src import index
+
+    meal, large = _meal_with_large(index, price_cents=450)
+    order = json.loads(_order_meal(index, meal, large)["body"])
+    assert order["items"][0]["unitPriceCents"] == 1650
+    assert order["items"][0]["selectedAddOns"][0]["priceCents"] == 450
+
+
+def test_meal_without_its_own_price_uses_the_addons(table):
+    from backend.lambda_src import index
+
+    meal, large = _meal_with_large(index)
+    [listed] = json.loads(index.handler(_event("GET", "/meals"), None)["body"])["meals"]
+    assert listed["addOnDetails"][large["addOnId"]]["priceCents"] is None
+    assert json.loads(_order_meal(index, meal, large)["body"])["items"][0]["unitPriceCents"] == 1500
+
+
+def test_negative_addon_price_on_a_meal_is_rejected(table):
+    from backend.lambda_src import index
+
+    meal = _create_meal(index)
+    resp = _put_meal(index, meal["mealId"], {"addOnDetails": {"a1": {"priceCents": -100}}})
+    assert resp["statusCode"] == 400
+
+
+def test_renaming_an_addon_updates_each_meals_copy_but_not_its_price(table):
+    from backend.lambda_src import index
+
+    meal, large = _meal_with_large(index, price_cents=450)
+    other = _create_meal(index, name="No add-ons")
+    _put_addon(index, large["addOnId"], {"name": "Large Portion", "priceCents": 500})
+    meals = {m["mealId"]: m for m in json.loads(index.handler(_event("GET", "/meals"), None)["body"])["meals"]}
+    detail = meals[meal["mealId"]]["addOnDetails"][large["addOnId"]]
+    assert (detail["name"], detail["priceCents"]) == ("Large Portion", 450)
+    assert meals[other["mealId"]]["addOnDetails"] == {}
+
+
+def test_deleting_an_addon_keeps_the_meals_copy_but_it_cant_be_ordered(table):
+    from backend.lambda_src import index
+
+    meal, large = _meal_with_large(index, price_cents=450)
+    index.handler(_event("DELETE", f"/addons/{large['addOnId']}", path_params={"addOnId": large["addOnId"]},
+                         claims=ADMIN_CLAIMS), None)
+    [listed] = json.loads(index.handler(_event("GET", "/meals"), None)["body"])["meals"]
+    assert listed["addOnDetails"][large["addOnId"]]["name"] == "Large"
+    assert listed["addOnDetails"][large["addOnId"]]["priceCents"] == 450
+    assert _order_meal(index, meal, large)["statusCode"] == 400

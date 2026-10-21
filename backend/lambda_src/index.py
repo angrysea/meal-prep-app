@@ -370,19 +370,30 @@ def _parse_macros(raw):
 
 
 def _parse_addon_details(raw):
-    """This meal's own description and macros for each add-on, keyed by
-    addOnId - e.g. what "Large" means for this dish and the macros of the
-    whole Large meal. Add-ons not listed fall back to the add-on's default
-    description and no macros."""
+    """This meal's own copy of each add-on, keyed by addOnId: its name and
+    price (the price customers pay for it on this meal - Manage menu starts
+    it at the add-on's price), what it means for this dish, and the macros
+    of the whole meal with it. The name and price are kept on the meal so
+    they survive the add-on being deleted. Add-ons not listed fall back to
+    the add-on's own name, price and default description, and no macros."""
     if not isinstance(raw or {}, dict):
         raise BadRequest("addOnDetails must be an object keyed by addOnId")
-    return {
-        str(addon_id): {
-            "description": ((detail or {}).get("description") or "").strip(),
-            "macros": _parse_macros((detail or {}).get("macros")),
-        }
-        for addon_id, detail in (raw or {}).items()
+    return {str(addon_id): _parse_addon_detail(detail or {}) for addon_id, detail in (raw or {}).items()}
+
+
+def _parse_addon_detail(detail):
+    parsed = {
+        "name": (detail.get("name") or "").strip(),
+        "description": (detail.get("description") or "").strip(),
+        "macros": _parse_macros(detail.get("macros")),
     }
+    # Left out (falls back to the add-on's price) when not given.
+    if detail.get("priceCents") not in (None, ""):
+        price_cents = int(detail["priceCents"])
+        if price_cents < 0:
+            raise BadRequest("add-on price can't be negative")
+        parsed["priceCents"] = price_cents
+    return parsed
 
 
 def _parse_week_of(raw):
@@ -405,6 +416,9 @@ def _meal_out(item):
         "macros": {field: int(item.get("macros", {}).get(field, 0)) for field in MACRO_FIELDS},
         "addOnDetails": {
             addon_id: {
+                "name": detail.get("name", ""),
+                # null when the meal hasn't saved its own price - the add-on's applies.
+                "priceCents": int(detail["priceCents"]) if "priceCents" in detail else None,
                 "description": detail.get("description", ""),
                 "macros": {field: int(detail.get("macros", {}).get(field, 0)) for field in MACRO_FIELDS},
             }
@@ -468,7 +482,25 @@ def update_addon(event, addon_id):
     # Macros now live on each meal; drop any an older add-on still carries.
     updated.pop("macros", None)
     table.put_item(Item=updated)
+    if updated["name"] != current["name"]:
+        _rename_addon_on_meals(addon_id, updated["name"])
     return _response(200, _addon_out(updated))
+
+
+def _rename_addon_on_meals(addon_id, name):
+    # Keeps each meal's saved copy of the name current, so it's right if
+    # the add-on is later deleted. Prices are per meal, so they're left alone.
+    meals = table.query(
+        KeyConditionExpression="PK = :pk", ExpressionAttributeValues={":pk": "MEAL"},
+    ).get("Items", [])
+    for meal in meals:
+        if addon_id in (meal.get("addOnDetails") or {}):
+            table.update_item(
+                Key={"PK": "MEAL", "SK": meal["SK"]},
+                UpdateExpression="SET addOnDetails.#id.#name = :name",
+                ExpressionAttributeNames={"#id": addon_id, "#name": "name"},
+                ExpressionAttributeValues={":name": name},
+            )
 
 
 def delete_addon(event, addon_id):
@@ -1137,10 +1169,11 @@ def _reply_to():
 
 def _resolve_addons(meal, requested_addon_ids):
     """Validates the client's add-on pick (at most one per meal) against the
-    current global add-on list and returns (resolved add-ons with name/price
-    and this meal's macros for it snapshotted, total price delta in cents).
-    Raises BadRequest for more than one add-on, or an id that doesn't
-    currently exist. Macros are snapshotted (not looked up live) for the same
+    current global add-on list and returns (resolved add-ons with name, this
+    meal's price for it and this meal's macros for it snapshotted, total
+    price delta in cents). Raises BadRequest for more than one add-on, or an
+    id that doesn't currently exist (e.g. a deleted add-on, even though the
+    meal still has its copy). Macros are snapshotted (not looked up live) for the same
     reason name/price are - so a past order's label is unaffected by the
     nutrition info changing later.
     """
@@ -1153,13 +1186,14 @@ def _resolve_addons(meal, requested_addon_ids):
         addon = table.get_item(Key={"PK": "ADDON", "SK": addon_id}).get("Item")
         if not addon:
             raise BadRequest(f"unknown add-on: {addon_id}")
-        price_cents = int(addon["priceCents"])
+        detail = details.get(addon_id) or {}
+        price_cents = int(detail["priceCents"]) if "priceCents" in detail else int(addon["priceCents"])
         total_cents += price_cents
         resolved.append({
             "addOnId": addon_id,
             "name": _addon_out(addon)["name"],
             "priceCents": price_cents,
-            "macros": _parse_macros((details.get(addon_id) or {}).get("macros")),
+            "macros": _parse_macros(detail.get("macros")),
         })
     return resolved, total_cents
 

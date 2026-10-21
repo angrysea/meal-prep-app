@@ -299,7 +299,7 @@
         </label>
         ${visibleAddOns
           .map((a) => {
-            const { description, macros } = addOnDetailFor(meal, a);
+            const { priceCents, description, macros } = addOnDetailFor(meal, a);
             const macrosText = formatMacros(macros); // HTML: numbers and &middot;s
             // The option's accessible name is just "Large (+$3.00)"; the two
             // lines under it are read as its description.
@@ -309,7 +309,7 @@
           <label class="option-choice">
             <input type="radio" class="addon-choice" name="${name}" value="${escapeHtml(a.addOnId)}"
                    aria-labelledby="${id}-name"${describedBy ? ` aria-describedby="${describedBy}"` : ""} />
-            <span id="${id}-name">${escapeHtml(a.name)} (+${formatPrice(a.priceCents)})</span>
+            <span id="${id}-name">${escapeHtml(a.name)} (+${formatPrice(priceCents)})</span>
             ${description ? `<span class="muted addon-description" id="${id}-desc">${escapeHtml(description)}</span>` : ""}
             ${macrosText ? `<span class="muted addon-macros" id="${id}-macros">${macrosText}</span>` : ""}
           </label>`;

@@ -42,7 +42,8 @@ SEED = {
          "macros": {"calories": 550, "proteinG": 42, "carbsG": 60, "fatG": 12}, "staple": True, "available": True,
          # This meal's own text and whole-meal macros for each add-on.
          "addOnDetails": {
-             "a1": {"description": "2 extra oz of chicken and 1 oz of broccoli.",
+             # No priceCents of its own - the add-on's price ($3.00) applies.
+             "a1": {"name": "Large", "priceCents": None, "description": "2 extra oz of chicken and 1 oz of broccoli.",
                     "macros": {"calories": 750, "proteinG": 60, "carbsG": 70, "fatG": 18}},
          }},
         {"mealId": "m2", "name": "Turkey Chili", "description": "", "priceCents": 1150,

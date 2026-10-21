@@ -1146,6 +1146,13 @@ body.admin-page dialog {
   margin-top: 0.25rem;
 }
 
+/* Description and this meal's price for the add-on, side by side. */
+.addon-detail-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 8rem;
+  gap: 0.75rem;
+}
+
 .addon-detail label {
   display: flex;
   flex-direction: column;
@@ -1214,6 +1221,18 @@ body.admin-page dialog {
 
 .meal-options .macro-values {
   width: 19rem;
+}
+
+.meal-options .macro-price {
+  width: 5rem;
+  white-space: nowrap;
+}
+
+.meal-options tr.is-hidden th,
+.meal-options tr.is-hidden td,
+.meal-options tr.is-deleted th,
+.meal-options tr.is-deleted td {
+  color: var(--color-muted);
 }
 
 /* The meal's row and its options row read as one item. */

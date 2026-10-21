@@ -136,10 +136,10 @@
             <input id="addon-name" type="text" placeholder="e.g. Large, Extra Protein" required />
             <label for="addon-description">Default description <span class="muted">(optional)</span></label>
             <input id="addon-description" type="text" placeholder="e.g. Includes 2 extra ounces of protein and 1 extra ounce of vegetables." />
-            <label for="addon-price">Price (USD)</label>
+            <label for="addon-price">Default price (USD)</label>
             <input id="addon-price" type="number" step="0.01" min="0" required />
             <p class="muted field-hint">
-              Each meal has its own description and macros for this add-on - set them when adding or editing a meal.
+              Each meal has its own price, description and macros for this add-on - set them when adding or editing a meal.
             </p>
 
             <p class="error" style="display:none;"></p>
@@ -215,7 +215,7 @@
         <label for="edit-addon-description">Default description <span class="muted">(optional)</span></label>
         <input id="edit-addon-description" type="text" placeholder="e.g. Includes 2 extra ounces of protein and 1 extra ounce of vegetables." />
 
-        <label for="edit-addon-price">Price (USD)</label>
+        <label for="edit-addon-price">Default price (USD)</label>
         <input id="edit-addon-price" type="number" step="0.01" min="0" required style="max-width:160px;" />
 
 
@@ -285,13 +285,20 @@
           const detail = details[addOn.addOnId];
           const description = detail ? detail.description : addOn.description || "";
           const macros = (detail && detail.macros) || {};
+          // This meal's price for it, starting at the add-on's price.
+          const priceCents = detail && detail.priceCents != null ? detail.priceCents : addOn.priceCents;
           const id = escapeHtml(addOn.addOnId);
           return `
-          <fieldset class="addon-detail" data-addon-id="${id}">
-            <legend>${escapeHtml(addOn.name)} <span class="muted">(+${formatPrice(addOn.priceCents)}${addOn.available ? "" : ", hidden"})</span></legend>
-            <label>Description
-              <input type="text" data-field="description" value="${escapeHtml(description)}" />
-            </label>
+          <fieldset class="addon-detail" data-addon-id="${id}" data-addon-name="${escapeHtml(addOn.name)}">
+            <legend>${escapeHtml(addOn.name)}${addOn.available ? "" : ' <span class="muted">(hidden)</span>'}</legend>
+            <div class="addon-detail-top">
+              <label>Description
+                <input type="text" data-field="description" value="${escapeHtml(description)}" />
+              </label>
+              <label>Price (USD)
+                <input type="number" step="0.01" min="0" data-field="price" value="${(priceCents / 100).toFixed(2)}" />
+              </label>
+            </div>
             <div class="field-grid">
               ${MACRO_INPUTS.map(
                 ([field, label]) =>
@@ -303,11 +310,16 @@
         .join("");
     }
 
-    function addOnDetailsFrom(container) {
-      const details = {};
+    // Starts from `saved` so a deleted add-on's copy on the meal (not shown
+    // as a block - it can't be edited) is kept when the meal is saved.
+    function addOnDetailsFrom(container, saved = {}) {
+      const details = { ...saved };
       container.querySelectorAll(".addon-detail").forEach((block) => {
         const field = (name) => block.querySelector(`[data-field="${name}"]`).value;
+        const price = field("price").trim();
         details[block.dataset.addonId] = {
+          name: block.dataset.addonName,
+          priceCents: price === "" ? null : Math.round(parseFloat(price) * 100),
           description: field("description").trim(),
           macros: Object.fromEntries(MACRO_INPUTS.map(([name]) => [name, parseInt(field(name), 10) || 0])),
         };
@@ -374,6 +386,7 @@
     async function initAdmin(config, token) {
       let editingAddOnId = null;
       let editingMealId = null;
+      let editingMealAddOnDetails = {};
       let currentAddOns = [];
       const newAddOnDetails = document.getElementById("new-addon-details");
       const editAddOnDetails = document.getElementById("edit-meal-addon-details");
@@ -472,21 +485,35 @@
       // name, this meal's description for it, and the macros of the meal
       // with it.
       function mealMacrosHtml(meal) {
-        const row = (label, description, macros) => `
-          <tr class="macro-line">
-            <th scope="row" class="macro-label">${escapeHtml(label)}</th>
+        // status: "" | "hidden" | "deleted" - neither is offered to customers.
+        const row = (label, price, description, macros, status = "") => `
+          <tr class="macro-line${status ? ` is-${status}` : ""}">
+            <th scope="row" class="macro-label">${escapeHtml(label)}${status ? ` <span class="muted">(${status})</span>` : ""}</th>
+            <td class="macro-price">${price}</td>
             <td class="macro-description">${escapeHtml(description)}</td>
             <td class="macro-values">${formatMacros(macros) || "-"}</td>
           </tr>`;
+        // Add-ons deleted since this meal was saved (before Manage menu
+        // dropped the add-on Delete button - Hide is used instead): still
+        // listed from the meal's own copy, but customers don't see them.
+        const liveIds = new Set(currentAddOns.map((a) => a.addOnId));
+        const deleted = Object.entries(meal.addOnDetails || {})
+          .filter(([id]) => !liveIds.has(id))
+          .sort(([, a], [, b]) => (a.name || "").localeCompare(b.name || ""));
         return `<table class="meal-options">
-          <thead><tr><th scope="col">Option</th><th scope="col">Description</th><th scope="col">Macros</th></tr></thead>
+          <thead><tr><th scope="col">Option</th><th scope="col">Price</th><th scope="col">Description</th><th scope="col">Macros</th></tr></thead>
           <tbody>
-            ${row("Regular", "", meal.macros)}
+            ${row("Regular", formatPrice(meal.priceCents), "", meal.macros)}
             ${currentAddOns
               .map((addOn) => {
-                const { description, macros } = addOnDetailFor(meal, addOn);
-                return row(addOn.name, description, macros);
+                const { priceCents, description, macros } = addOnDetailFor(meal, addOn);
+                return row(addOn.name, `+${formatPrice(priceCents)}`, description, macros, addOn.available ? "" : "hidden");
               })
+              .join("")}
+            ${deleted
+              .map(([, d]) =>
+                row(d.name || "Add-on", d.priceCents != null ? `+${formatPrice(d.priceCents)}` : "-", d.description, d.macros, "deleted")
+              )
               .join("")}
           </tbody>
         </table>`;
@@ -579,7 +606,6 @@
             <td class="actions">
               <button type="button" class="secondary edit-addon">Edit</button>
               <button type="button" class="secondary table-action toggle-addon-available">${addOn.available ? "Hide" : "Show"}</button>
-              <button type="button" class="secondary table-action delete-addon">Delete</button>
             </td>
           </tr>`
           )
@@ -605,18 +631,6 @@
             })
           );
         });
-
-        body.querySelectorAll(".delete-addon").forEach((btn) => {
-          btn.addEventListener("click", async () => {
-            const addOn = addOnFor(btn);
-            if (!(await confirmAction(`Delete the "${addOn.name}" add-on?`))) return;
-            await rowAction(btn, async () => {
-              await apiRequest(config.apiUrl, `/addons/${addOn.addOnId}`, { method: "DELETE", token });
-              showToast(`Deleted "${addOn.name}"`);
-              await refreshAddOns();
-            });
-          });
-        });
       }
 
       const syncNewAvailability = wireAvailability("new");
@@ -627,6 +641,7 @@
 
       function openMealEditDialog(meal) {
         editingMealId = meal.mealId;
+        editingMealAddOnDetails = meal.addOnDetails || {};
         document.getElementById("edit-meal-name").value = meal.name;
         document.getElementById("edit-meal-description").value = meal.description || "";
         document.getElementById("edit-meal-price").value = (meal.priceCents / 100).toFixed(2);
@@ -650,7 +665,7 @@
             description: value("edit-meal-description"),
             priceCents: priceCentsFrom("edit-meal-price"),
             macros: macrosFrom("edit-meal"),
-            addOnDetails: addOnDetailsFrom(editAddOnDetails),
+            addOnDetails: addOnDetailsFrom(editAddOnDetails, editingMealAddOnDetails),
             staple: document.getElementById("edit-meal-staple").checked,
             weekOf: value("edit-meal-week-of"),
           },

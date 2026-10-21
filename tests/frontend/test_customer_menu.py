@@ -493,3 +493,22 @@ def test_meal_with_no_addons_offered_has_no_choices(customer_page, mock_api):
     expect(page.locator(f"{CARD} [role=radiogroup]")).to_have_count(0)
     page.click(ADD_M1)
     expect(page.locator("#cart-lines")).to_contain_text("Chicken Teriyaki Bowl")
+
+
+def test_menu_charges_the_meals_own_addon_price(customer_page, mock_api):
+    mock_api.state["meals"][0]["addOnDetails"]["a1"]["priceCents"] = 350
+    page = customer_page
+    page.open("/index.html")
+    _choose(page, "Large (+$3.50)")
+    page.click(ADD_M1)
+
+    expect(page.locator("#cart-total")).to_have_text("$16.49")
+
+
+def test_deleted_addon_is_not_offered_even_though_the_meal_kept_it(customer_page, mock_api):
+    mock_api.state["addOns"] = [a for a in mock_api.state["addOns"] if a["addOnId"] != "a1"]
+    page = customer_page
+    page.open("/index.html")
+
+    expect(page.locator(CARD).get_by_label("Large (+$3.00)", exact=True)).to_have_count(0)
+    expect(page.locator(f"{CARD} .addon-choice")).to_have_count(2)  # Regular + the combo

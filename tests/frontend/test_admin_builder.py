@@ -227,7 +227,7 @@ def test_escape_cancels_delete(admin_page, mock_api):
 def test_cancel_button_cancels_delete(admin_page, mock_api):
     page = admin_page
     page.open("/admin.html")
-    page.click(f"{ADDON_ROW.format('a1')} .delete-addon")
+    page.click(f"{MEAL_ROW.format('m2')} .delete-meal")
     page.click('#confirm-dialog button[value="cancel"]')
 
     expect(page.locator("#confirm-dialog")).to_be_hidden()
@@ -487,7 +487,7 @@ def test_add_a_meal_has_a_section_per_addon_prefilled_with_the_default(admin_pag
     blocks = page.locator("#new-addon-details .addon-detail")
     expect(blocks).to_have_count(2)
     large = _detail(page, "#new-addon-details", "a1")
-    expect(large.locator("legend")).to_contain_text("Large (+$3.00)")
+    expect(large.locator("legend")).to_have_text("Large")
     expect(large.locator('[data-field="description"]')).to_have_value(
         "Includes 2 extra ounces of protein and 1 extra ounce of vegetables."
     )
@@ -509,10 +509,12 @@ def test_adding_a_meal_sends_its_addon_descriptions_and_macros(admin_page, mock_
     expect_toast(page, 'Added "Salmon Plate" to the menu')
     details = mock_api.writes()[-1]["body"]["addOnDetails"]
     assert details["a1"] == {
+        "name": "Large", "priceCents": 300,
         "description": "2 extra oz of salmon.",
         "macros": {"calories": 820, "proteinG": 64, "carbsG": 0, "fatG": 0},
     }
     assert details["a2"] == {
+        "name": "Large with Cauliflower Rice", "priceCents": 400,
         "description": "Large, with cauliflower rice instead of rice.",
         "macros": {"calories": 0, "proteinG": 0, "carbsG": 0, "fatG": 0},
     }
@@ -593,16 +595,16 @@ def test_meals_table_lists_regular_then_every_addon_on_its_own_line(admin_page):
 
     rows = _option_rows(page, "m1")
     expect(rows).to_have_count(3)
-    assert _cells(rows.nth(0)) == ["Regular", "", "550 cal · 42g protein · 60g carbs · 12g fat"]
+    assert _cells(rows.nth(0)) == ["Regular", "$12.99", "", "550 cal · 42g protein · 60g carbs · 12g fat"]
     assert _cells(rows.nth(1)) == [
-        "Large", "2 extra oz of chicken and 1 oz of broccoli.", "750 cal · 60g protein · 70g carbs · 18g fat",
+        "Large", "+$3.00", "2 extra oz of chicken and 1 oz of broccoli.", "750 cal · 60g protein · 70g carbs · 18g fat",
     ]
-    # Nothing entered for this meal yet: the default description, no macros.
+    # Nothing entered for this meal yet: the add-on's price and default description, no macros.
     assert _cells(rows.nth(2)) == [
-        "Large with Cauliflower Rice", "Large, with cauliflower rice instead of rice.", "-",
+        "Large with Cauliflower Rice", "+$4.00", "Large, with cauliflower rice instead of rice.", "-",
     ]
     headers = page.locator('tr[data-options-for="m1"] .meal-options thead th').all_text_contents()
-    assert [h.strip() for h in headers] == ["Option", "Description", "Macros"]
+    assert [h.strip() for h in headers] == ["Option", "Price", "Description", "Macros"]
 
 
 def test_options_row_sits_right_under_its_meal(admin_page):
@@ -659,3 +661,105 @@ def test_a_saved_date_matching_the_automatic_one_reads_as_automatic(admin_page, 
     expect(page.locator("#ready-date-status")).to_have_text(f"Orders are for {_day(READY_DATE)} (automatic).")
     expect(page.locator("#ready-date-override")).to_have_value("")
     expect(page.locator("#ready-date-override-note")).to_have_text("")
+
+
+# ---------- each meal keeps its own add-on name and price ----------
+
+
+def test_addon_price_on_a_meal_starts_at_the_addons_price(admin_page):
+    page = admin_page
+    page.open("/admin.html")
+
+    large = _detail(page, "#new-addon-details", "a1")
+    expect(large.locator('[data-field="price"]')).to_have_value("3.00")
+    expect(_detail(page, "#new-addon-details", "a2").locator('[data-field="price"]')).to_have_value("4.00")
+
+
+def test_adding_a_meal_saves_each_addons_name_and_price(admin_page, mock_api):
+    page = admin_page
+    page.open("/admin.html")
+    page.fill("#new-name", "Steak Plate")
+    page.fill("#new-price", "16")
+    large = _detail(page, "#new-addon-details", "a1")
+    large.locator('[data-field="price"]').fill("4.50")
+    large.locator('[data-field="price"]').press("Enter")
+
+    expect_toast(page, 'Added "Steak Plate" to the menu')
+    details = mock_api.writes()[-1]["body"]["addOnDetails"]
+    assert (details["a1"]["name"], details["a1"]["priceCents"]) == ("Large", 450)
+    assert (details["a2"]["name"], details["a2"]["priceCents"]) == ("Large with Cauliflower Rice", 400)
+
+
+def test_edit_meal_shows_the_meals_own_addon_price(admin_page, mock_api):
+    mock_api.state["meals"][0]["addOnDetails"]["a1"]["priceCents"] = 350
+    page = admin_page
+    page.open("/admin.html")
+    page.click(f"{MEAL_ROW.format('m1')} .edit-meal")
+
+    expect(_detail(page, "#edit-meal-addon-details", "a1").locator('[data-field="price"]')).to_have_value("3.50")
+
+
+def test_meals_table_shows_each_options_price(admin_page, mock_api):
+    mock_api.state["meals"][0]["addOnDetails"]["a1"]["priceCents"] = 350
+    page = admin_page
+    page.open("/admin.html")
+
+    rows = _option_rows(page, "m1")
+    assert _cells(rows.nth(0))[:2] == ["Regular", "$12.99"]
+    assert _cells(rows.nth(1))[:2] == ["Large", "+$3.50"]
+    assert _cells(rows.nth(2))[:2] == ["Large with Cauliflower Rice", "+$4.00"]
+
+
+def _delete_large(mock_api):
+    # Deleted add-on: gone from the add-on list, still in the meal's copy.
+    mock_api.state["addOns"] = [a for a in mock_api.state["addOns"] if a["addOnId"] != "a1"]
+    mock_api.state["meals"][0]["addOnDetails"]["a1"]["priceCents"] = 350
+
+
+def test_deleted_addon_is_still_listed_under_the_meal(admin_page, mock_api):
+    _delete_large(mock_api)
+    page = admin_page
+    page.open("/admin.html")
+
+    rows = _option_rows(page, "m1")
+    expect(rows).to_have_count(3)
+    deleted = rows.nth(2)
+    expect(deleted).to_have_class("macro-line is-deleted")
+    assert _cells(deleted) == [
+        "Large (deleted)", "+$3.50", "2 extra oz of chicken and 1 oz of broccoli.",
+        "750 cal · 60g protein · 70g carbs · 18g fat",
+    ]
+
+
+def test_saving_a_meal_keeps_a_deleted_addons_copy(admin_page, mock_api):
+    _delete_large(mock_api)
+    page = admin_page
+    page.open("/admin.html")
+    page.click(f"{MEAL_ROW.format('m1')} .edit-meal")
+    expect(page.locator("#edit-meal-addon-details .addon-detail")).to_have_count(1)  # only live add-ons are editable
+    page.press("#edit-meal-name", "Enter")
+
+    expect_toast(page, 'Saved changes to "Chicken Teriyaki Bowl"')
+    details = mock_api.writes()[-1]["body"]["addOnDetails"]
+    assert details["a1"]["name"] == "Large" and details["a1"]["priceCents"] == 350
+    assert "a2" in details
+
+
+def test_addons_can_be_hidden_but_not_deleted(admin_page):
+    # Hide does everything for customers that Delete did, and keeps the add-on.
+    page = admin_page
+    page.open("/admin.html")
+
+    row = page.locator(ADDON_ROW.format("a1"))
+    expect(row.get_by_role("button")).to_have_text(["Edit", "Hide"])
+    expect(page.locator("#addons-body .delete-addon")).to_have_count(0)
+
+
+def test_hidden_addon_is_marked_under_each_meal(admin_page, mock_api):
+    mock_api.state["addOns"][0]["available"] = False
+    page = admin_page
+    page.open("/admin.html")
+
+    large = _option_rows(page, "m1").nth(1)
+    expect(large).to_have_class("macro-line is-hidden")
+    expect(large.locator(".macro-label")).to_have_text("Large (hidden)")
