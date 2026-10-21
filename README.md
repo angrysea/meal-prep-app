@@ -166,6 +166,40 @@ Once the distribution has the domain names and certificate attached
 - `www.gtxmeals.com` — CNAME to the same distribution domain (the
   `CleanUrlsFunction` CloudFront Function redirects it to the apex)
 
+## Monitoring and alerts
+
+`meal_prep_app/monitoring.py` adds CloudWatch alarms for every service the app
+uses, a **GTXMeals** CloudWatch dashboard, and alert emails to `alert_email`
+in `app.py` (gtxmeals@gmail.com):
+
+| Service | Alarms (`GTXMeals-*`) |
+|---|---|
+| Lambda (API) | `ApiErrors`, `ApiThrottles`, `ApiNearTimeout` (over 8 of its 10 seconds) |
+| Lambda logs | `ApiLogErrors` - any `ERROR`, timeout or crash line in the API's logs, including errors it recovers from (`print(f"ERROR ...")`) |
+| API Gateway | `Api5xx` |
+| DynamoDB | `DatabaseErrors`, `DatabaseThrottles` |
+| SES | `EmailBounceRate` (5%), `EmailComplaintRate` (0.1%), `EmailDailyLimit` (160 of the sandbox's 200 a day) |
+| Website + API | `SiteDown`, `ApiDown` - a health-check Lambda loads the site and `GET /settings` every 5 minutes |
+| Monitoring | `MonitoringErrors` - the alert or health-check Lambda failed |
+
+- **Alerts go through SES, not SNS** - the SCP blocks `sns:Publish`. An
+  EventBridge rule sends each `GTXMeals-*` alarm change to
+  `backend/monitor_src/alerts.py`, which emails from `alerts@gtxmeals.com`:
+  once when an alarm goes off (with the latest API log errors, for API
+  alarms) and once when it clears. While SES is in its sandbox the alert
+  address must be verified in SES.
+- **CloudFront and S3** have no alarms of their own: CloudFront's metrics
+  live only in us-east-1, where this project can't deploy. `SiteDown` covers
+  them end to end.
+- **Cognito** publishes no error metrics without its paid advanced security
+  features; failures that reach the API show up under `ApiLogErrors`.
+- To check the email path, trigger an alarm by hand (it resets on the next
+  evaluation):
+  ```
+  aws cloudwatch set-alarm-state --profile gtx-meal-prep --alarm-name GTXMeals-ApiErrors \
+    --state-value ALARM --state-reason "Testing the alert email"
+  ```
+
 ## One-time setup
 
 The CDK CLI and its Python bridge (jsii) need Node.js. Use the version in

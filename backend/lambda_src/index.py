@@ -243,9 +243,11 @@ def get_settings():
     try:
         emails = _admin_emails()
         contact_email = emails[0] if emails else ""
-    except Exception:  # noqa: BLE001 - this is public and loaded on every page view;
+    except Exception as e:  # noqa: BLE001 - this is public and loaded on every page view;
         # a Cognito hiccup should leave the About page's contact line blank,
-        # not break menu browsing for every customer.
+        # not break menu browsing for every customer. Logged as an ERROR so
+        # the log-errors alarm still reports it.
+        print(f"ERROR looking up the admin contact email: {e!r}")
         contact_email = ""
     return _response(200, {
         **_settings_out(item),
@@ -796,6 +798,8 @@ def send_weekly_reminders(event):
         except Exception as e:  # noqa: BLE001 - one bad recipient shouldn't abort the batch
             failed += 1
             errors.append(f"{profile.get('PK')}: {e}")
+            # Logged as an ERROR so the log-errors alarm reports it too.
+            print(f"ERROR sending to {profile.get('PK')}: {e!r}")
 
     return _response(200, {
         "sentEmail": sent_email,
@@ -867,6 +871,8 @@ def send_menu_notification(event):
         except Exception as e:  # noqa: BLE001 - one bad recipient shouldn't abort the batch
             failed += 1
             errors.append(f"{profile.get('PK')}: {e}")
+            # Logged as an ERROR so the log-errors alarm reports it too.
+            print(f"ERROR sending to {profile.get('PK')}: {e!r}")
 
     return _response(200, {
         "sentEmail": sent_email,

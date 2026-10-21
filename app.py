@@ -8,6 +8,9 @@ from meal_prep_app.meal_prep_app_stack import MealPrepAppStack
 app = cdk.App()
 MealPrepAppStack(app, "MealPrepAppStack",
     domain_name="gtxmeals.com",
+    # Where CloudWatch alarm emails go. Verified in SES, which matters while
+    # SES is in its sandbox (it can only send to verified addresses).
+    alert_email="gtxmeals@gmail.com",
     # Requested/DNS-validated outside CDK - see README. Issued and imported
     # by ARN here because this account's org-level SCP blocks CloudFormation
     # in us-east-1, where a CloudFront certificate must live.

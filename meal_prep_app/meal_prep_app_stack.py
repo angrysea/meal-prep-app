@@ -19,6 +19,8 @@ from aws_cdk import (
 )
 from constructs import Construct
 
+from meal_prep_app.monitoring import Monitoring
+
 ADMINS_GROUP_NAME = "Admins"
 
 
@@ -28,6 +30,7 @@ class MealPrepAppStack(Stack):
         self, scope: Construct, construct_id: str, *,
         domain_name: str | None = None,
         certificate_arn: str | None = None,
+        alert_email: str = "",
         **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
@@ -370,6 +373,20 @@ class MealPrepAppStack(Stack):
                 s3_deployment.CacheControl.no_cache(),
                 s3_deployment.CacheControl.must_revalidate(),
             ],
+        )
+
+        # ---------- Monitoring ----------
+        # Alarms for each service, a dashboard, and alert emails to
+        # alert_email - see monitoring.py.
+        Monitoring(
+            self, "Monitoring",
+            api_fn=api_fn,
+            http_api=http_api,
+            table=table,
+            alert_email=alert_email,
+            from_email=f"GTX Meals Alerts <alerts@{domain_name}>" if domain_name else "",
+            site_url=site_url,
+            api_url=http_api.api_endpoint,
         )
 
         CfnOutput(self, "ApiUrl", value=http_api.api_endpoint)

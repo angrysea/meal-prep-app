@@ -346,6 +346,19 @@ def test_admin_can_update_settings(table):
     assert json.loads(get_resp["body"]) == {**expected, "contactEmail": ""}
 
 
+def test_get_settings_logs_an_error_when_the_contact_email_lookup_fails(table, monkeypatch, capsys):
+    from backend.lambda_src import index
+
+    def fail():
+        raise RuntimeError("Cognito is down")
+
+    monkeypatch.setattr(index, "_admin_emails", fail)
+    resp = index.handler(_event("GET", "/settings"), None)
+
+    assert json.loads(resp["body"])["contactEmail"] == ""  # still answers
+    assert "ERROR looking up the admin contact email" in capsys.readouterr().out
+
+
 def test_get_settings_reports_the_admin_email_as_contact_email(table):
     from backend.lambda_src import index
 
@@ -1327,7 +1340,7 @@ def test_reminders_sends_by_preference_and_skips_unsubscribed(table, monkeypatch
     assert result["failed"] == 0
 
 
-def test_reminders_counts_failure_when_contact_detail_missing(table):
+def test_reminders_counts_failure_when_contact_detail_missing(table, capsys):
     import boto3
     from backend.lambda_src import index
 
@@ -1343,6 +1356,8 @@ def test_reminders_counts_failure_when_contact_detail_missing(table):
     result = json.loads(resp["body"])
     assert result["failed"] == 1
     assert result["sentText"] == 0
+    # Logged as an ERROR, for the API log-errors alarm.
+    assert "ERROR sending to USER#u1" in capsys.readouterr().out
 
 
 def test_reminders_skip_sms_when_globally_disabled(table, monkeypatch):
