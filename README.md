@@ -114,7 +114,7 @@ at the top of that section).
 |---|---|---|---|
 | Order confirmation | right after an order is placed | the customer | email, plus a short text if they prefer text |
 | Order updated | when an edited order is placed again | the customer | same |
-| Order canceled | right after a cancel is saved | the customer | same |
+| Order canceled | right after a cancel is saved - by the customer, or by the admin on the Orders page | the customer | same |
 | Ordering reminder | Thursday 6:00 PM Central | opted-in customers (not unsubscribed) with no order for this week's pickup; skipped when ordering is closed | their preferred channel |
 | Pickup reminder | 7:00 AM Central on the pickup day | customers with a placed or prepared order for today | their preferred channel |
 

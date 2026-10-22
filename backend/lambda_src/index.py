@@ -1672,8 +1672,13 @@ def update_order_status(event, sub, order_id):
     item = _find_order(sub, order_id)
     if not item:
         raise BadRequest(f"no such order: {order_id}")
+    was = item.get("status", "placed")
     item["status"] = status
     table.put_item(Item=item)
+    # The admin cancelling (e.g. unpaid by Saturday): the customer gets the
+    # same cancellation email as when they cancel it themselves.
+    if status == "cancelled" and was != "cancelled":
+        _notify_customer_of_order(item, "cancelled", sub)
     return _response(200, {**_order_out(item), "customerSub": sub})
 
 

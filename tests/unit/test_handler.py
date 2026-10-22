@@ -2880,3 +2880,46 @@ def test_meal_suggestions_are_optional(table):
     from backend.lambda_src import index
 
     assert _place_order(index, CUSTOMER_CLAIMS)["mealSuggestions"] == ""
+
+
+def _admin_set_status(index, sub, order_id, status):
+    return index.handler(_event("PUT", f"/admin/orders/{sub}/{order_id}", {"status": status},
+                                path_params={"sub": sub, "orderId": order_id}, claims=ADMIN_CLAIMS), None)
+
+
+def test_customer_is_emailed_when_the_admin_cancels_their_order(table, outbox):
+    from backend.lambda_src import index
+
+    _put_profile(index, "user-1", name="Casey Customer", email="casey@example.com")
+    order = _place_order(index, CUSTOMER_CLAIMS, quantity=2)
+    outbox.clear()
+    assert _admin_set_status(index, "user-1", order["orderId"], "cancelled")["statusCode"] == 200
+
+    [email] = outbox  # to the customer only - the admin did it
+    assert email["Destination"]["ToAddresses"] == ["casey@example.com"]
+    assert _subject(email) == "Your Order Has Been Canceled | The Gym TX Meals"
+    assert "Canceled Order:\n2 x Chicken Bowl\n" in _text(email)
+
+
+def test_admin_cancel_email_falls_back_to_the_login_email(table, outbox, monkeypatch):
+    from backend.lambda_src import index
+
+    order = _place_order(index, CUSTOMER_CLAIMS)
+    outbox.clear()
+    monkeypatch.setattr(index.cognito_idp, "admin_get_user", lambda **kwargs: {
+        "UserAttributes": [{"Name": "email", "Value": "login@example.com"}],
+    })
+    _admin_set_status(index, "user-1", order["orderId"], "cancelled")
+    assert [e["Destination"]["ToAddresses"] for e in outbox] == [["login@example.com"]]
+
+
+def test_other_admin_status_changes_send_no_email(table, outbox):
+    from backend.lambda_src import index
+
+    _put_profile(index, "user-1", name="Casey", email="casey@example.com")
+    order = _place_order(index, CUSTOMER_CLAIMS)
+    outbox.clear()
+    _admin_set_status(index, "user-1", order["orderId"], "prepared")
+    _admin_set_status(index, "user-1", order["orderId"], "cancelled")
+    _admin_set_status(index, "user-1", order["orderId"], "cancelled")  # already cancelled - not again
+    assert [_subject(e) for e in outbox] == ["Your Order Has Been Canceled | The Gym TX Meals"]
