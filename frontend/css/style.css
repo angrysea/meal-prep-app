@@ -413,7 +413,8 @@ button.password-toggle[aria-pressed="true"] .icon-eye-off {
   display: block;
 }
 
-.checkout-customer {
+.checkout-customer,
+.checkout-pickup-location {
   margin: 0 0 1rem;
 }
 

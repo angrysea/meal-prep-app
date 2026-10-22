@@ -540,3 +540,21 @@ def test_how_it_works_links_to_the_personal_training_facility(anonymous_page):
     expect(link).to_have_attribute("href", "https://thegymgeorgetowntx.com")
     expect(link).to_have_attribute("target", "_blank")
     assert _top(page, "#gym-link") < _top(page, "#how-it-works p:has-text('Thank you for supporting')")
+
+
+def test_checkout_shows_the_pickup_location_above_someone_else_picking_up(customer_page, mock_api):
+    mock_api.state["profile"]["pickupLocation"] = "Elgin <b>pickup</b>"
+    page = customer_page
+    _start_checkout(page)
+
+    line = page.locator("#checkout-pickup-location")
+    expect(line).to_have_text("Pickup location: Elgin <b>pickup</b>")  # plain text, not HTML
+    assert _top(page, "#checkout-pickup-location") < _top(page, "#pickup-name")
+    # Text only - nothing the customer can change.
+    expect(line.locator("input, select, textarea")).to_have_count(0)
+
+
+def test_checkout_shows_the_default_pickup_location(customer_page):
+    page = customer_page
+    _start_checkout(page)
+    expect(page.locator("#checkout-pickup-location")).to_have_text("Pickup location: The Gym TX, Georgetown")

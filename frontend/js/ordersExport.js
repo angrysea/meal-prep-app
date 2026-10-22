@@ -1,3 +1,5 @@
+import { pickupLocationText } from "/js/pricing.js";
+
 // "Export to Excel" on the Orders page: the orders on screen as a CSV file
 // Excel and Google Sheets open directly. Laid out like the old Google Form
 // responses sheet - one row per order, then for each meal on the orders its
@@ -30,7 +32,7 @@ export function ordersToCsv(orders, emailsBySub = new Map()) {
     a.localeCompare(b)
   );
   const header = [
-    "Placed", "Customer", "Email", "Phone", "Picked up by", "Ready date", "Status",
+    "Placed", "Customer", "Email", "Phone", "Pickup Location", "Picked up by", "Ready date", "Status",
     ...mealNames.flatMap((name) => [name, `${name} Customizations`]),
     "Extras & Sauces", "Special Requests", "Meals", "Total ($)", "Meal Suggestions",
   ];
@@ -56,6 +58,7 @@ export function ordersToCsv(orders, emailsBySub = new Map()) {
       order.customerName,
       emailsBySub.get(order.customerSub) || "",
       order.contactPhone,
+      pickupLocationText(order.pickupLocation),
       order.pickupName || "Customer",
       order.readyDate,
       order.status,
@@ -70,7 +73,7 @@ export function ordersToCsv(orders, emailsBySub = new Map()) {
 
   // Cancelled orders are listed (when shown) but left out of the totals.
   const totals = [
-    "", "Totals", "", "", "", "", "",
+    "", "Totals", "", "", "", "", "", "",
     ...mealNames.flatMap((name) => [mealTotals.get(name), ""]),
     "", "", mealCount, dollars(totalCents), "",
   ];

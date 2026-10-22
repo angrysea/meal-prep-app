@@ -59,6 +59,11 @@
             <label for="edit-address">Address</label>
             <input id="edit-address" type="text" />
           </div>
+          <div>
+            <label for="edit-pickup-location">Pickup location</label>
+            <input id="edit-pickup-location" type="text" maxlength="200" />
+            <p class="muted field-note">Shown to the customer at checkout; only you can change it. Blank means the default.</p>
+          </div>
         </div>
 
         <h3>Notifications</h3>
@@ -83,7 +88,7 @@
     import { getValidSession, isAdmin } from "/js/cognito.js";
     import { renderNav } from "/js/nav.js";
     import { loginUrlWithReturnTo } from "/js/redirect.js";
-    import { formatPhone } from "/js/pricing.js";
+    import { formatPhone, DEFAULT_PICKUP_LOCATION } from "/js/pricing.js";
     import { showToast } from "/js/toast.js";
     import { confirmAction, enableEnterToSubmit, escapeHtml, handleSubmit } from "/js/admin.js";
 
@@ -174,6 +179,8 @@
         document.getElementById("edit-email").value = customer.email;
         document.getElementById("edit-phone").value = formatPhone(customer.phone || "");
         document.getElementById("edit-address").value = customer.address;
+        document.getElementById("edit-pickup-location").value = customer.pickupLocation || "";
+        document.getElementById("edit-pickup-location").placeholder = DEFAULT_PICKUP_LOCATION;
         document.getElementById(customer.preferredContact === "text" ? "edit-contact-text" : "edit-contact-email").checked = true;
         document.getElementById("edit-unsubscribed").checked = customer.unsubscribed;
         editDialog.querySelector(".error").style.display = "none";
@@ -192,6 +199,7 @@
             email,
             phone: document.getElementById("edit-phone").value,
             address: document.getElementById("edit-address").value,
+            pickupLocation: document.getElementById("edit-pickup-location").value.trim(),
             preferredContact: document.getElementById("edit-contact-text").checked ? "text" : "email",
             unsubscribed: document.getElementById("edit-unsubscribed").checked,
           },

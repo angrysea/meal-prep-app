@@ -1163,7 +1163,7 @@ def test_get_profile_defaults_to_empty_with_email_from_claims(table):
     profile = json.loads(resp["body"])
     assert profile == {
         "name": "", "email": "customer@example.com", "phone": "", "address": "",
-        "preferredContact": "email", "unsubscribed": False,
+        "preferredContact": "email", "unsubscribed": False, "pickupLocation": "",
     }
 
 
@@ -1188,7 +1188,7 @@ def test_update_and_get_profile_roundtrip(table):
     profile = json.loads(get_resp["body"])
     assert profile == {
         "name": "Ada Lovelace", "email": "ada@example.com", "phone": "555-1234", "address": "123 Main St",
-        "preferredContact": "text", "unsubscribed": True,
+        "preferredContact": "text", "unsubscribed": True, "pickupLocation": "",
     }
 
 
@@ -1212,7 +1212,7 @@ def test_partial_profile_update_keeps_notification_settings(table):
     profile = json.loads(index.handler(_event("GET", "/profile", claims=CUSTOMER_CLAIMS), None)["body"])
     assert profile == {
         "name": "Ada L", "email": "ada@example.com", "phone": "555-1234", "address": "1 Main St",
-        "preferredContact": "text", "unsubscribed": True,
+        "preferredContact": "text", "unsubscribed": True, "pickupLocation": "",
     }
 
 
@@ -2923,3 +2923,59 @@ def test_other_admin_status_changes_send_no_email(table, outbox):
     _admin_set_status(index, "user-1", order["orderId"], "cancelled")
     _admin_set_status(index, "user-1", order["orderId"], "cancelled")  # already cancelled - not again
     assert [_subject(e) for e in outbox] == ["Your Order Has Been Canceled | The Gym TX Meals"]
+
+
+
+# ---------- pickup location (admin-set) ----------
+
+def _admin_put_customer(index, username, body):
+    return index.handler(_event("PUT", f"/customers/{username}", body,
+                                path_params={"username": username}, claims=ADMIN_CLAIMS), None)
+
+
+@pytest.fixture
+def customer_admin(monkeypatch):
+    from backend.lambda_src import index
+
+    monkeypatch.setattr(index, "_resolve_sub", lambda username: username)
+    monkeypatch.setattr(index, "_admin_usernames", lambda: {"admin-1"})
+
+
+def test_admin_sets_a_pickup_location_the_customer_can_see(table, customer_admin):
+    from backend.lambda_src import index
+
+    resp = _admin_put_customer(index, "user-1", {"name": "Casey", "email": "c@example.com",
+                                                  "pickupLocation": "  Elgin  "})
+    assert json.loads(resp["body"])["pickupLocation"] == "Elgin"
+    profile = json.loads(index.handler(_event("GET", "/profile", claims=CUSTOMER_CLAIMS), None)["body"])
+    assert profile["pickupLocation"] == "Elgin"
+
+
+def test_customer_cannot_change_their_pickup_location(table, customer_admin):
+    from backend.lambda_src import index
+
+    _admin_put_customer(index, "user-1", {"name": "Casey", "email": "c@example.com", "pickupLocation": "Elgin"})
+    resp = index.handler(_event("PUT", "/profile", {"phone": "5555550000", "pickupLocation": "Austin"},
+                                claims=CUSTOMER_CLAIMS), None)
+    assert json.loads(resp["body"])["pickupLocation"] == "Elgin"
+    stored = index.table.get_item(Key={"PK": "USER#user-1", "SK": "PROFILE"})["Item"]
+    assert (stored["pickupLocation"], stored["phone"]) == ("Elgin", "5555550000")
+
+
+def test_admin_edit_without_the_field_keeps_the_pickup_location(table, customer_admin):
+    from backend.lambda_src import index
+
+    _admin_put_customer(index, "user-1", {"name": "Casey", "email": "c@example.com", "pickupLocation": "Elgin"})
+    _admin_put_customer(index, "user-1", {"name": "Casey C", "email": "c@example.com"})
+    stored = index.table.get_item(Key={"PK": "USER#user-1", "SK": "PROFILE"})["Item"]
+    assert stored["pickupLocation"] == "Elgin"
+
+
+def test_order_records_the_customers_pickup_location(table, customer_admin):
+    from backend.lambda_src import index
+
+    _admin_put_customer(index, "user-1", {"name": "Casey", "email": "c@example.com", "pickupLocation": "Elgin"})
+    order = _place_order(index, CUSTOMER_CLAIMS)
+    assert order["pickupLocation"] == "Elgin"
+    admin = json.loads(index.handler(_event("GET", "/admin/orders", claims=ADMIN_CLAIMS), None)["body"])
+    assert admin["orders"][0]["pickupLocation"] == "Elgin"

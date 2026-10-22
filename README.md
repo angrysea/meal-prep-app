@@ -130,13 +130,22 @@ right Central hour. Each send is recorded as `SENT#<job>#<date>` / `<sub>`
 before it goes out, so a retried run never messages anyone twice; a failed
 send is un-recorded so the retry tries again.
 
+## Pickup location
+
+Each customer has a pickup location (e.g. "Elgin") that only the admin can
+set, in the Edit dialog on the Customers page. The customer sees it as
+plain text at checkout, above "Someone else picking up?", and can't change
+it (PUT /profile ignores it). Blank means the default, "The Gym TX,
+Georgetown" (`DEFAULT_PICKUP_LOCATION` in `frontend/js/pricing.js`). Each
+order records the location in effect when it was placed, for the export.
+
 ## Exporting orders to Excel
 
 **Export to Excel** on the Orders page (`admin-orders.html`) downloads the
 orders the filters show as a CSV that Excel opens directly (or File > Import
 in Google Sheets). It's laid out like the old Google Form responses sheet:
 one row per order with the customer's name, email (from the customer list),
-phone, who's picking it up, ready date and status; then for each meal its
+phone, pickup location, who's picking it up, ready date and status; then for each meal its
 quantity and customizations (e.g. "2 Regular, 1 Large"); then extras &
 sauces, special requests (each line's note), meal count, total and the
 meal suggestions from the order form; and a

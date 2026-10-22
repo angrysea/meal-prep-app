@@ -92,3 +92,27 @@ def test_edit_dialog_says_address_not_delivery_address(admin_page):
     page.open("/customers.html")
 
     expect(page.locator('label[for="edit-address"]')).to_have_text("Address")
+
+
+def test_admin_can_set_a_customers_pickup_location(admin_page, mock_api):
+    mock_api.state["customers"][1]["pickupLocation"] = "Elgin"
+    page = admin_page
+    page.open("/customers.html")
+    # Only in the edit dialog, not the table.
+    expect(page.locator("#customers-table")).not_to_contain_text("Elgin")
+    page.click(f"{ROW.format('u2')} .edit-customer")
+    field = page.get_by_label("Pickup location")
+    expect(field).to_have_value("Elgin")
+    field.fill("  Elgin - Main St  ")
+    page.press("#edit-pickup-location", "Enter")
+
+    expect_toast(page, "Saved changes to bob@example.com")
+    assert mock_api.writes()[-1]["body"]["pickupLocation"] == "Elgin - Main St"
+
+
+def test_blank_pickup_location_shows_the_default_as_a_hint(admin_page):
+    page = admin_page
+    page.open("/customers.html")
+    page.click(f"{ROW.format('u1')} .edit-customer")
+    expect(page.locator("#edit-pickup-location")).to_have_value("")
+    expect(page.locator("#edit-pickup-location")).to_have_attribute("placeholder", "The Gym TX, Georgetown")

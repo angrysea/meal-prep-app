@@ -197,6 +197,7 @@ class MockApi:
             order = {
                 "items": items, "extras": extras, "customerName": s["profile"]["name"],
                 "contactPhone": body["contactPhone"], "pickupName": body.get("pickupName", ""),
+                "pickupLocation": s["profile"].get("pickupLocation", ""),
                 "orderId": uuid.uuid4().hex[:8], "status": "placed", "readyDate": READY_DATE,
                 "createdAt": "2026-10-18T12:00:00Z",
                 "totalCents": sum(i["unitPriceCents"] * i["quantity"] for i in items)

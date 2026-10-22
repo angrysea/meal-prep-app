@@ -52,6 +52,14 @@ export function formatMacros(macros) {
   return parts.join(" &middot; ");
 }
 
+// Where a customer picks up when the admin hasn't set a location for them
+// on the Customers page (shown at checkout and in the Excel export).
+export const DEFAULT_PICKUP_LOCATION = "The Gym TX, Georgetown";
+
+export function pickupLocationText(location) {
+  return (location || "").trim() || DEFAULT_PICKUP_LOCATION;
+}
+
 // (555) 555-5555 as the user types - formats from the raw digits typed so
 // far, dropping anything past 10 digits. Shared so every phone input in the
 // app (account, checkout) masks the same way.

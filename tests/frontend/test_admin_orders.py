@@ -181,6 +181,7 @@ def _export(page):
 
 def test_export_to_excel_has_a_row_per_order_and_a_totals_row(admin_page, mock_api):
     mock_api.state["orders"][0]["pickupName"] = "Terri"
+    mock_api.state["orders"][0]["pickupLocation"] = "Elgin"
     mock_api.state["orders"][0]["mealSuggestions"] = "Bring back the honey garlic chicken"
     page = admin_page
     page.open("/admin-orders.html")
@@ -190,7 +191,7 @@ def test_export_to_excel_has_a_row_per_order_and_a_totals_row(admin_page, mock_a
     assert filename == "GTX Meals orders - all dates placed.csv"
     header, jane, bob, blank, totals = rows
     assert header == [
-        "Placed", "Customer", "Email", "Phone", "Picked up by", "Ready date", "Status",
+        "Placed", "Customer", "Email", "Phone", "Pickup Location", "Picked up by", "Ready date", "Status",
         "Chicken Teriyaki Bowl", "Chicken Teriyaki Bowl Customizations",
         "Turkey Chili", "Turkey Chili Customizations",
         "Extras & Sauces", "Special Requests", "Meals", "Total ($)", "Meal Suggestions",
@@ -199,6 +200,8 @@ def test_export_to_excel_has_a_row_per_order_and_a_totals_row(admin_page, mock_a
     assert row["Customer"].startswith("Jane ")
     assert row["Email"] == "jane@example.com"
     assert row["Picked up by"] == "Terri"
+    assert row["Pickup Location"] == "Elgin"
+    assert dict(zip(header, bob))["Pickup Location"] == "The Gym TX, Georgetown"  # none set - the default
     assert row["Ready date"] == READY_DATE
     assert (row["Chicken Teriyaki Bowl"], row["Chicken Teriyaki Bowl Customizations"]) == ("2", "2 Large")
     assert (row["Turkey Chili"], row["Turkey Chili Customizations"]) == ("0", "")

@@ -672,6 +672,10 @@ def _resolve_extras(requested):
 # preferences used by the weekly-reminder feature below.
 
 PROFILE_TEXT_FIELDS = ("name", "email", "phone", "address")
+# Where this customer picks up (e.g. "Elgin") - set by the admin on the
+# Customers page only. The customer sees it at checkout but can't change it,
+# and it's copied onto each order for the Excel export.
+PICKUP_LOCATION_MAX = 200
 
 
 def get_profile(event):
@@ -701,6 +705,8 @@ def update_profile(event):
         **{field: body.get(field, existing.get(field, "")) for field in PROFILE_TEXT_FIELDS},
         "preferredContact": preferred_contact,
         "unsubscribed": bool(body.get("unsubscribed", existing.get("unsubscribed", False))),
+        # Admin-only - never taken from the customer's own request.
+        "pickupLocation": existing.get("pickupLocation", ""),
     }
     table.put_item(Item=item)
     return _response(200, _profile_out(item, claims))
@@ -718,6 +724,7 @@ def _profile_out(item, claims):
         "address": item.get("address", ""),
         "preferredContact": item.get("preferredContact", "email"),
         "unsubscribed": bool(item.get("unsubscribed", False)),
+        "pickupLocation": item.get("pickupLocation", ""),  # read-only for the customer
     }
 
 
@@ -776,6 +783,11 @@ def update_customer(event, username):
     preferred_contact = body.get("preferredContact", "email")
     if preferred_contact not in CONTACT_METHODS:
         raise BadRequest(f"preferredContact must be one of {CONTACT_METHODS}")
+    existing = table.get_item(Key={"PK": f"USER#{sub}", "SK": "PROFILE"}).get("Item") or {}
+    pickup_location = (
+        (body.get("pickupLocation") or "").strip()[:PICKUP_LOCATION_MAX] if "pickupLocation" in body
+        else existing.get("pickupLocation", "")
+    )
 
     item = {
         "PK": f"USER#{sub}",
@@ -783,6 +795,7 @@ def update_customer(event, username):
         **{field: body.get(field, "") for field in PROFILE_TEXT_FIELDS},
         "preferredContact": preferred_contact,
         "unsubscribed": bool(body.get("unsubscribed", False)),
+        "pickupLocation": pickup_location,
     }
     table.put_item(Item=item)
     return _response(200, {
@@ -793,6 +806,7 @@ def update_customer(event, username):
         "address": item["address"],
         "preferredContact": item["preferredContact"],
         "unsubscribed": item["unsubscribed"],
+        "pickupLocation": item["pickupLocation"],
     })
 
 
@@ -835,6 +849,7 @@ def _customer_out(cognito_user):
         "address": profile.get("address", ""),
         "preferredContact": profile.get("preferredContact", "email"),
         "unsubscribed": bool(profile.get("unsubscribed", False)),
+        "pickupLocation": profile.get("pickupLocation", ""),
     }
 
 
@@ -1186,6 +1201,8 @@ def create_order(event):
         # Optional: someone other than the customer collecting the order.
         # Blank means the customer is picking it up themselves.
         "pickupName": (body.get("pickupName") or "").strip(),
+        # The customer's pickup location at the time of the order (admin-set).
+        "pickupLocation": profile.get("pickupLocation", ""),
         # Optional feedback for future menus - shown in the Excel export.
         "mealSuggestions": (body.get("mealSuggestions") or "").strip()[:MEAL_SUGGESTIONS_MAX],
         "readyDate": ready_date_str,
@@ -1623,6 +1640,8 @@ def _order_email_text(order, action):
     lines += ["", f"Total: {money(order.get('totalCents', 0))}"]
     if order.get("contactPhone"):
         lines.append(f"Phone: {order['contactPhone']}")
+    if order.get("pickupLocation"):
+        lines.append(f"Pickup location: {order['pickupLocation']}")
     if order.get("pickupName"):
         lines.append(f"Picked up by: {order['pickupName']}")
     if order.get("mealSuggestions"):
@@ -1800,6 +1819,7 @@ def _order_out(item):
         "customerName": item.get("customerName") or item.get("deliveryName", ""),
         "contactPhone": item.get("contactPhone") or item.get("deliveryPhone", ""),
         "pickupName": item.get("pickupName", ""),
+        "pickupLocation": item.get("pickupLocation", ""),
         "mealSuggestions": item.get("mealSuggestions", ""),
         "readyDate": item.get("readyDate", ""),
         "status": item.get("status", "placed"),
