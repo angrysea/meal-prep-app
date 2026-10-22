@@ -115,3 +115,20 @@ def test_customer_reminders_are_scheduled_on_the_api_lambda():
                 "Input": f'{{"job":"{job}"}}',
             })]),
         })
+
+
+
+def test_production_data_is_protected():
+    app = core.App()
+    stack = MealPrepAppStack(app, "meal-prep-app")
+    template = assertions.Template.from_stack(stack)
+
+    template.has_resource("AWS::DynamoDB::Table", {
+        "DeletionPolicy": "Retain",
+        "UpdateReplacePolicy": "Retain",
+        "Properties": assertions.Match.object_like({
+            "PointInTimeRecoverySpecification": {"PointInTimeRecoveryEnabled": True},
+            "DeletionProtectionEnabled": True,
+        }),
+    })
+    template.has_resource("AWS::Cognito::UserPool", {"DeletionPolicy": "Retain", "UpdateReplacePolicy": "Retain"})

@@ -49,7 +49,14 @@ class MealPrepAppStack(Stack):
                 name="SK", type=dynamodb.AttributeType.STRING
             ),
             billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
-            removal_policy=RemovalPolicy.DESTROY,  # fine for dev; revisit for prod
+            # Production data (orders, customers, menu): restorable to any
+            # second in the last 35 days, can't be deleted by accident, and
+            # kept even if this stack is ever torn down.
+            point_in_time_recovery_specification=dynamodb.PointInTimeRecoverySpecification(
+                point_in_time_recovery_enabled=True,
+            ),
+            deletion_protection=True,
+            removal_policy=RemovalPolicy.RETAIN,
         )
 
         # ---------- Cognito (customer accounts) ----------
@@ -69,7 +76,8 @@ class MealPrepAppStack(Stack):
                 require_symbols=False,
             ),
             account_recovery=cognito.AccountRecovery.EMAIL_ONLY,
-            removal_policy=RemovalPolicy.DESTROY,  # fine for dev; revisit for prod
+            # Customers' logins - kept even if this stack is ever torn down.
+            removal_policy=RemovalPolicy.RETAIN,
         )
 
         user_pool_client = user_pool.add_client(
