@@ -54,17 +54,6 @@
     <p class="muted" id="login-prompt" style="display:none;"></p>
     <p class="muted" id="edit-notice" style="display:none;">Editing your previous order - update it below and place it again.</p>
 
-    <!-- Above the menu so what's been ordered is always plainly visible;
-         the checkout details stay below the menu (see #checkout-section). -->
-    <section class="card order-summary" id="cart-section" style="display:none;">
-      <h2>Your order</h2>
-      <div id="cart-lines"></div>
-      <div class="order-summary-footer">
-        <strong>Total: <span id="cart-total">$0.00</span></strong>
-        <a class="button-link" href="#checkout-section" id="checkout-jump">Check out</a>
-      </div>
-    </section>
-
     <!-- Shown instead of the menu while ordering is closed (Friday 4:00 PM
          to Monday 11:00 AM, or when the admin forces it closed). The open/
          closed decision comes from the API (GET /settings -> ordering). -->
@@ -94,6 +83,17 @@
       <h2>Extras &amp; Sauces</h2>
       <p class="muted">Add extra sauces and condiments to your order.</p>
       <div id="extras-list"></div>
+    </section>
+
+    <!-- After the menu and extras, right above the checkout details, so the
+         order is reviewed just before it's placed. -->
+    <section class="card order-summary" id="cart-section" style="display:none;">
+      <h2>Your order</h2>
+      <div id="cart-lines"></div>
+      <div class="order-summary-footer">
+        <strong>Total: <span id="cart-total">$0.00</span></strong>
+        <a class="button-link" href="#checkout-section" id="checkout-jump">Check out</a>
+      </div>
     </section>
 
     <section class="card" id="checkout-section" style="display:none;">

@@ -18,7 +18,7 @@ def test_order_summary_hidden_until_something_is_ordered(customer_page):
     expect(page.locator("#checkout-section")).to_be_hidden()
 
 
-def test_ordered_meals_appear_above_the_menu(customer_page):
+def test_your_order_sits_between_extras_and_checkout(customer_page):
     page = customer_page
     page.open("/index.html")
     page.click(ADD_M1)
@@ -28,9 +28,8 @@ def test_ordered_meals_appear_above_the_menu(customer_page):
     expect(summary.locator("h2")).to_have_text("Your order")
     expect(summary.locator(".cart-line")).to_contain_text("Chicken Teriyaki Bowl")
     expect(page.locator("#cart-total")).to_have_text("$12.99")
-    assert _top(page, "#cart-section") < _top(page, "#meals")
-    # Checkout details stay below the menu.
-    assert _top(page, "#checkout-section") > _top(page, "#meals")
+    assert _top(page, "#meals") < _top(page, "#extras-section") < _top(page, "#cart-section")
+    assert _top(page, "#cart-section") < _top(page, "#checkout-section")
 
 
 def test_quantity_changes_update_the_summary(customer_page):
