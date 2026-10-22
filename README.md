@@ -138,6 +138,10 @@ plain text at checkout, above "Someone else picking up?", and can't change
 it (PUT /profile ignores it). Blank means the default, "The Gym TX,
 Georgetown" (`DEFAULT_PICKUP_LOCATION` in `frontend/js/pricing.js`). Each
 order records the location in effect when it was placed, for the export.
+Customer emails use it too: a customer with no location gets the Georgetown
+address and hours; one with a location (e.g. "Elgin") gets that location
+and "Please follow your confirmed pickup instructions." The pickup-day
+reminder uses the location stored at send time.
 
 ## Exporting orders to Excel
 

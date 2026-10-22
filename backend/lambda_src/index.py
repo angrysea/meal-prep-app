@@ -1257,9 +1257,12 @@ def cancel_order(event, order_id):
 # The wording is the business's own - edit it here.
 
 SIGNATURE = "Christian & Liz\nThe Gym TX Meals"
+# The default pickup - used for any customer without a pickup location of
+# their own (set by the admin on the Customers page, e.g. "Elgin").
 PICKUP_PLACE = "The Gym TX\n4112 Williams Drive, Suite 105\nGeorgetown, TX 78628"
 PICKUP_HOURS = "8:00 AM–1:00 PM or 3:30–6:30 PM"
-ELGIN_NOTE = "If you arranged an Elgin pickup, please follow your confirmed pickup instructions instead."
+DEFAULT_PICKUP_LOCATION = "The Gym TX, Georgetown"  # same as frontend/js/pricing.js
+CUSTOM_PICKUP_NOTE = "Please follow your confirmed pickup instructions."
 VENMO = "@lgraffeo88"
 CONTACT_EMAIL = "gtxmeals@gmail.com"
 WEBSITE = "www.gtxmeals.com"
@@ -1307,6 +1310,18 @@ def _order_lines(order, with_prices=True):
     return "\n".join(lines)
 
 
+def _pickup_location_name(location):
+    return (location or "").strip() or DEFAULT_PICKUP_LOCATION
+
+
+def _pickup_block(location):
+    """Where (and when) to pick up: the Georgetown address and hours by
+    default, or the customer's own pickup location."""
+    if (location or "").strip():
+        return f"Pickup Location:\n{location.strip()}\n\n{CUSTOM_PICKUP_NOTE}"
+    return f"Pickup Location:\n{PICKUP_PLACE}\n\nPickup Hours:\n{PICKUP_HOURS}"
+
+
 def _total(order):
     return f"${int(order.get('totalCents', 0)) / 100:.2f}"
 
@@ -1323,8 +1338,7 @@ def _order_message(order, action):
             f"Your Order:\n{_order_lines(order)}\n\n"
             f"Order Total: {_total(order)}\n"
             f"Pickup Date: {day}\n\n"
-            f"Georgetown Pickup:\n{PICKUP_PLACE}\n{PICKUP_HOURS}\n\n"
-            f"{ELGIN_NOTE}\n\n"
+            f"{_pickup_block(order.get('pickupLocation'))}\n\n"
             "Payment Reminder:\n"
             f"Payment is due when ordering. Cash is preferred, or you can send payment through Venmo to {VENMO}.\n"
             "Please note that orders aren't confirmed until payment is received. Unpaid orders without prior "
@@ -1334,7 +1348,8 @@ def _order_message(order, action):
         )
         text = (
             f"{hi} Thanks for ordering from The Gym TX Meals! Your order total is {_total(order)}. "
-            f"Payment is due when ordering (Venmo: {VENMO} or cash by arrangement). Pickup is {day}. "
+            f"Payment is due when ordering (Venmo: {VENMO} or cash by arrangement). Pickup is {day} at "
+            f"{_pickup_location_name(order.get('pickupLocation'))}. "
             "See your confirmation email for details!"
         )
         return ORDER_CONFIRMATION_SUBJECT, email, text
@@ -1344,7 +1359,8 @@ def _order_message(order, action):
             "Your order with The Gym TX Meals has been successfully updated!\n\n"
             f"Your Updated Order:\n{_order_lines(order)}\n\n"
             f"Updated Total: {_total(order)}\n"
-            f"Pickup Date: {day}\n\n"
+            f"Pickup Date: {day}\n"
+            f"Pickup Location: {_pickup_location_name(order.get('pickupLocation'))}\n\n"
             "If your changes affected your order total, please make sure your payment reflects the updated amount.\n\n"
             "Thank you for ordering from The Gym TX Meals!\n"
             f"Christian & Liz\n{WEBSITE}"
@@ -1388,20 +1404,21 @@ def _ordering_reminder_message(name):
     return ORDERING_REMINDER_SUBJECT, email, text
 
 
-def _pickup_reminder_message(name):
+def _pickup_reminder_message(name, location=""):
     first = _first_name(name)
     email = (
         f"Good morning, {first}!\n\n"
         "Your meals are ready for pickup today! 🎉\n\n"
-        f"Pickup Location:\n{PICKUP_PLACE}\n\n"
-        f"Pickup Hours:\n{PICKUP_HOURS}\n\n"
-        f"{ELGIN_NOTE}\n\n"
+        f"{_pickup_block(location)}\n\n"
         "Thank you for ordering! We hope you enjoy your meals this week.\n"
         f"{SIGNATURE}"
     )
     text = (
         f"Good morning, {first}! Your Gym TX Meals are ready for pickup today! Georgetown pickup: "
         "8 AM–1 PM or 3:30–6:30 PM at The Gym TX. See you soon!"
+    ) if not (location or "").strip() else (
+        f"Good morning, {first}! Your Gym TX Meals are ready for pickup today at {location.strip()}. "
+        "See you soon!"
     )
     return PICKUP_REMINDER_SUBJECT, email, text
 
@@ -1579,7 +1596,11 @@ def send_pickup_reminders(local, context=None):
     recipients = []
     for user_id, name in names.items():
         contact = _customer_contact(user_id)
-        recipients.append((user_id, contact, _pickup_reminder_message(contact.get("name") or name)))
+        # The customer's pickup location as it's stored now (the admin may
+        # have set it after the order was placed).
+        recipients.append((user_id, contact, _pickup_reminder_message(
+            contact.get("name") or name, contact.get("pickupLocation", ""),
+        )))
     return _send_job_messages(f"pickup-reminder#{today}", recipients, context)
 
 
@@ -1640,8 +1661,7 @@ def _order_email_text(order, action):
     lines += ["", f"Total: {money(order.get('totalCents', 0))}"]
     if order.get("contactPhone"):
         lines.append(f"Phone: {order['contactPhone']}")
-    if order.get("pickupLocation"):
-        lines.append(f"Pickup location: {order['pickupLocation']}")
+    lines.append(f"Pickup location: {_pickup_location_name(order.get('pickupLocation'))}")
     if order.get("pickupName"):
         lines.append(f"Picked up by: {order['pickupName']}")
     if order.get("mealSuggestions"):

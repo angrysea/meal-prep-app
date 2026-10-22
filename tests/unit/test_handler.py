@@ -2621,7 +2621,9 @@ def test_customer_gets_an_order_confirmation(table, outbox):
     assert text.startswith("Hi Casey!\n\nThank you for ordering from The Gym TX Meals!")
     assert "Your Order:\n2 x Chicken Enchilada Bowl (Large) - $26.00\n    Note: no onions\n" in text
     assert "Order Total: $26.00\nPickup Date: Monday, October 26\n" in text
-    assert "The Gym TX\n4112 Williams Drive, Suite 105\nGeorgetown, TX 78628\n8:00 AM–1:00 PM or 3:30–6:30 PM" in text
+    assert ("Pickup Location:\nThe Gym TX\n4112 Williams Drive, Suite 105\nGeorgetown, TX 78628\n\n"
+            "Pickup Hours:\n8:00 AM–1:00 PM or 3:30–6:30 PM") in text
+    assert "Elgin" not in text
     assert "Venmo to @lgraffeo88" in text
     assert text.endswith("Christian & Liz\nThe Gym TX Meals")
     assert "nsubscribe" not in text  # about their own order, not a marketing email
@@ -2692,7 +2694,8 @@ def test_text_preferring_customer_also_gets_the_short_text(table, outbox, monkey
     assert phone == "(555) 555-1234"
     assert message == (
         "Hi Casey! Thanks for ordering from The Gym TX Meals! Your order total is $12.00. Payment is due "
-        "when ordering (Venmo: @lgraffeo88 or cash by arrangement). Pickup is Monday, October 26. "
+        "when ordering (Venmo: @lgraffeo88 or cash by arrangement). Pickup is Monday, October 26 at "
+        "The Gym TX, Georgetown. "
         "See your confirmation email for details!"
     )
 
@@ -2979,3 +2982,64 @@ def test_order_records_the_customers_pickup_location(table, customer_admin):
     assert order["pickupLocation"] == "Elgin"
     admin = json.loads(index.handler(_event("GET", "/admin/orders", claims=ADMIN_CLAIMS), None)["body"])
     assert admin["orders"][0]["pickupLocation"] == "Elgin"
+
+
+
+def test_emails_use_the_customers_own_pickup_location(table, outbox, customer_admin):
+    from backend.lambda_src import index
+
+    _admin_put_customer(index, "user-1", {"name": "Casey", "email": "casey@example.com", "pickupLocation": "Elgin"})
+    order = _place_order(index, CUSTOMER_CLAIMS)
+    confirmation = _text(_to(outbox, "casey@example.com")[-1])
+    assert "Pickup Location:\nElgin\n\nPlease follow your confirmed pickup instructions." in confirmation
+    assert "Williams Drive" not in confirmation
+    assert "Pickup location: Elgin" in _text(_to(outbox, "admin@example.com")[-1])
+
+    _cancel_by_id(index, order["orderId"], {"status": "cancelled", "forEdit": True})
+    index.handler(_event("POST", "/orders", {
+        "contactPhone": PHONE, "replacesOrderId": order["orderId"],
+        "items": [{"mealId": order["items"][0]["mealId"], "quantity": 2}],
+    }, claims=CUSTOMER_CLAIMS), None)
+    assert "Pickup Date: Monday, October 26\nPickup Location: Elgin\n" in _text(_to(outbox, "casey@example.com")[-1])
+
+
+def test_updated_email_shows_the_default_location(table, outbox):
+    from backend.lambda_src import index
+
+    order = _place_order(index, CUSTOMER_CLAIMS)
+    _cancel_by_id(index, order["orderId"], {"status": "cancelled", "forEdit": True})
+    index.handler(_event("POST", "/orders", {
+        "contactPhone": PHONE, "replacesOrderId": order["orderId"],
+        "items": [{"mealId": order["items"][0]["mealId"], "quantity": 1}],
+    }, claims=CUSTOMER_CLAIMS), None)
+    assert "Pickup Location: The Gym TX, Georgetown\n" in _text(_to(outbox, "customer@example.com")[-1])
+
+
+def test_pickup_reminder_uses_the_stored_location(table, outbox, monkeypatch, customer_admin):
+    from backend.lambda_src import index
+
+    _place_order(index, CUSTOMER_CLAIMS)
+    # Set after the order was placed - the reminder uses what's stored now.
+    _admin_put_customer(index, "user-1", {"name": "Casey", "email": "casey@example.com", "pickupLocation": "Elgin"})
+    outbox.clear()
+    _at(monkeypatch, PICKUP_7AM)
+    index.handler({"job": "pickup-reminder"}, None)
+
+    text = _text(outbox[0])
+    assert "Pickup Location:\nElgin\n\nPlease follow your confirmed pickup instructions." in text
+    assert "Williams Drive" not in text and "Pickup Hours" not in text
+
+
+def test_pickup_reminder_text_uses_the_stored_location(table, outbox, monkeypatch, customer_admin):
+    from backend.lambda_src import index
+
+    texts = []
+    monkeypatch.setattr(index, "_send_text_via_twilio", lambda phone, message: texts.append(message))
+    index.table.put_item(Item={**index.SETTINGS_KEY, "smsEnabled": True})
+    _admin_put_customer(index, "user-1", {"name": "Casey", "email": "casey@example.com", "phone": "5555550000",
+                                           "preferredContact": "text", "pickupLocation": "Elgin"})
+    _place_order(index, CUSTOMER_CLAIMS)
+    texts.clear()
+    _at(monkeypatch, PICKUP_7AM)
+    index.handler({"job": "pickup-reminder"}, None)
+    assert texts == ["Good morning, Casey! Your Gym TX Meals are ready for pickup today at Elgin. See you soon!"]
