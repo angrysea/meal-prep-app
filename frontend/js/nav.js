@@ -19,6 +19,8 @@ export function renderNav(targetId = "nav") {
     links.push(`<a href="/admin-orders.html">Orders</a>`);
     links.push(`<a href="/admin-prep.html">Prep List</a>`);
     links.push(`<a href="/customers.html">Customers</a>`);
+    // Built from docs/admin-manual (see build_pdf.py); opens in a new tab.
+    links.push(`<a href="/admin-manual.pdf" target="_blank" rel="noopener">Manual</a>`);
     links.push(`<a href="#" id="nav-logout">Log out</a>`);
   } else if (session) {
     links.push(`<a href="/orders.html">My Orders</a>`);

@@ -76,3 +76,22 @@ def test_customer_menu_page_add_to_cart_toast(customer_page):
     page.click('.add-to-order[data-meal-id="m1"]')
 
     expect_toast(page, "Chicken Teriyaki Bowl added to your order")
+
+
+def test_admin_menu_links_to_the_manual(admin_page):
+    page = admin_page
+    page.open("/admin.html")
+
+    links = [l.strip() for l in page.locator("#nav-links a").all_text_contents()]
+    assert links == ["Menu", "Builder", "Orders", "Prep List", "Customers", "Manual", "Log out"]
+    manual = page.locator("#nav-links a", has_text="Manual")
+    expect(manual).to_have_attribute("href", "/admin-manual.pdf")
+    expect(manual).to_have_attribute("target", "_blank")
+    response = page.request.get(page.url.split("/admin.html")[0] + "/admin-manual.pdf")
+    assert response.ok and response.body()[:4] == b"%PDF"
+
+
+def test_customers_do_not_see_the_manual_link(customer_page):
+    page = customer_page
+    page.open("/index.html")
+    expect(page.locator("#nav-links a", has_text="Manual")).to_have_count(0)

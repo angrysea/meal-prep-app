@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>GTX Meals Admin Manual</title>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
+<style>
+  @page { size: letter; margin: 0.7in 0.75in 0.8in; }
+  :root { --red: #d20d0d; --ink: #1a1a1a; --muted: #5f5f5f; --line: #e3dede; --tint: #fbf4f4; }
+  * { box-sizing: border-box; }
+  body { font-family: Inter, -apple-system, "Segoe UI", sans-serif; color: var(--ink); font-size: 10pt; line-height: 1.45; margin: 0; }
+  h1, h2, h3 { font-family: Anton, Impact, sans-serif; font-weight: 400; letter-spacing: 0.02em; text-transform: uppercase; }
+  h1 { font-size: 26pt; color: var(--red); margin: 0 0 0.2in; border-bottom: 3px solid var(--red); padding-bottom: 6px; }
+  h2 { font-size: 14pt; margin: 0.2in 0 0.06in; break-after: avoid; }
+  h3 { break-after: avoid; }
+  h3 { font-size: 11.5pt; margin: 0.2in 0 0.05in; color: #333; }
+  p { margin: 0 0 0.1in; }
+  ul, ol { margin: 0 0 0.12in; padding-left: 0.25in; }
+  li { margin-bottom: 0.04in; }
+  .chapter { break-before: page; }
+  figure { margin: 0.08in 0 0.12in; break-inside: avoid; }
+  figure img { width: 100%; border: 1px solid var(--line); border-radius: 6px; display: block; }
+  figure.narrow img { width: 55%; margin: 0 auto; }
+  figure.mid img { width: 82%; margin: 0 auto; }
+  figure.half img { width: 45%; margin: 0 auto; }
+  figcaption { font-size: 8.5pt; color: var(--muted); text-align: center; margin-top: 4px; }
+  table { width: 100%; border-collapse: collapse; margin: 0.08in 0 0.16in; font-size: 9.5pt; break-inside: avoid; }
+  th { text-align: left; background: var(--tint); border-bottom: 2px solid var(--red); padding: 5px 7px; font-weight: 700; }
+  td { border-bottom: 1px solid var(--line); padding: 5px 7px; vertical-align: top; }
+  .tip, .warn { border-left: 4px solid var(--red); background: var(--tint); padding: 7px 10px; margin: 0.1in 0 0.15in; break-inside: avoid; }
+  .tip b:first-child, .warn b:first-child { color: var(--red); }
+  .steps li { margin-bottom: 0.06in; }
+  .ui { font-weight: 700; }
+  code { font-family: Menlo, monospace; font-size: 9pt; background: #f2eeee; padding: 0 3px; border-radius: 3px; }
+
+  /* Cover */
+  .cover { height: 9.3in; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
+  .cover img { width: 2.6in; margin-bottom: 0.35in; }
+  .cover h1 { border: none; font-size: 40pt; margin: 0; }
+  .cover .sub { font-family: Anton, sans-serif; font-size: 16pt; text-transform: uppercase; letter-spacing: 0.06em; margin: 0.08in 0 0.4in; }
+  .cover .meta { color: var(--muted); }
+
+  /* Contents */
+  .toc ol { list-style: none; padding: 0; counter-reset: ch; }
+  .toc li { counter-increment: ch; padding: 6px 0; border-bottom: 1px dotted var(--line); font-size: 11pt; }
+  .toc li::before { content: counter(ch) ". "; color: var(--red); font-weight: 700; }
+  .toc li span { color: var(--muted); font-size: 9.5pt; display: block; padding-left: 0.22in; }
+
+  .week td:first-child { font-weight: 700; white-space: nowrap; }
+</style>
+</head>
+<body>
+
+<section class="cover">
+  <img src="../../frontend/assets/logo.png" alt="GTX Meals" />
+  <h1>Admin Manual</h1>
+  <div class="sub">The Gym TX Meals &middot; gtxmeals.com</div>
+  <div class="meta">How to run the weekly menu, orders, prep, labels and customer messages<br />October 2026</div>
+</section>
+
+<section class="chapter toc">
+  <h1>Contents</h1>
+  <ol>
+    <li>Getting started<span>Signing in and the admin menu</span></li>
+    <li>The week at a glance<span>What happens automatically, and when</span></li>
+    <li>Builder: ordering, ready date and texting<span>Opening/closing ordering, holiday weeks</span></li>
+    <li>Builder: meals<span>Adding, editing, hiding meals; staple vs. rotating</span></li>
+    <li>Builder: add-ons (customizations)<span>Choosing which customizations each meal offers</span></li>
+    <li>Builder: extras &amp; sauces</li>
+    <li>Orders<span>Order statuses, cancelling, Export to Excel</span></li>
+    <li>Prep list and labels<span>What to cook, and printing labels on R011 sheets</span></li>
+    <li>Customers<span>Editing customers, pickup locations, reminders</span></li>
+    <li>Menu flyers<span>Weekly and monthly menus, PDFs and sending them out</span></li>
+    <li>Automatic emails and texts<span>Everything customers and you receive</span></li>
+    <li>Alerts and the monthly budget</li>
+    <li>Troubleshooting</li>
+  </ol>
+</section>
+
+<!-- 1 -->
+<section class="chapter">
+  <h1>1. Getting started</h1>
+  <h2>Signing in</h2>
+  <ol class="steps">
+    <li>Go to <b>gtxmeals.com</b> and click <span class="ui">Log in / Sign up</span>.</li>
+    <li>Sign in with the admin account (<b>gtxmeals@gmail.com</b>).</li>
+    <li>The menu bar switches to the admin menu.</li>
+  </ol>
+  <figure><img src="img/nav.png" /><figcaption>The admin menu bar</figcaption></figure>
+
+  <table>
+    <tr><th style="width:22%">Menu item</th><th>What it's for</th></tr>
+    <tr><td><b>Menu</b></td><td>The customer menu, as customers see it (read-only for you), plus links to the weekly and monthly menu flyers.</td></tr>
+    <tr><td><b>Builder</b></td><td>Ordering on/off, the ready (pickup) date, texting, and the meals, add-ons and extras on the menu.</td></tr>
+    <tr><td><b>Orders</b></td><td>Every order, its status, and Export to Excel.</td></tr>
+    <tr><td><b>Prep List</b></td><td>How many of each meal and customization to cook, and label printing.</td></tr>
+    <tr><td><b>Customers</b></td><td>Customer accounts, pickup locations, and the "send weekly reminders" button.</td></tr>
+    <tr><td><b>Manual</b></td><td>Opens this manual in a new tab.</td></tr>
+    <tr><td><b>Log out</b></td><td>Signs out of the admin account.</td></tr>
+  </table>
+  <div class="tip"><b>Tip:</b> The admin pages are designed for a computer screen (laptop or desktop). Customers can use any phone.</div>
+  <div class="warn"><b>Important:</b> The admin account can't place orders. To test ordering, sign in with a separate customer account.</div>
+</section>
+
+<!-- 2 -->
+<section class="chapter">
+  <h1>2. The week at a glance</h1>
+  <p>Most of the week runs itself. All times are Central.</p>
+  <table class="week">
+    <tr><th style="width:24%">When</th><th>What happens</th><th style="width:22%">Who does it</th></tr>
+    <tr><td>Monday 11:00 AM</td><td>Ordering opens for the <b>next</b> Monday's pickup. The ready date moves forward a week.</td><td>Automatic</td></tr>
+    <tr><td>Any time an order changes</td><td>The customer gets a confirmation, "updated" or "canceled" email. You get a matching email at gtxmeals@gmail.com.</td><td>Automatic</td></tr>
+    <tr><td>Thursday 6:00 PM</td><td>Reminder to customers who haven't ordered yet (and haven't unsubscribed). Skipped if you've closed ordering.</td><td>Automatic</td></tr>
+    <tr><td>Friday 2:00 PM</td><td>The deadline customers are told. After it, they can't edit or cancel online.</td><td>&mdash;</td></tr>
+    <tr><td>Friday 4:00 PM</td><td>Ordering actually closes (a quiet two-hour grace period).</td><td>Automatic</td></tr>
+    <tr><td>Saturday morning</td><td>Cancel unpaid orders without prior arrangements (Orders page). The customer is emailed.</td><td>You</td></tr>
+    <tr><td>Saturday/Sunday</td><td>Use the Prep List to shop and cook; print labels.</td><td>You</td></tr>
+    <tr><td>Pickup day 7:00 AM</td><td>"Your meals are ready" reminder to everyone with an order for that day.</td><td>Automatic</td></tr>
+    <tr><td>Pickup day</td><td>Mark orders <b>delivered</b> as they're picked up (optional, but keeps the Orders page tidy).</td><td>You</td></tr>
+  </table>
+  <h2>Your weekly checklist</h2>
+  <ol class="steps">
+    <li><b>Before Monday 11 AM:</b> make sure next week's rotating meals are in the Builder with the right ready date, and their customizations are filled in.</li>
+    <li><b>Monday:</b> optionally send the weekly menu flyer to customers (Menu flyers, chapter 10).</li>
+    <li><b>Saturday:</b> check payments; cancel unpaid orders.</li>
+    <li><b>Prep day:</b> Prep List &rarr; print labels &rarr; cook &rarr; label.</li>
+    <li><b>Pickup day:</b> mark orders delivered.</li>
+  </ol>
+</section>
+
+<!-- 3 -->
+<section class="chapter">
+  <h1>3. Builder: ordering, ready date and texting</h1>
+  <p>The three cards at the top of the <span class="ui">Builder</span> page.</p>
+  <figure class="mid"><img src="img/settings.png" /></figure>
+
+  <h2>Ordering</h2>
+  <ul>
+    <li><b>Automatic (on schedule)</b> &mdash; the normal setting. Open Monday 11:00 AM to Friday 4:00 PM.</li>
+    <li><b>Forced open</b> &mdash; opens ordering outside the schedule (e.g. you want to take a late order).</li>
+    <li><b>Forced closed</b> &mdash; closes ordering, e.g. a holiday week or when you're full. Customers see an "Ordering Is Currently Closed" message and the Thursday reminder isn't sent.</li>
+  </ul>
+  <p>The line under the menu (e.g. <i>"Customers can order right now."</i>) tells you the current state. Click <span class="ui">Save</span> after changing it.</p>
+  <div class="warn"><b>Remember:</b> after a forced open/closed week, set it back to <b>Automatic</b>.</div>
+
+  <h2>Ready date</h2>
+  <p>The pickup date for orders being placed now. It's automatic: the Monday after ordering closes.</p>
+  <p>For an unusual week (e.g. a <b>Tuesday</b> pickup after a holiday), pick the date under <span class="ui">Different date this week</span> and click <span class="ui">Save</span>. It only applies within 3 days of that week's Monday, so it can't accidentally carry over to later weeks. <span class="ui">Clear</span> goes back to automatic.</p>
+  <p>Customer emails use the real date, so a Tuesday pickup reads "Pickup Date: Tuesday, &hellip;" and the pickup reminder goes out Tuesday morning.</p>
+
+  <h2>SMS reminders (texting)</h2>
+  <p>Off. Texting needs a Twilio account to be set up first (ask your developer). While it's off:</p>
+  <ul>
+    <li>The <b>automatic</b> messages (order emails, Thursday and pickup-day reminders) go by email to customers who prefer texts, so they don't miss them.</li>
+    <li>The manual <span class="ui">Send weekly reminders</span> and flyer <span class="ui">Send</span> buttons <b>skip</b> customers who prefer texts, and report how many were skipped.</li>
+  </ul>
+</section>
+
+<!-- 4 -->
+<section class="chapter">
+  <h1>4. Builder: meals</h1>
+  <figure><img src="img/meals.png" /><figcaption>Add a meal (left) and the meals on the menu (right), with each meal's options underneath</figcaption></figure>
+
+  <h2>Adding a meal</h2>
+  <ol class="steps">
+    <li>Fill in <span class="ui">Name</span>, <span class="ui">Description</span> and <span class="ui">Base price</span>.</li>
+    <li>Enter the regular meal's macros (calories, protein, carbs, fat).</li>
+    <li>Under <span class="ui">Add-ons for this meal</span>, fill in only the customizations this meal offers (see chapter 5).</li>
+    <li>Under <span class="ui">Availability</span>, either tick <span class="ui">Staple (always on the menu)</span>, <b>or</b> pick the ready date it's offered for (a rotating meal).</li>
+    <li>Click <span class="ui">Add meal</span>.</li>
+  </ol>
+
+  <h2>Staple vs. rotating</h2>
+  <table>
+    <tr><th style="width:20%">Type</th><th>On the menu</th><th style="width:20%">Shown with</th></tr>
+    <tr><td>Staple</td><td>Every week.</td><td>&#11088; star</td></tr>
+    <tr><td>Rotating</td><td>Only for the ready date you picked.</td><td>&#128260; arrows</td></tr>
+  </table>
+  <p>The star or arrows appear automatically from this setting &mdash; don't type them into the meal name.</p>
+
+  <h2>Editing, hiding and deleting</h2>
+  <ul>
+    <li><span class="ui">Edit</span> opens the meal for changes. Saving doesn't change orders already placed.</li>
+    <li><span class="ui">Hide</span> takes a meal off the menu without deleting it (the list shows <b>Available: No</b>). <span class="ui">Show</span> puts it back.</li>
+    <li><span class="ui">Delete</span> removes it for good. Past orders keep their copy of it.</li>
+  </ul>
+  <div class="tip"><b>Tip:</b> Remove test meals (like "Tester") before their week opens &mdash; customers will see any meal that's available for the current ready date.</div>
+</section>
+
+<!-- 5 -->
+<section class="chapter">
+  <h1>5. Builder: add-ons (customizations)</h1>
+  <p>Add-ons are the options a customer can pick for a meal &mdash; one per meal &mdash; such as <i>Cauliflower Rice</i>, <i>Extra Protein</i>, <i>Large</i> or <i>Large with Cauliflower Rice</i>. Combinations are add-ons of their own.</p>
+  <figure><img src="img/addons.png" /><figcaption>The list of add-ons</figcaption></figure>
+
+  <h2>Creating an add-on</h2>
+  <p>Give it a <span class="ui">Name</span>, an optional <span class="ui">Default description</span>, and a <span class="ui">Default price</span>, then click <span class="ui">Add add-on</span>. A new add-on isn't offered on any meal until you fill it in on that meal.</p>
+
+  <h2>Choosing which customizations each meal offers</h2>
+  <p>In <span class="ui">Edit</span> (or Add a meal) every add-on has a box. <b>A customization is offered on a meal only if you fill in its description or its macros for that meal.</b> Leave a box blank and customers won't see that option on that meal.</p>
+  <figure class="narrow"><img src="img/edit-meal.png" /><figcaption>Each box says <b>Offered</b> or <b>Not offered on this meal</b> as you type</figcaption></figure>
+  <ul>
+    <li>The grey text in an empty description is just the add-on's default, as a hint &mdash; it isn't saved unless you type it.</li>
+    <li>Macros are for the <b>whole meal</b> with that customization (not just the extra part).</li>
+    <li>The price starts at the add-on's default; change it for this meal if needed.</li>
+  </ul>
+  <div class="tip"><b>Example &mdash; Smash Burger Tacos:</b> create a "Lettuce &amp; Tomato Swap" add-on. On the tacos, fill in the swap and leave the cauliflower rice boxes blank. The swap shows only on the tacos; cauliflower rice stays on every other meal that has it filled in.</div>
+
+  <h2>Hiding and deleting an add-on</h2>
+  <ul>
+    <li><span class="ui">Hide</span> stops offering it on every meal, but keeps it for later.</li>
+    <li><span class="ui">Delete</span> removes it from the list (to avoid clutter). Meals keep their own copy, shown as "(deleted)" in the meals list; customers can't pick it.</li>
+  </ul>
+</section>
+
+<!-- 6 -->
+<section class="chapter">
+  <h1>6. Builder: extras &amp; sauces</h1>
+  <p>Extras (e.g. Salsa Verde, BBQ Sauce, Sriracha &mdash; $0.25 each) are bought by quantity at the bottom of the menu, on top of at least one meal.</p>
+  <figure><img src="img/extras.png" /></figure>
+  <ul>
+    <li>Add one with a name, price, and optionally a description and macros (for one).</li>
+    <li>The description and macros show wherever the extra appears: the menu, the cart, My Orders, Orders and the Prep List.</li>
+    <li><span class="ui">Hide</span>, <span class="ui">Edit</span> and <span class="ui">Delete</span> work like add-ons.</li>
+  </ul>
+  <p>The current macros are estimates for a 1 oz. cup. Update them if your cups or recipes differ.</p>
+</section>
+
+<!-- 7 -->
+<section class="chapter">
+  <h1>7. Orders</h1>
+  <figure class="mid"><img src="img/orders.png" style="width:76%" /></figure>
+  <h2>Finding orders</h2>
+  <ul>
+    <li><span class="ui">Ready date</span> &mdash; one pickup date, or all dates.</li>
+    <li><span class="ui">Show</span> &mdash; Placed (default), Prepared, Delivered, Cancelled, or All.</li>
+    <li>Each order shows the customer, the person picking up (if someone else), phone, items with customizations, notes and extras, and the total.</li>
+  </ul>
+
+  <h2>Order status</h2>
+  <table>
+    <tr><th style="width:18%">Status</th><th>Meaning</th></tr>
+    <tr><td>placed</td><td>New order. The customer can still edit or cancel it until Friday 2:00 PM.</td></tr>
+    <tr><td>prepared</td><td>Cooked and labeled.</td></tr>
+    <tr><td>delivered</td><td>Picked up.</td></tr>
+    <tr><td>cancelled</td><td>Cancelled by the customer or by you. Not counted on the Prep List.</td></tr>
+  </table>
+  <p>Change the status with the drop-down on the right.</p>
+  <div class="warn"><b>Cancelling emails the customer.</b> Setting an order to <b>cancelled</b> sends the customer the "Your Order Has Been Canceled" email (once). Other status changes send nothing.</div>
+
+  <h2>Export to Excel</h2>
+  <p>Click <span class="ui">Export to Excel</span> to download the orders currently shown (so set the filters first). The file opens in Excel, or use File &rarr; Import in Google Sheets.</p>
+  <p><b>Columns:</b> Placed &middot; Customer &middot; Email &middot; Phone &middot; Pickup Location &middot; Picked up by &middot; Ready date &middot; Status &middot; for each meal: its quantity and its customizations (e.g. "2 Regular, 1 Large") &middot; Extras &amp; Sauces &middot; Special Requests &middot; Meals &middot; Total ($) &middot; Meal Suggestions. A <b>Totals</b> row at the bottom adds up each meal, the meal count and the money (cancelled orders are left out).</p>
+</section>
+
+<!-- 8 -->
+<section class="chapter">
+  <h1>8. Prep list and labels</h1>
+  <figure><img src="img/prep.png" /></figure>
+  <ul>
+    <li>Pick the <span class="ui">Ready date</span>. The table totals every <b>placed</b> order for that date, grouped by meal, customization and note.</li>
+    <li>The <b>Extras &amp; Sauces</b> table totals the sauce cups to portion.</li>
+  </ul>
+
+  <h2>Printing labels</h2>
+  <p>Labels are made for <b>SpartanIndustrial R011</b> sheets: 3" &times; 2" labels, 10 per letter-size sheet. There's one label per meal container, with the meal, the customer (and who's picking up), macros, the customization, any note, and the allergen statement.</p>
+  <ol class="steps">
+    <li>Pick the ready date, then click <span class="ui">Print labels</span>.</li>
+    <li>In the print window (Chrome is recommended): <b>Scale 100%</b> (or "Actual size"/"Default"), <b>Margins: Default</b>, <b>Headers and footers: off</b>.</li>
+    <li>The first time, print one sheet on <b>plain paper</b> and hold it against a label sheet to check the alignment.</li>
+    <li>Load the label sheets and print.</li>
+  </ol>
+  <figure class="half"><img src="img/labels.png" /><figcaption>A label sheet (sample data)</figcaption></figure>
+  <ul>
+    <li><b>Label order:</b> grouped by meal (A&ndash;Z), then customization (Regular first), then note, then customer &mdash; so containers come off the printer in plating order.</li>
+    <li>Long text shrinks automatically to fit the label.</li>
+    <li>Labels only print for the selected ready date.</li>
+  </ul>
+</section>
+
+<!-- 9 -->
+<section class="chapter">
+  <h1>9. Customers</h1>
+  <figure class="mid"><img src="img/customers.png" style="width:74%" /></figure>
+  <h2>Editing a customer</h2>
+  <p>Click <span class="ui">Edit</span> on a customer.</p>
+  <figure class="narrow" style="margin-top:0"><img src="img/edit-customer.png" style="width:46%" /></figure>
+  <ul>
+    <li><b>Name, email, phone, address</b> &mdash; their contact details. Emails go to this address.</li>
+    <li><b>Pickup location</b> &mdash; only you can set this (customers see it at checkout but can't change it). Leave it blank for the normal Georgetown pickup at The Gym TX. Enter something like <i>"Elgin"</i> &mdash; or more detail, e.g. <i>"Elgin &ndash; 123 Main St, 5&ndash;6 PM"</i> &mdash; and that text replaces the Georgetown address in their emails, at checkout and in the Excel export.</li>
+    <li><b>Notifications</b> &mdash; email or text (texts need texting switched on; until then their automatic messages come by email).</li>
+    <li><b>Unsubscribed</b> &mdash; stops reminders and menu announcements (order emails still go out). Customers can also unsubscribe from the link in any reminder.</li>
+  </ul>
+
+  <h2>Deleting a customer</h2>
+  <p><span class="ui">Delete</span> removes their login and saved details. Their past orders are kept.</p>
+
+  <h2>Send weekly reminders (button)</h2>
+  <p>Sends a short "This week's menu is up" message to every subscribed customer now (texting customers are skipped while texting is off). The Thursday reminder is automatic; this is for an extra nudge.</p>
+</section>
+
+<!-- 10 -->
+<section class="chapter">
+  <h1>10. Menu flyers</h1>
+  <p>From the <span class="ui">Menu</span> page, use <span class="ui">View this week's menu</span> or <span class="ui">View this month's menu</span>.</p>
+  <figure><img src="img/flyer.png" /><figcaption>The weekly menu flyer (with macros). The monthly one lists the month's meals without macros.</figcaption></figure>
+  <ul>
+    <li><span class="ui">View as PDF</span> &mdash; opens the print window; choose "Save as PDF" to post or share it.</li>
+    <li><span class="ui">Send this menu to customers</span> &mdash; previews the message (a link to the flyer) and how many customers it'll go to; <span class="ui">Send</span> emails (or texts) every subscribed customer. While texting is off, customers who prefer texts are skipped.</li>
+    <li>The QR code links to the menu &mdash; handy on a printed flyer at the gym.</li>
+  </ul>
+</section>
+
+<!-- 11 -->
+<section class="chapter">
+  <h1>11. Automatic emails and texts</h1>
+  <h2>To customers</h2>
+  <table>
+    <tr><th style="width:24%">Message</th><th style="width:28%">When</th><th>Notes</th></tr>
+    <tr><td>Thank You for Your Order!</td><td>Right after they order</td><td>Their meals, customizations, notes, extras, total, pickup date and location, and payment reminder (Venmo @lgraffeo88).</td></tr>
+    <tr><td>Your Order Has Been Updated!</td><td>When they save an edited order</td><td>The new order and total. Starting an edit doesn't send a cancellation.</td></tr>
+    <tr><td>Your Order Has Been Canceled</td><td>When they cancel, or you set the order to cancelled</td><td>What was cancelled, and to email gtxmeals@gmail.com if they've paid.</td></tr>
+    <tr><td>Don't Forget to Order Your Meals!</td><td>Thursday 6:00 PM</td><td>Only customers who haven't ordered for this week and haven't unsubscribed. Skipped when ordering is forced closed.</td></tr>
+    <tr><td>Your Meals Are Ready for Pickup!</td><td>7:00 AM on pickup day</td><td>Only customers with an order for that day. Shows their pickup location.</td></tr>
+  </table>
+  <ul>
+    <li>Messages greet customers by first name.</li>
+    <li>Customers with no pickup location get the Georgetown address and hours (8:00 AM&ndash;1:00 PM or 3:30&ndash;6:30 PM); others get their own location and "Please follow your confirmed pickup instructions."</li>
+    <li>Replies go to gtxmeals@gmail.com.</li>
+    <li>Nobody gets the same reminder twice, even if a send is retried.</li>
+  </ul>
+
+  <h2>To you (gtxmeals@gmail.com)</h2>
+  <ul>
+    <li><b>New Meal Order Received!</b>, <b>Meal Order Updated</b>, <b>Meal Order Cancelled</b> &mdash; when a customer places, edits or cancels. Includes the customer, items, total, phone, pickup location, who's picking up and any meal suggestions.</li>
+    <li>You aren't emailed for changes you make yourself.</li>
+  </ul>
+  <div class="tip"><b>Changing the wording:</b> the address, hours, Venmo handle and sign-off are kept in one place in the app &mdash; ask your developer to update them.</div>
+</section>
+
+<!-- 12 -->
+<section class="chapter">
+  <h1>12. Alerts and the monthly budget</h1>
+  <h2>Alert emails</h2>
+  <p>The site watches itself. If something goes wrong you'll get an email from <b>GTX Meals Alerts &lt;alerts@gtxmeals.com&gt;</b>, and another when it's fixed.</p>
+  <table>
+    <tr><th style="width:34%">Alert</th><th>What it means / what to do</th></tr>
+    <tr><td>The website is down / The API is down</td><td>The site or ordering didn't respond for 30 minutes (checked every 15 minutes). Try the site yourself; contact your developer if it stays down.</td></tr>
+    <tr><td>The API crashed / Errors in the API logs</td><td>Something failed &mdash; often one email that couldn't be delivered. The alert includes the details; forward it to your developer if it repeats.</td></tr>
+    <tr><td>The API is close to timing out / being throttled</td><td>The site was slow or very busy. Usually clears on its own.</td></tr>
+    <tr><td>The database had errors</td><td>A brief problem on Amazon's side. Usually clears on its own.</td></tr>
+    <tr><td>Too many emails are bouncing</td><td>Over 5% of emails bounced &mdash; check the Customers page for mistyped addresses.</td></tr>
+    <tr><td>Unusually many emails sent today</td><td>Over 300 emails in a day (normally about 30 a week). Check for something sent twice.</td></tr>
+  </table>
+  <h2>Monthly budget</h2>
+  <p>Amazon Web Services emails gtxmeals@gmail.com if the monthly bill is <b>forecast</b> to go over <b>$20</b>, or <b>actually</b> reaches 80% and 100% of it. Normal running costs are well under that.</p>
+</section>
+
+<!-- 13 -->
+<section class="chapter">
+  <h1>13. Troubleshooting</h1>
+  <table>
+    <tr><th style="width:36%">Problem</th><th>Try this</th></tr>
+    <tr><td>A customization doesn't show on a meal</td><td>Edit the meal: the add-on's box must have a description or macros (it should say <b>Offered</b>). Also check the add-on isn't hidden.</td></tr>
+    <tr><td>A new add-on shows on no meals</td><td>That's expected &mdash; fill it in on each meal that should offer it.</td></tr>
+    <tr><td>A meal isn't on the menu</td><td>Check it's available (not hidden) and either a staple or set for the current ready date (shown on the Builder's Ready date card).</td></tr>
+    <tr><td>Customers say ordering is closed</td><td>Check the Builder's Ordering card. Outside Monday 11 AM &ndash; Friday 4 PM it's closed unless forced open.</td></tr>
+    <tr><td>Labels print too small or misaligned</td><td>Print from Chrome at 100% / Actual size, Margins: Default. Test on plain paper first.</td></tr>
+    <tr><td>A customer didn't get an email</td><td>Check their email address on the Customers page; ask them to look in spam. Reminders don't go to unsubscribed customers (order emails always do).</td></tr>
+    <tr><td>A customer wants to change their order after Friday 2 PM</td><td>They can't online. Make the change by hand: cancel their order on the Orders page (they'll be emailed) and note the new order, or adjust on prep day.</td></tr>
+    <tr><td>A customer wants a different pickup location</td><td>Set it on the Customers page (Edit &rarr; Pickup location). Only you can change it.</td></tr>
+  </table>
+  <p style="margin-top:0.3in;" class="meta">Screenshots in this manual use sample data.</p>
+</section>
+
+</body>
+</html>

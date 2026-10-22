@@ -143,6 +143,18 @@ address and hours; one with a location (e.g. "Elgin") gets that location
 and "Please follow your confirmed pickup instructions." The pickup-day
 reminder uses the location stored at send time.
 
+## Admin manual
+
+`docs/admin-manual/manual.html` is the admin user manual. It's built into
+`frontend/admin-manual.pdf`, which the site serves and the admin menu links
+as **Manual**. After changing an admin page, refresh it from the repo root:
+
+    python docs/admin-manual/screenshots.py docs/admin-manual/img   # sample data, local only
+    python docs/admin-manual/build_pdf.py
+
+then deploy. The PDF isn't secret (anyone with the URL can open it), so it
+holds no customer data - the screenshots use the mock API's sample data.
+
 ## Exporting orders to Excel
 
 **Export to Excel** on the Orders page (`admin-orders.html`) downloads the
