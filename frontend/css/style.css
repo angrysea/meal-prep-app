@@ -722,6 +722,19 @@ table.customers-table th {
     display: none !important;
   }
 
+  /* Admin pages are at least 1100px wide on screen (body.admin-page). Left
+     on when printing, the browser sees a page wider than the label area and
+     shrinks everything to fit - labels came out about 2" wide instead of 3",
+     even at 100% / Actual Size. */
+  html,
+  body,
+  body.admin-page {
+    min-width: 0 !important;
+    width: auto !important;
+    margin: 0 !important;
+    background: none !important;
+  }
+
   #print-labels {
     display: block;
   }

@@ -222,3 +222,20 @@ def test_labels_line_up_with_the_r011_sheet(admin_page, mock_api):
     assert (round(w, 3), round(h, 3)) == (3, 2)
     assert round(x1 - x0, 3) == 3.1  # 3" label + 0.1" gap
     assert round(y2 - y0, 3) == 2.125  # 2" label + 0.125" gap
+
+
+def test_printed_labels_are_not_shrunk_to_fit_a_wide_page(admin_page):
+    # Admin pages are at least 1100px wide on screen. If that carried over to
+    # print, the browser shrank the whole sheet to fit the paper - labels
+    # came out about 2" wide even at 100% / Actual Size. Laid out at the
+    # printable width (8.5" minus the 1.2" side margins = 6.1"), nothing may
+    # be wider than the page.
+    page = admin_page
+    page.open("/admin-prep.html")
+    expect(page.locator("#print-labels .label").first).to_be_attached()
+    page.set_viewport_size({"width": round(6.1 * 96), "height": 1000})
+    page.emulate_media(media="print")
+
+    assert page.evaluate("document.documentElement.scrollWidth") <= round(6.1 * 96)
+    box = page.locator("#print-labels .label").first.bounding_box()
+    assert (round(box["width"]), round(box["height"])) == (3 * 96, 2 * 96)
