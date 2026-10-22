@@ -191,7 +191,7 @@
         container.querySelectorAll(".cancel-order").forEach((btn) => {
           btn.addEventListener("click", async (e) => {
             const orderId = e.target.closest(".order-card").dataset.orderId;
-            const ok = await confirmAction("Cancel this order? This can't be undone.", { confirmLabel: "Cancel order" });
+            const ok = await confirmAction("Cancel this order? This can't be undone.", { confirmLabel: "Cancel order", cancelLabel: "Keep order" });
             if (!ok) return;
             try {
               await cancelOnServer(orderId);

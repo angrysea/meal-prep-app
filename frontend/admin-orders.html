@@ -70,7 +70,7 @@
       return "";
     }
     import { showToast } from "/js/toast.js";
-    import { escapeHtml } from "/js/admin.js";
+    import { confirmAction, escapeHtml } from "/js/admin.js";
     import { ordersToCsv, downloadCsv } from "/js/ordersExport.js";
 
     renderNav();
@@ -217,8 +217,20 @@
           })
           .join("");
 
+        // Cancelling emails the customer (and the admin, if a refund is due),
+        // so it's confirmed first rather than saved on a stray click.
+        const confirmCancel = (order) => {
+          const paid = amountPaidCents(order);
+          return confirmAction(
+            `Cancel ${order.customerName}'s order (${formatPrice(order.totalCents)})? ` +
+              "They'll be emailed that it's canceled." +
+              (paid ? ` They've paid ${formatPrice(paid)} - you'll get a refund reminder email.` : ""),
+            { confirmLabel: "Cancel order", cancelLabel: "Keep order" }
+          );
+        };
+
         // Status and payment drop-downs save the same way - one field each.
-        const wire = (selector, field, toastFor) =>
+        const wire = (selector, field, toastFor, confirmFirst) =>
           body.querySelectorAll(selector).forEach((select) => {
             const original = select.value;
             select.addEventListener("change", async (e) => {
@@ -226,6 +238,10 @@
               const { orderId, customerSub } = row.dataset;
               const order = orders.find((o) => o.orderId === orderId);
               const value = select.value;
+              if (confirmFirst && !(await confirmFirst(order, value))) {
+                select.value = original; // kept as it was
+                return;
+              }
               select.disabled = true;
               try {
                 await apiRequest(config.apiUrl, `/admin/orders/${customerSub}/${orderId}`, {
@@ -243,7 +259,12 @@
               }
             });
           });
-        wire(".status-select", "status", (order, status) => `Order for ${order.customerName} marked ${status}`);
+        wire(
+          ".status-select",
+          "status",
+          (order, status) => `Order for ${order.customerName} marked ${status}`,
+          (order, status) => status !== "cancelled" || confirmCancel(order)
+        );
         wire(".payment-select", "payment", (order, payment) =>
           `Order for ${order.customerName} marked ${PAYMENT_LABELS[payment].toLowerCase()}`
         );

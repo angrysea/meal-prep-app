@@ -321,3 +321,50 @@ def test_amount_paid_only_applies_to_venmo_or_cash(admin_page, mock_api):
     page.open("/admin-orders.html")
     expect(page.locator(f"{ROW.format('o2')} .amount-paid-input")).to_be_disabled()  # unpaid
     expect(page.locator(f"{ROW.format('o2')} .payment-balance")).to_have_count(0)
+
+
+def test_cancelling_from_the_orders_page_asks_first(admin_page, mock_api):
+    page = admin_page
+    page.open("/admin-orders.html")
+    page.select_option(f"{ROW.format('o2')} .status-select", "cancelled")
+
+    dialog = page.locator("#confirm-dialog")
+    expect(dialog).to_be_visible()
+    expect(dialog).to_contain_text("Cancel Bob Smith's order ($11.50)? They'll be emailed that it's canceled.")
+    expect(page.locator("#confirm-dialog-ok-button")).to_have_text("Cancel order")
+    expect(page.locator("#confirm-dialog-cancel-button")).to_have_text("Keep order")
+    page.click("#confirm-dialog-cancel-button")
+
+    # Kept: nothing saved, and the drop-down goes back.
+    expect(dialog).to_be_hidden()
+    assert mock_api.writes() == []
+    expect(page.locator(f"{ROW.format('o2')} .status-select")).to_have_value("placed")
+
+
+def test_confirming_cancels_the_order(admin_page, mock_api):
+    page = admin_page
+    page.open("/admin-orders.html")
+    page.select_option(f"{ROW.format('o2')} .status-select", "cancelled")
+    page.click("#confirm-dialog-ok-button")
+
+    expect_toast(page, "Order for Bob Smith marked cancelled")
+    call = mock_api.writes()[-1]
+    assert (call["path"], call["body"]) == ("/admin/orders/u2/o2", {"status": "cancelled"})
+
+
+def test_cancel_confirmation_mentions_a_refund_when_paid(admin_page, mock_api):
+    mock_api.state["orders"][1].update(payment="venmo", amountPaidCents=1150)
+    page = admin_page
+    page.open("/admin-orders.html")
+    page.select_option(f"{ROW.format('o2')} .status-select", "cancelled")
+    expect(page.locator("#confirm-dialog")).to_contain_text(
+        "They've paid $11.50 - you'll get a refund reminder email."
+    )
+
+
+def test_other_status_changes_save_without_asking(admin_page, mock_api):
+    page = admin_page
+    page.open("/admin-orders.html")
+    page.select_option(f"{ROW.format('o2')} .status-select", "delivered")
+    expect_toast(page, "Order for Bob Smith marked delivered")
+    expect(page.locator("#confirm-dialog")).to_have_count(0)

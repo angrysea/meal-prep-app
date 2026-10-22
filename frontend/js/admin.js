@@ -63,7 +63,7 @@ export function handleSubmit(form, action) {
 // A styled stand-in for window.confirm(). The confirm button is the
 // dialog's default - focused on open, so Enter confirms; Escape or Cancel
 // backs out. Resolves true only when confirmed.
-export function confirmAction(message, { confirmLabel = "Delete" } = {}) {
+export function confirmAction(message, { confirmLabel = "Delete", cancelLabel = "Cancel" } = {}) {
   let dialog = document.getElementById("confirm-dialog");
   if (!dialog) {
     dialog = document.createElement("dialog");
@@ -73,7 +73,7 @@ export function confirmAction(message, { confirmLabel = "Delete" } = {}) {
         <h2>Please confirm</h2>
         <p id="confirm-dialog-message"></p>
         <div class="dialog-actions">
-          <button type="submit" class="secondary" value="cancel">Cancel</button>
+          <button type="submit" class="secondary" value="cancel" id="confirm-dialog-cancel-button">Cancel</button>
           <button type="submit" value="ok" id="confirm-dialog-ok-button">Delete</button>
         </div>
       </form>`;
@@ -82,6 +82,7 @@ export function confirmAction(message, { confirmLabel = "Delete" } = {}) {
   dialog.querySelector("#confirm-dialog-message").textContent = message;
   const okButton = dialog.querySelector("#confirm-dialog-ok-button");
   okButton.textContent = confirmLabel;
+  dialog.querySelector("#confirm-dialog-cancel-button").textContent = cancelLabel;
   dialog.returnValue = "";
 
   return new Promise((resolve) => {
