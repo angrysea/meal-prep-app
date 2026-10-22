@@ -3253,3 +3253,80 @@ def test_no_refund_for_unpaid_or_free_orders(table, outbox):
     _cancel_by_id(index, free["orderId"])
     assert _refund_emails(outbox) == []
     assert "If you've already submitted payment" in _text(_to(outbox, "customer@example.com")[-1])
+
+
+
+# ---------- Saturday unpaid orders report ----------
+
+SATURDAY_8AM = "2026-10-24T13:00:00+00:00"  # 8 AM CDT, after ordering closed for Monday the 26th
+
+
+def _report(outbox):
+    return [e for e in outbox if _subject(e).startswith(("Unpaid Orders", "All Orders Paid"))]
+
+
+def test_saturday_report_lists_unpaid_and_part_paid_orders(table, outbox, monkeypatch):
+    from backend.lambda_src import index
+
+    unpaid = _place_order(index, CUSTOMER_CLAIMS, quantity=2)  # $24.00, nothing recorded
+    dana = {"sub": "u-dana", "email": "dana@example.com", "name": "Dana Diaz"}
+    part = _place_order(index, dana, quantity=1)  # $12.00
+    _admin_put_order(index, part["orderId"], {"payment": "venmo", "amountPaidCents": 500}, sub="u-dana")
+    paid = _place_order(index, dana, quantity=1)
+    _admin_put_order(index, paid["orderId"], {"payment": "cash"}, sub="u-dana")
+    free = _place_order(index, dana, quantity=1)
+    _admin_put_order(index, free["orderId"], {"payment": "free"}, sub="u-dana")
+    gone = _place_order(index, CUSTOMER_CLAIMS)
+    _cancel_by_id(index, gone["orderId"])
+    outbox.clear()
+    _at(monkeypatch, SATURDAY_8AM)
+    result = index.handler({"job": "unpaid-orders-report"}, None)
+
+    [email] = _report(outbox)
+    assert email["Destination"]["ToAddresses"] == ["admin@example.com"]
+    assert _subject(email) == "Unpaid Orders for Monday, October 26: 2 ($31.00 due)"
+    text = _text(email)
+    assert text.startswith("2 of 4 orders for Monday, October 26 aren't fully paid:")
+    assert "- Casey Customer: $24.00 due (total $24.00, nothing recorded) - (555) 555-1234" in text
+    assert "- Dana Diaz: $7.00 due (paid $5.00 of $12.00)" in text
+    assert "Total due: $31.00" in text
+    assert "Nothing has been cancelled." in text
+    assert result == {"readyDate": "2026-10-26", "unpaid": 2, "dueCents": 3100}
+    # Nothing was cancelled.
+    admin = json.loads(index.handler(_event("GET", "/admin/orders", query={"status": "placed"},
+                                            claims=ADMIN_CLAIMS), None)["body"])
+    assert len(admin["orders"]) == 4
+
+
+def test_saturday_report_says_when_everything_is_paid(table, outbox, monkeypatch):
+    from backend.lambda_src import index
+
+    order = _place_order(index, CUSTOMER_CLAIMS)
+    _admin_put_order(index, order["orderId"], {"payment": "venmo"})
+    outbox.clear()
+    _at(monkeypatch, SATURDAY_8AM)
+    index.handler({"job": "unpaid-orders-report"}, None)
+    [email] = _report(outbox)
+    assert _subject(email) == "All Orders Paid for Monday, October 26"
+    assert _text(email).startswith("All 1 orders for Monday, October 26 are paid.")
+
+
+def test_saturday_report_is_sent_once(table, outbox, monkeypatch):
+    from backend.lambda_src import index
+
+    _place_order(index, CUSTOMER_CLAIMS)
+    outbox.clear()
+    _at(monkeypatch, SATURDAY_8AM)
+    index.handler({"job": "unpaid-orders-report"}, None)
+    again = index.handler({"job": "unpaid-orders-report"}, None)
+    assert len(_report(outbox)) == 1
+    assert again["skipped"] == "already sent for this pickup"
+
+
+def test_saturday_report_only_runs_saturday_8am_central(table, outbox, monkeypatch):
+    from backend.lambda_src import index
+
+    _at(monkeypatch, "2026-10-24T14:00:00+00:00")  # 9 AM CDT - the other UTC firing
+    assert index.handler({"job": "unpaid-orders-report"}, None) == {"skipped": "not Saturday 8 AM Central"}
+    _at(monkeypatch, "2026-11-07T14:00:00+00:00")  # 8 AM CST
+    assert "skipped" not in index.handler({"job": "unpaid-orders-report"}, None)

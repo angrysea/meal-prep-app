@@ -1557,11 +1557,13 @@ def _send_reminder(contact, message, sms_enabled):
 # with daylight saving; the job only runs in the right Central hour.
 #   ordering-reminder: Thursday 6 PM - customers who haven't ordered yet.
 #   pickup-reminder:   7 AM on the pickup day - customers with an order.
+#   unpaid-orders-report: Saturday 8 AM - the admin, a list of unpaid orders.
 # Every send is recorded first (SENT#<job>#<date>, one item per customer),
 # so a retried run never messages anyone twice.
 
 ORDERING_REMINDER_AT = (3, 18)  # Thursday, 6 PM Central
 PICKUP_REMINDER_HOUR = 7  # 7 AM Central on the ready date
+UNPAID_REPORT_AT = (5, 8)  # Saturday, 8 AM Central
 ACTIVE_ORDER_STATUSES = ("placed", "prepared", "delivered")
 
 
@@ -1575,10 +1577,75 @@ def run_job(job, context=None):
         if local.hour != PICKUP_REMINDER_HOUR:
             return {"skipped": "not 7 AM Central"}
         result = send_pickup_reminders(local, context)
+    elif job == "unpaid-orders-report":
+        if (local.weekday(), local.hour) != UNPAID_REPORT_AT:
+            return {"skipped": "not Saturday 8 AM Central"}
+        result = send_unpaid_orders_report(local)
     else:
         raise ValueError(f"unknown job: {job}")
     print(f"{job}: {json.dumps(result)}")
     return result
+
+
+def send_unpaid_orders_report(local):
+    """Saturday morning, after ordering closes: one email to the admin
+    listing every order for the coming pickup that's unpaid or only partly
+    paid - to follow up on. Nothing is cancelled automatically. Sent once
+    per pickup date (a retried run doesn't send it again); when every order
+    is paid it says so, so it's clear the check ran."""
+    if not FROM_EMAIL:
+        return {"skipped": "no sending domain configured"}
+    settings = table.get_item(Key=SETTINGS_KEY).get("Item") or {}
+    ready_date = _ready_dates(settings, local.astimezone(timezone.utc))[0]
+    orders = [
+        o for o in _orders_for_ready_date(ready_date)
+        if o.get("status", "placed") in ("placed", "prepared")
+    ]
+    owing = []
+    for order in orders:
+        # Free orders owe nothing (_balance_cents is 0 for them).
+        due = int(order.get("totalCents", 0)) if order.get("payment", "unpaid") == "unpaid" else _balance_cents(order)
+        if due > 0:
+            owing.append((order, due))
+    owing.sort(key=lambda pair: (pair[0].get("customerName") or "").casefold())
+    if not _claim_send(f"unpaid-orders-report#{ready_date}", "admin"):
+        return {"skipped": "already sent for this pickup", "readyDate": ready_date}
+
+    day = _pickup_day(ready_date)
+    total_due = sum(due for _, due in owing)
+    if owing:
+        subject = f"Unpaid Orders for {day}: {len(owing)} ({_money(total_due)} due)"
+        lines = [f"{len(owing)} of {len(orders)} orders for {day} aren't fully paid:", ""]
+        for order, due in owing:
+            paid = _amount_paid(order)
+            line = f"- {order.get('customerName') or 'A customer'}: {_money(due)} due"
+            line += f" (paid {_money(paid)} of {_money(order.get('totalCents', 0))})" if paid else \
+                f" (total {_money(order.get('totalCents', 0))}, nothing recorded)"
+            if order.get("contactPhone"):
+                line += f" - {order['contactPhone']}"
+            lines.append(line)
+        lines += ["", f"Total due: {_money(total_due)}", "",
+                  "Nothing has been cancelled. Record payments, or cancel orders, on the Orders page "
+                  "(Payment: Unpaid only)."]
+    else:
+        subject = f"All Orders Paid for {day}"
+        lines = [f"All {len(orders)} orders for {day} are paid." if orders else f"There are no orders for {day}."]
+    if SITE_URL:
+        lines += ["", f"{SITE_URL.rstrip('/')}/admin-orders.html"]
+    try:
+        to = _admin_emails()
+        if to:
+            ses.send_email(
+                Source=FROM_EMAIL,
+                Destination={"ToAddresses": to},
+                Message={"Subject": {"Data": subject}, "Body": {"Text": {"Data": "\n".join(lines)}}},
+            )
+    except Exception as e:  # noqa: BLE001
+        # Un-record it so Lambda's retry tries again.
+        table.delete_item(Key={"PK": f"SENT#unpaid-orders-report#{ready_date}", "SK": "admin"})
+        print(f"ERROR sending the unpaid orders report for {ready_date}: {e!r}")
+        raise
+    return {"readyDate": ready_date, "unpaid": len(owing), "dueCents": total_due}
 
 
 def _orders_for_ready_date(ready_date):

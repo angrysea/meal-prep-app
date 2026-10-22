@@ -107,6 +107,7 @@ def test_customer_reminders_are_scheduled_on_the_api_lambda():
     for schedule, job in [
         ("cron(0 0,23 ? * THU,FRI *)", "ordering-reminder"),
         ("cron(0 12,13 * * ? *)", "pickup-reminder"),
+        ("cron(0 13,14 ? * SAT *)", "unpaid-orders-report"),
     ]:
         template.has_resource_properties("AWS::Events::Rule", {
             "ScheduleExpression": schedule,
