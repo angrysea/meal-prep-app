@@ -3258,7 +3258,7 @@ def test_no_refund_for_unpaid_or_free_orders(table, outbox):
 
 # ---------- Saturday unpaid orders report ----------
 
-SATURDAY_8AM = "2026-10-24T13:00:00+00:00"  # 8 AM CDT, after ordering closed for Monday the 26th
+SATURDAY_9AM = "2026-10-24T14:00:00+00:00"  # 9 AM CDT, after ordering closed for Monday the 26th
 
 
 def _report(outbox):
@@ -3279,7 +3279,7 @@ def test_saturday_report_lists_unpaid_and_part_paid_orders(table, outbox, monkey
     gone = _place_order(index, CUSTOMER_CLAIMS)
     _cancel_by_id(index, gone["orderId"])
     outbox.clear()
-    _at(monkeypatch, SATURDAY_8AM)
+    _at(monkeypatch, SATURDAY_9AM)
     result = index.handler({"job": "unpaid-orders-report"}, None)
 
     [email] = _report(outbox)
@@ -3304,7 +3304,7 @@ def test_saturday_report_says_when_everything_is_paid(table, outbox, monkeypatch
     order = _place_order(index, CUSTOMER_CLAIMS)
     _admin_put_order(index, order["orderId"], {"payment": "venmo"})
     outbox.clear()
-    _at(monkeypatch, SATURDAY_8AM)
+    _at(monkeypatch, SATURDAY_9AM)
     index.handler({"job": "unpaid-orders-report"}, None)
     [email] = _report(outbox)
     assert _subject(email) == "All Orders Paid for Monday, October 26"
@@ -3316,17 +3316,19 @@ def test_saturday_report_is_sent_once(table, outbox, monkeypatch):
 
     _place_order(index, CUSTOMER_CLAIMS)
     outbox.clear()
-    _at(monkeypatch, SATURDAY_8AM)
+    _at(monkeypatch, SATURDAY_9AM)
     index.handler({"job": "unpaid-orders-report"}, None)
     again = index.handler({"job": "unpaid-orders-report"}, None)
     assert len(_report(outbox)) == 1
     assert again["skipped"] == "already sent for this pickup"
 
 
-def test_saturday_report_only_runs_saturday_8am_central(table, outbox, monkeypatch):
+def test_saturday_report_only_runs_saturday_9am_central(table, outbox, monkeypatch):
     from backend.lambda_src import index
 
-    _at(monkeypatch, "2026-10-24T14:00:00+00:00")  # 9 AM CDT - the other UTC firing
-    assert index.handler({"job": "unpaid-orders-report"}, None) == {"skipped": "not Saturday 8 AM Central"}
-    _at(monkeypatch, "2026-11-07T14:00:00+00:00")  # 8 AM CST
+    _at(monkeypatch, "2026-10-24T15:00:00+00:00")  # 10 AM CDT - the other UTC firing
+    assert index.handler({"job": "unpaid-orders-report"}, None) == {"skipped": "not Saturday 9 AM Central"}
+    _at(monkeypatch, "2026-10-24T13:00:00+00:00")  # 8 AM CDT - too early
+    assert index.handler({"job": "unpaid-orders-report"}, None) == {"skipped": "not Saturday 9 AM Central"}
+    _at(monkeypatch, "2026-11-07T15:00:00+00:00")  # 9 AM CST
     assert "skipped" not in index.handler({"job": "unpaid-orders-report"}, None)

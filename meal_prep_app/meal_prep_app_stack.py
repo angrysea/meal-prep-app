@@ -420,8 +420,8 @@ class MealPrepAppStack(Stack):
 
         events.Rule(
             self, "UnpaidOrdersReportSchedule",
-            description="Saturday 8 AM Central: email the admin a list of unpaid orders",
-            schedule=events.Schedule.cron(minute="0", hour="13,14", week_day="SAT"),
+            description="Saturday 9 AM Central: email the admin a list of unpaid orders",
+            schedule=events.Schedule.cron(minute="0", hour="14,15", week_day="SAT"),
             targets=[targets.LambdaFunction(
                 api_fn, event=events.RuleTargetInput.from_object({"job": "unpaid-orders-report"}),
             )],

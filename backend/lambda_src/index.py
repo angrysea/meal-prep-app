@@ -1557,13 +1557,13 @@ def _send_reminder(contact, message, sms_enabled):
 # with daylight saving; the job only runs in the right Central hour.
 #   ordering-reminder: Thursday 6 PM - customers who haven't ordered yet.
 #   pickup-reminder:   7 AM on the pickup day - customers with an order.
-#   unpaid-orders-report: Saturday 8 AM - the admin, a list of unpaid orders.
+#   unpaid-orders-report: Saturday 9 AM - the admin, a list of unpaid orders.
 # Every send is recorded first (SENT#<job>#<date>, one item per customer),
 # so a retried run never messages anyone twice.
 
 ORDERING_REMINDER_AT = (3, 18)  # Thursday, 6 PM Central
 PICKUP_REMINDER_HOUR = 7  # 7 AM Central on the ready date
-UNPAID_REPORT_AT = (5, 8)  # Saturday, 8 AM Central
+UNPAID_REPORT_AT = (5, 9)  # Saturday, 9 AM Central - time to mark early payments first
 ACTIVE_ORDER_STATUSES = ("placed", "prepared", "delivered")
 
 
@@ -1579,7 +1579,7 @@ def run_job(job, context=None):
         result = send_pickup_reminders(local, context)
     elif job == "unpaid-orders-report":
         if (local.weekday(), local.hour) != UNPAID_REPORT_AT:
-            return {"skipped": "not Saturday 8 AM Central"}
+            return {"skipped": "not Saturday 9 AM Central"}
         result = send_unpaid_orders_report(local)
     else:
         raise ValueError(f"unknown job: {job}")
