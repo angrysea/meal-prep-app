@@ -380,13 +380,13 @@ def test_choosing_an_addon_switches_the_cards_macros_line(customer_page):
     expect(macros).to_have_text("550 cal · 42g protein · 60g carbs · 12g fat")
 
 
-def test_addon_without_meal_details_uses_the_default_description(customer_page):
+def test_addon_with_a_description_but_no_macros(customer_page):
     page = customer_page
     page.open("/index.html")
 
     combo = _option(page, "Large with Cauliflower Rice (+$4.00)")
     expect(combo.locator(".addon-description")).to_have_text("Large, with cauliflower rice instead of rice.")
-    # No macros entered for this meal yet - no macros line, rather than the
+    # No macros entered for this meal - no macros line, rather than the
     # regular meal's numbers as if they applied.
     expect(combo.locator(".addon-macros")).to_have_count(0)
     _choose(page, "Large with Cauliflower Rice (+$4.00)")
@@ -475,8 +475,10 @@ def test_addon_with_only_macros_is_still_offered(customer_page, mock_api):
     expect(page.locator(f"{CARD} .macros")).to_contain_text("Large with Cauliflower Rice: 690 cal")
 
 
-def test_addon_with_no_meal_details_and_no_default_description_is_left_off(customer_page, mock_api):
-    mock_api.state["addOns"][1]["description"] = ""
+def test_new_addon_is_left_off_meals_without_details_for_it(customer_page, mock_api):
+    # e.g. a lettuce wrap swap added for the tacos: meals saved before it
+    # existed don't offer it, even though it has a default description.
+    del mock_api.state["meals"][0]["addOnDetails"]["a2"]
     page = customer_page
     page.open("/index.html")
 

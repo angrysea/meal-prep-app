@@ -70,11 +70,13 @@
         return "";
       }
 
-      async function cancelOnServer(orderId) {
+      // forEdit: cancelled to be placed again from the menu - the admin gets
+      // one "order updated" email when it is, rather than a cancellation.
+      async function cancelOnServer(orderId, { forEdit = false } = {}) {
         await apiRequest(config.apiUrl, `/orders/${orderId}`, {
           method: "PUT",
           token: session.idToken,
-          body: { status: "cancelled" },
+          body: forEdit ? { status: "cancelled", forEdit: true } : { status: "cancelled" },
         });
       }
 
@@ -139,7 +141,7 @@
             const orderId = e.target.closest(".order-card").dataset.orderId;
             const order = allOrders.find((o) => o.orderId === orderId);
             try {
-              await cancelOnServer(orderId);
+              await cancelOnServer(orderId, { forEdit: true });
             } catch (err) {
               await showChangeError(err);
               return;
@@ -147,6 +149,7 @@
             sessionStorage.setItem(
               "editOrderCart",
               JSON.stringify({
+                replacesOrderId: orderId,
                 items: order.items.map((i) => ({
                   mealId: i.mealId,
                   quantity: i.quantity,

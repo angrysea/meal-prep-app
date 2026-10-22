@@ -173,6 +173,9 @@
     // Extras & sauces: extraId -> quantity (only those above 0).
     const extrasCart = {};
     let allAddOns = [];
+    // Set when the cart was loaded by Edit on My Orders - the order this one
+    // replaces, so the admin's email says "updated" rather than "new".
+    let replacesOrderId = null;
     let orderableExtras = []; // available extras, alphabetical
     let loadedMeals = [];
 
@@ -359,6 +362,7 @@
       } catch {
         return;
       }
+      replacesOrderId = data.replacesOrderId || null;
 
       (data.items || []).forEach((item) => {
         const meal = loadedMeals.find((m) => m.mealId === item.mealId);
@@ -621,7 +625,7 @@
         await apiRequest(config.apiUrl, "/orders", {
           method: "POST",
           token: session.idToken,
-          body: { items, extras, contactPhone, pickupName },
+          body: { items, extras, contactPhone, pickupName, ...(replacesOrderId ? { replacesOrderId } : {}) },
         });
         window.location.href = "/orders.html";
       } catch (err) {

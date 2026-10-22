@@ -104,3 +104,33 @@ def test_edit_reloads_the_order_into_the_menu(customer_page):
     page.wait_for_url("**/index.html")
     expect(page.locator("#edit-notice")).to_be_visible()
     expect(page.locator("#cart-lines")).to_contain_text("Chicken Teriyaki Bowl")
+
+
+def test_edit_tells_the_api_the_new_order_replaces_the_old_one(customer_page, mock_api):
+    # So the admin gets one "order updated" email, not a cancel and a new order.
+    page = customer_page
+    _place_order(page)
+    old_id = mock_api.writes()[-1]
+    page.click(".edit-order")
+    page.wait_for_url("**/index.html")
+    cancel = mock_api.writes()[-1]
+    assert cancel["method"] == "PUT"
+    assert cancel["body"] == {"status": "cancelled", "forEdit": True}
+    order_id = cancel["path"].rsplit("/", 1)[1]
+
+    page.click("#checkout-button")
+    page.wait_for_url("**/orders.html")
+    placed = mock_api.writes()[-1]
+    assert placed["method"] == "POST"
+    assert placed["body"]["replacesOrderId"] == order_id
+    assert old_id["body"].get("replacesOrderId") is None
+
+
+def test_cancel_is_not_marked_as_an_edit(customer_page, mock_api):
+    page = customer_page
+    _place_order(page)
+    page.click(".cancel-order")
+    page.click("#confirm-dialog-ok-button")
+
+    expect_toast(page, "Your order was cancelled")
+    assert mock_api.writes()[-1]["body"] == {"status": "cancelled"}

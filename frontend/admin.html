@@ -96,7 +96,7 @@
             </div>
 
             <h3>Add-ons for this meal</h3>
-            <p class="muted field-hint">The description and macros of the whole meal with each add-on.</p>
+            <p class="muted field-hint">The description and macros of the whole meal with each add-on. Leave an add-on blank and customers won't see it on this meal.</p>
             <div class="addon-details" id="new-addon-details"></div>
 
             <h3>Availability</h3>
@@ -224,7 +224,7 @@
         </div>
 
         <h3>Add-ons for this meal</h3>
-        <p class="muted field-hint">The description and macros of the whole meal with each add-on.</p>
+        <p class="muted field-hint">The description and macros of the whole meal with each add-on. Leave an add-on blank and customers won't see it on this meal.</p>
         <div class="addon-details" id="edit-meal-addon-details"></div>
 
         <h3>Availability</h3>
@@ -301,7 +301,7 @@
     import { getValidSession, isAdmin } from "/js/cognito.js";
     import { renderNav } from "/js/nav.js";
     import { loginUrlWithReturnTo } from "/js/redirect.js";
-    import { addOnDetailFor, formatMacros } from "/js/pricing.js";
+    import { addOnDetailFor, isAddOnOffered, formatMacros } from "/js/pricing.js";
     import { showToast } from "/js/toast.js";
     import { confirmAction, enableEnterToSubmit, escapeHtml, handleSubmit } from "/js/admin.js";
 
@@ -332,9 +332,10 @@
       fatG: parseInt(value(`${prefix}-fat`), 10) || 0,
     });
     // "Add-ons for this meal": one block per add-on with this meal's own
-    // description (prefilled from the add-on's default) and macros. Inputs
-    // are found by data-addon-id/data-field rather than ids, since the
-    // add-on list changes.
+    // description (the add-on's default shows as a hint) and macros. Only
+    // the add-ons with a description or macros filled in are offered on the
+    // meal - see isAddOnOffered. Inputs are found by data-addon-id/data-field
+    // rather than ids, since the add-on list changes.
     const MACRO_INPUTS = [
       ["calories", "Calories"],
       ["proteinG", "Protein (g)"],
@@ -350,17 +351,19 @@
       container.innerHTML = addOns
         .map((addOn) => {
           const detail = details[addOn.addOnId];
-          const description = detail ? detail.description : addOn.description || "";
+          const description = detail ? detail.description : "";
           const macros = (detail && detail.macros) || {};
           // This meal's price for it, starting at the add-on's price.
           const priceCents = detail && detail.priceCents != null ? detail.priceCents : addOn.priceCents;
           const id = escapeHtml(addOn.addOnId);
           return `
           <fieldset class="addon-detail" data-addon-id="${id}" data-addon-name="${escapeHtml(addOn.name)}">
-            <legend>${escapeHtml(addOn.name)}${addOn.available ? "" : ' <span class="muted">(hidden)</span>'}</legend>
+            <legend>${escapeHtml(addOn.name)}${addOn.available ? "" : ' <span class="muted">(hidden)</span>'}
+              <span class="addon-offered"></span></legend>
             <div class="addon-detail-top">
               <label>Description
-                <input type="text" data-field="description" value="${escapeHtml(description)}" />
+                <input type="text" data-field="description" value="${escapeHtml(description)}"
+                  placeholder="${escapeHtml(addOn.description || "")}" />
               </label>
               <label>Price (USD)
                 <input type="number" step="0.01" min="0" data-field="price" value="${(priceCents / 100).toFixed(2)}" />
@@ -375,6 +378,21 @@
           </fieldset>`;
         })
         .join("");
+      container.querySelectorAll(".addon-detail").forEach(syncAddOnOffered);
+      container.oninput = (e) => {
+        const block = e.target.closest(".addon-detail");
+        if (block) syncAddOnOffered(block);
+      };
+    }
+
+    // Tags each block with whether customers will see the add-on on this
+    // meal, as it's filled in.
+    function syncAddOnOffered(block) {
+      const filled = [...block.querySelectorAll('[data-field]:not([data-field="price"])')].some(
+        (input) => input.value.trim() !== "" && input.value.trim() !== "0"
+      );
+      block.classList.toggle("is-not-offered", !filled);
+      block.querySelector(".addon-offered").textContent = filled ? "Offered" : "Not offered on this meal";
     }
 
     // Starts from `saved` so a deleted add-on's copy on the meal (not shown
@@ -548,9 +566,9 @@
       }
 
       // A full-width row under each meal with a small table: Regular first
-      // (no description, the meal's own macros), then a row per add-on - its
-      // name, this meal's description for it, and the macros of the meal
-      // with it.
+      // (no description, the meal's own macros), then a row per add-on
+      // offered on it - its name, this meal's description for it, and the
+      // macros of the meal with it. Add-ons left blank on the meal are left out.
       function mealMacrosHtml(meal) {
         // status: "" | "hidden" | "deleted" - neither is offered to customers.
         const row = (label, price, description, macros, status = "") => `
@@ -571,6 +589,7 @@
           <tbody>
             ${row("Regular", formatPrice(meal.priceCents), "", meal.macros)}
             ${currentAddOns
+              .filter((addOn) => isAddOnOffered(meal, addOn))
               .map((addOn) => {
                 const { priceCents, description, macros } = addOnDetailFor(meal, addOn);
                 return row(addOn.name, `+${formatPrice(priceCents)}`, description, macros, addOn.available ? "" : "hidden");

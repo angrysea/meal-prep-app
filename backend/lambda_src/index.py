@@ -1186,6 +1186,12 @@ def create_order(event):
         "status": "placed",  # stub checkout - no real payment is taken
     }
     table.put_item(Item=item)
+    # Edit on My Orders cancels the old order and places it again from the
+    # menu with replacesOrderId - one "updated" email rather than a cancel
+    # and a new order.
+    replaced = _find_order(user_id, str(body["replacesOrderId"])) if body.get("replacesOrderId") else None
+    edited = bool(replaced) and replaced.get("status") == "cancelled"
+    _notify_admin_of_order(item, "updated" if edited else "placed")
     return _response(201, _order_out(item))
 
 
@@ -1210,7 +1216,74 @@ def cancel_order(event, order_id):
         )
     item["status"] = "cancelled"
     table.put_item(Item=item)
+    # Edit cancels too, then places the order again ("updated" email then).
+    if not _body(event).get("forEdit"):
+        _notify_admin_of_order(item, "cancelled")
     return _response(200, _order_out(item))
+
+
+# ---------- order notifications to the admin ----------
+# A short email to the admin (the Admins-group account's address) whenever a
+# customer places, edits or cancels an order. Best effort: a failure is
+# logged as an ERROR (so the log-errors alarm reports it) but never fails
+# the customer's order.
+
+ORDER_EMAIL_SUBJECTS = {
+    "placed": "New Meal Order Received!",
+    "updated": "Meal Order Updated",
+    "cancelled": "Meal Order Cancelled",
+}
+ORDER_EMAIL_VERBS = {"placed": "placed an order", "updated": "updated their order", "cancelled": "cancelled their order"}
+
+
+def _notify_admin_of_order(order, action):
+    if not FROM_EMAIL:
+        return  # no sending domain configured (e.g. local runs)
+    try:
+        to = _admin_emails()
+        if not to:
+            return
+        ses.send_email(
+            Source=FROM_EMAIL,
+            Destination={"ToAddresses": to},
+            Message={
+                "Subject": {"Data": ORDER_EMAIL_SUBJECTS[action]},
+                "Body": {"Text": {"Data": _order_email_text(order, action)}},
+            },
+        )
+    except Exception as e:  # noqa: BLE001 - the order itself already went through
+        print(f"ERROR emailing the admin about order {order.get('orderId')} ({action}): {e!r}")
+
+
+def _order_email_text(order, action):
+    def money(cents):
+        return f"${int(cents) / 100:.2f}"
+
+    name = order.get("customerName") or "A customer"
+    ready = order.get("readyDate", "")
+    when = ""
+    if ready:
+        day = datetime.strptime(ready, "%Y-%m-%d")
+        when = f" for {day.strftime('%A, %B')} {day.day}"
+    lines = [f"{name} {ORDER_EMAIL_VERBS[action]}{when}.", ""]
+    for line in order.get("items") or []:
+        addons = ", ".join(a.get("name") or a.get("description", "") for a in line.get("selectedAddOns") or [])
+        text = f"{int(line['quantity'])} x {line['name']}"
+        if addons:
+            text += f" ({addons})"
+        if line.get("note"):
+            text += f" - note: {line['note']}"
+        lines.append(text)
+    for extra in order.get("extras") or []:
+        lines.append(f"{int(extra['quantity'])} x {extra['name']}")
+    lines += ["", f"Total: {money(order.get('totalCents', 0))}"]
+    if order.get("contactPhone"):
+        lines.append(f"Phone: {order['contactPhone']}")
+    if order.get("pickupName"):
+        lines.append(f"Picked up by: {order['pickupName']}")
+    if SITE_URL:
+        lines += ["", f"All orders: {SITE_URL.rstrip('/')}/admin-orders.html"]
+    return "\n".join(lines)
 
 
 def list_admin_orders(event):
@@ -1326,6 +1399,10 @@ def _resolve_addons(meal, requested_addon_ids):
         if not addon:
             raise BadRequest(f"unknown add-on: {addon_id}")
         detail = details.get(addon_id) or {}
+        # Same rule as the menu (isAddOnOffered in pricing.js): only an
+        # add-on the meal has a description or macros for is offered on it.
+        if not addon.get("available", True) or not _addon_offered(detail):
+            raise BadRequest(f"{_addon_out(addon)['name']} isn't offered on {meal['name']}.")
         price_cents = int(detail["priceCents"]) if "priceCents" in detail else int(addon["priceCents"])
         total_cents += price_cents
         resolved.append({
@@ -1335,6 +1412,12 @@ def _resolve_addons(meal, requested_addon_ids):
             "macros": _parse_macros(detail.get("macros")),
         })
     return resolved, total_cents
+
+
+def _addon_offered(detail):
+    return bool((detail.get("description") or "").strip()) or any(
+        int(v or 0) for v in (detail.get("macros") or {}).values()
+    )
 
 
 def _line_item_out(line):

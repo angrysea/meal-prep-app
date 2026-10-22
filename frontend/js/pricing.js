@@ -12,21 +12,22 @@ export function computeUnitPriceCents(meal, allAddOns, selectedAddOnIds) {
 }
 
 // This meal's own price, description and macros for an add-on (set per
-// meal on Manage menu). Without its own price the add-on's applies; a meal
-// saved before the add-on existed also falls back to the add-on's default
-// description, with no macros.
+// meal on Manage menu). Without its own price the add-on's applies. A meal
+// saved before the add-on existed has no description or macros for it, so
+// it isn't offered there (see isAddOnOffered) - a new add-on like a
+// lettuce wrap only shows on the meals it's filled in for.
 export function addOnDetailFor(meal, addOn) {
   const detail = (meal.addOnDetails || {})[addOn.addOnId];
   return {
     priceCents: detail && detail.priceCents != null ? detail.priceCents : addOn.priceCents,
-    description: detail ? detail.description : addOn.description || "",
+    description: detail ? detail.description : "",
     macros: detail ? detail.macros : null,
   };
 }
 
 // An add-on is only offered on a meal that has something to say about it -
 // a description or macros. Leaving both blank on Manage menu is how an
-// add-on is left off a meal (e.g. no cauliflower rice for the chili).
+// add-on is left off a meal (e.g. no cauliflower rice for the tacos).
 export function isAddOnOffered(meal, addOn) {
   const { description, macros } = addOnDetailFor(meal, addOn);
   return !!description || Object.values(macros || {}).some(Boolean);

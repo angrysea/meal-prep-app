@@ -45,6 +45,10 @@ SEED = {
              # No priceCents of its own - the add-on's price ($3.00) applies.
              "a1": {"name": "Large", "priceCents": None, "description": "2 extra oz of chicken and 1 oz of broccoli.",
                     "macros": {"calories": 750, "proteinG": 60, "carbsG": 70, "fatG": 18}},
+             # A description but no macros - still offered.
+             "a2": {"name": "Large with Cauliflower Rice", "priceCents": None,
+                    "description": "Large, with cauliflower rice instead of rice.",
+                    "macros": {"calories": 0, "proteinG": 0, "carbsG": 0, "fatG": 0}},
          }},
         {"mealId": "m2", "name": "Turkey Chili", "description": "", "priceCents": 1150,
          "macros": {"calories": 480, "proteinG": 38, "carbsG": 40, "fatG": 14},

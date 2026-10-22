@@ -77,7 +77,10 @@ weekly reminder email/text to subscribed customers.
   (`name`, `priceCents` - blank means the add-on's default price -
   `description`, and the whole meal's `macros` with it). Customers pick at
   most one add-on per meal; it's offered only if it's available and the meal
-  has a description or macros for it.
+  has its own description or macros for it (checked on the menu and again
+  by the API at order time). The add-on's default description is only a
+  hint on Manage menu, so a new add-on (e.g. a lettuce wrap swap for one
+  meal) isn't offered anywhere until it's filled in on that meal.
 - **Extras & sauces** (e.g. Salsa Verde $0.25) are a separate global list -
   `{extraId, name, description, macros, priceCents, available}` at `/extras`
   (description and macros optional, macros for one) - bought by quantity
@@ -87,6 +90,19 @@ weekly reminder email/text to subscribed customers.
   (`items[].selectedAddOnIds`, `extras[]`); the Lambda prices everything from
   the current menu and snapshots names, prices and macros onto the order, so
   later menu changes don't alter past orders or their labels.
+
+## Order emails to the admin
+
+When a customer places, edits or cancels an order, the API emails the
+Admins-group account's address (from `FROM_EMAIL`) with the customer's name,
+the ready date, the items, add-ons, notes, extras, total and phone:
+"New Meal Order Received!", "Meal Order Updated" or "Meal Order Cancelled".
+Edit on My Orders cancels with `forEdit: true` (no email) and the menu sends
+`replacesOrderId` when the order is placed again, so an edit is one
+"updated" email. A customer who starts an edit and never re-places it sends
+no email - the order just shows as cancelled. Sending is best effort: a
+failure is logged as `ERROR` (so the log-errors alarm reports it) and never
+fails the order.
 
 ## Weekly reminders
 

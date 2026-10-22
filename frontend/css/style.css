@@ -1378,3 +1378,21 @@ body.admin-page dialog {
 .allergen-note p {
   margin: 0.15rem 0 0;
 }
+
+/* Manage menu: whether customers see each add-on on this meal. Left blank,
+   the block is dimmed and tagged "Not offered on this meal". */
+.addon-offered {
+  font-size: 0.75rem;
+  font-weight: normal;
+  color: var(--color-text);
+  margin-left: 0.4rem;
+}
+
+.addon-detail.is-not-offered {
+  opacity: 0.65;
+  border-style: dashed;
+}
+
+.addon-detail.is-not-offered .addon-offered {
+  color: var(--color-muted);
+}

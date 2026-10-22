@@ -182,6 +182,11 @@ def test_update_meal_rejects_invalid_week_of_format(table):
     assert resp["statusCode"] == 400
 
 
+def _offer_addons(index, meal_id, *addon_ids):
+    # An add-on is only offered on a meal with a description or macros for it.
+    _put_meal(index, meal_id, {"addOnDetails": {addon_id: {"description": "On this meal"} for addon_id in addon_ids}})
+
+
 def _create_addon(index, name="Large", price_cents=300, description=""):
     resp = index.handler(
         _event("POST", "/addons", {"name": name, "description": description, "priceCents": price_cents},
@@ -575,6 +580,7 @@ def test_create_order_adds_global_addon_price(table):
 
     meal = _create_meal(index, price_cents=1200)
     large = _create_addon(index, description="Large", price_cents=300)
+    _offer_addons(index, meal["mealId"], large["addOnId"])
 
     resp = index.handler(
         _event(
@@ -631,6 +637,7 @@ def test_addon_without_meal_macros_snapshots_zeros(table):
 
     meal = _create_meal(index)
     large = _create_addon(index)
+    _offer_addons(index, meal["mealId"], large["addOnId"])
     resp = index.handler(_event("POST", "/orders", {"contactPhone": PHONE, "items": [
         {"mealId": meal["mealId"], "quantity": 1, "selectedAddOnIds": [large["addOnId"]]},
     ]}, claims=CUSTOMER_CLAIMS), None)
@@ -644,6 +651,7 @@ def test_create_order_adds_the_addon_price(table):
 
     meal = _create_meal(index, price_cents=1200)
     large = _create_addon(index, name="Large", price_cents=300)
+    _offer_addons(index, meal["mealId"], large["addOnId"])
     resp = index.handler(_event("POST", "/orders", {"contactPhone": PHONE, "items": [
         {"mealId": meal["mealId"], "quantity": 2, "selectedAddOnIds": [large["addOnId"]]},
     ]}, claims=CUSTOMER_CLAIMS), None)
@@ -665,6 +673,56 @@ def test_only_one_addon_per_meal(table):
     ]}, claims=CUSTOMER_CLAIMS), None)
     assert resp["statusCode"] == 400
     assert json.loads(resp["body"])["message"] == "Choose one add-on per meal."
+
+
+def test_addon_left_blank_on_the_meal_cannot_be_ordered(table):
+    # e.g. no cauliflower rice on the tacos - it's offered on other meals.
+    from backend.lambda_src import index
+
+    tacos = _create_meal(index, price_cents=1200)
+    cauli = _create_addon(index, name="Cauliflower Rice", price_cents=100, description="Swaps the rice")
+    _put_meal(index, tacos["mealId"], {"name": "Smash Burger Tacos", "addOnDetails": {cauli["addOnId"]: {"description": ""}}})
+    resp = index.handler(_event("POST", "/orders", {"contactPhone": PHONE, "items": [
+        {"mealId": tacos["mealId"], "quantity": 1, "selectedAddOnIds": [cauli["addOnId"]]},
+    ]}, claims=CUSTOMER_CLAIMS), None)
+    assert resp["statusCode"] == 400
+    assert json.loads(resp["body"])["message"] == "Cauliflower Rice isn't offered on Smash Burger Tacos."
+
+
+def test_new_addon_is_not_offered_on_meals_saved_before_it(table):
+    from backend.lambda_src import index
+
+    meal = _create_meal(index)
+    wrap = _create_addon(index, name="Lettuce Wrap", price_cents=0, description="Lettuce instead of tortillas")
+    resp = index.handler(_event("POST", "/orders", {"contactPhone": PHONE, "items": [
+        {"mealId": meal["mealId"], "quantity": 1, "selectedAddOnIds": [wrap["addOnId"]]},
+    ]}, claims=CUSTOMER_CLAIMS), None)
+    assert resp["statusCode"] == 400
+
+
+def test_addon_with_only_macros_on_the_meal_is_offered(table):
+    from backend.lambda_src import index
+
+    meal = _create_meal(index, price_cents=1200)
+    large = _create_addon(index, name="Large", price_cents=300)
+    _put_meal(index, meal["mealId"], {"addOnDetails": {large["addOnId"]: {"macros": {"calories": 700}}}})
+    resp = index.handler(_event("POST", "/orders", {"contactPhone": PHONE, "items": [
+        {"mealId": meal["mealId"], "quantity": 1, "selectedAddOnIds": [large["addOnId"]]},
+    ]}, claims=CUSTOMER_CLAIMS), None)
+    assert resp["statusCode"] == 201
+
+
+def test_hidden_addon_cannot_be_ordered(table):
+    from backend.lambda_src import index
+
+    meal = _create_meal(index)
+    large = _create_addon(index)
+    _offer_addons(index, meal["mealId"], large["addOnId"])
+    _put_addon(index, large["addOnId"], {"available": False})
+    resp = index.handler(_event("POST", "/orders", {"contactPhone": PHONE, "items": [
+        {"mealId": meal["mealId"], "quantity": 1, "selectedAddOnIds": [large["addOnId"]]},
+    ]}, claims=CUSTOMER_CLAIMS), None)
+    assert resp["statusCode"] == 400
 
 
 def test_create_order_with_no_addons_selected(table):
@@ -1982,6 +2040,7 @@ def test_ordering_a_legacy_addon_snapshots_its_name(table):
 
     _put_legacy_addon(index)
     meal = _create_meal(index)
+    _offer_addons(index, meal["mealId"], "old-addon")
     resp = index.handler(_event("POST", "/orders", {
         "contactPhone": PHONE,
         "items": [{"mealId": meal["mealId"], "quantity": 1, "selectedAddOnIds": ["old-addon"]}],
@@ -2413,3 +2472,93 @@ def test_order_saves_each_extras_description_and_macros(table):
                          path_params={"extraId": salsa["extraId"]}, claims=ADMIN_CLAIMS), None)
     [listed] = json.loads(index.handler(_event("GET", "/orders", claims=CUSTOMER_CLAIMS), None)["body"])["orders"]
     assert listed["extras"][0]["description"] == "2 oz."
+
+
+# ---------- order emails to the admin ----------
+
+@pytest.fixture
+def admin_inbox(monkeypatch):
+    from backend.lambda_src import index
+
+    sent = []
+    monkeypatch.setattr(index, "FROM_EMAIL", "GTX Meals <menu@example.com>")
+    monkeypatch.setattr(index, "SITE_URL", "https://example.com")
+    monkeypatch.setattr(index, "_admin_emails", lambda: ["admin@example.com"])
+    monkeypatch.setattr(index.ses, "send_email", lambda **kwargs: sent.append(kwargs))
+    return sent
+
+
+def _cancel_by_id(index, order_id, body=None):
+    return index.handler(
+        _event("PUT", f"/orders/{order_id}", body or {"status": "cancelled"},
+               path_params={"orderId": order_id}, claims=CUSTOMER_CLAIMS),
+        None,
+    )
+
+
+def test_admin_is_emailed_when_an_order_is_placed(table, admin_inbox):
+    from backend.lambda_src import index
+
+    meal = _create_meal(index, name="Smash Burger Tacos", price_cents=1200)
+    resp = index.handler(_event("POST", "/orders", {"contactPhone": PHONE, "items": [
+        {"mealId": meal["mealId"], "quantity": 2, "note": "no onions"},
+    ]}, claims=CUSTOMER_CLAIMS), None)
+    assert resp["statusCode"] == 201
+
+    [email] = admin_inbox
+    assert email["Destination"] == {"ToAddresses": ["admin@example.com"]}
+    assert email["Message"]["Subject"]["Data"] == "New Meal Order Received!"
+    text = email["Message"]["Body"]["Text"]["Data"]
+    assert text.startswith("Casey Customer placed an order for ")
+    assert "2 x Smash Burger Tacos - note: no onions" in text
+    assert "Total: $24.00" in text
+    assert f"Phone: {PHONE}" in text
+    assert "https://example.com/admin-orders.html" in text
+
+
+def test_admin_is_emailed_when_an_order_is_cancelled(table, admin_inbox):
+    from backend.lambda_src import index
+
+    order = _place_order(index, CUSTOMER_CLAIMS)
+    assert _cancel_by_id(index, order["orderId"])["statusCode"] == 200
+    assert [e["Message"]["Subject"]["Data"] for e in admin_inbox] == ["New Meal Order Received!", "Meal Order Cancelled"]
+    assert admin_inbox[-1]["Message"]["Body"]["Text"]["Data"].startswith("Casey Customer cancelled their order")
+
+
+def test_an_edited_order_sends_one_updated_email(table, admin_inbox):
+    from backend.lambda_src import index
+
+    order = _place_order(index, CUSTOMER_CLAIMS)
+    _cancel_by_id(index, order["orderId"], {"status": "cancelled", "forEdit": True})
+    resp = index.handler(_event("POST", "/orders", {
+        "contactPhone": PHONE, "replacesOrderId": order["orderId"],
+        "items": [{"mealId": order["items"][0]["mealId"], "quantity": 3}],
+    }, claims=CUSTOMER_CLAIMS), None)
+    assert resp["statusCode"] == 201
+    assert [e["Message"]["Subject"]["Data"] for e in admin_inbox] == ["New Meal Order Received!", "Meal Order Updated"]
+    assert admin_inbox[-1]["Message"]["Body"]["Text"]["Data"].startswith("Casey Customer updated their order")
+
+
+def test_replacing_someone_elses_order_is_just_a_new_order(table, admin_inbox):
+    from backend.lambda_src import index
+
+    meal = _create_meal(index)
+    index.handler(_event("POST", "/orders", {
+        "contactPhone": PHONE, "replacesOrderId": "not-mine",
+        "items": [{"mealId": meal["mealId"], "quantity": 1}],
+    }, claims=CUSTOMER_CLAIMS), None)
+    assert admin_inbox[-1]["Message"]["Subject"]["Data"] == "New Meal Order Received!"
+
+
+def test_a_failed_admin_email_does_not_fail_the_order(table, monkeypatch, capsys):
+    from backend.lambda_src import index
+
+    def boom(**kwargs):
+        raise RuntimeError("SES is down")
+
+    monkeypatch.setattr(index, "FROM_EMAIL", "GTX Meals <menu@example.com>")
+    monkeypatch.setattr(index, "_admin_emails", lambda: ["admin@example.com"])
+    monkeypatch.setattr(index.ses, "send_email", boom)
+    order = _place_order(index, CUSTOMER_CLAIMS)
+    assert order["status"] == "placed"
+    assert "ERROR emailing the admin about order" in capsys.readouterr().out

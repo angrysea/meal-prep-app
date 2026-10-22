@@ -1,4 +1,5 @@
 """Builder page (admin.html): menu settings, meals, and add-ons."""
+import re
 from datetime import date, timedelta
 
 import pytest
@@ -481,18 +482,22 @@ def _detail(page, form, addon_id):
     return page.locator(f'{form} .addon-detail[data-addon-id="{addon_id}"]')
 
 
-def test_add_a_meal_has_a_section_per_addon_prefilled_with_the_default(admin_page):
+def test_add_a_meal_has_a_blank_section_per_addon_hinting_the_default(admin_page):
     page = admin_page
     page.open("/admin.html")
 
     blocks = page.locator("#new-addon-details .addon-detail")
     expect(blocks).to_have_count(2)
     large = _detail(page, "#new-addon-details", "a1")
-    expect(large.locator("legend")).to_have_text("Large")
-    expect(large.locator('[data-field="description"]')).to_have_value(
-        "Includes 2 extra ounces of protein and 1 extra ounce of vegetables."
+    expect(large.locator("legend")).to_contain_text("Large")
+    expect(large.locator('[data-field="description"]')).to_have_value("")
+    expect(large.locator('[data-field="description"]')).to_have_attribute(
+        "placeholder", "Includes 2 extra ounces of protein and 1 extra ounce of vegetables."
     )
     expect(large.locator('[data-field="calories"]')).to_have_value("")
+    # Left blank, customers won't see it on this meal.
+    expect(large).to_have_class(re.compile(r"\bis-not-offered\b"))
+    expect(large.locator(".addon-offered")).to_have_text("Not offered on this meal")
     expect(_detail(page, "#new-addon-details", "a2").locator("legend")).to_contain_text("Large with Cauliflower Rice")
 
 
@@ -514,15 +519,14 @@ def test_adding_a_meal_sends_its_addon_descriptions_and_macros(admin_page, mock_
         "description": "2 extra oz of salmon.",
         "macros": {"calories": 820, "proteinG": 64, "carbsG": 0, "fatG": 0},
     }
+    # Left blank - so not offered on this meal.
     assert details["a2"] == {
         "name": "Large with Cauliflower Rice", "priceCents": 400,
-        "description": "Large, with cauliflower rice instead of rice.",
+        "description": "",
         "macros": {"calories": 0, "proteinG": 0, "carbsG": 0, "fatG": 0},
     }
-    # The form resets back to the defaults for the next meal.
-    expect(large.locator('[data-field="description"]')).to_have_value(
-        "Includes 2 extra ounces of protein and 1 extra ounce of vegetables."
-    )
+    # The form resets to blank for the next meal.
+    expect(large.locator('[data-field="description"]')).to_have_value("")
     expect(large.locator('[data-field="calories"]')).to_have_value("")
 
 
@@ -534,7 +538,7 @@ def test_edit_meal_shows_its_own_addon_details(admin_page):
     large = _detail(page, "#edit-meal-addon-details", "a1")
     expect(large.locator('[data-field="description"]')).to_have_value("2 extra oz of chicken and 1 oz of broccoli.")
     expect(large.locator('[data-field="calories"]')).to_have_value("750")
-    # No details saved for this add-on yet - prefilled with the default.
+    # A description but no macros saved for this one.
     combo = _detail(page, "#edit-meal-addon-details", "a2")
     expect(combo.locator('[data-field="description"]')).to_have_value("Large, with cauliflower rice instead of rice.")
     expect(combo.locator('[data-field="calories"]')).to_have_value("")
@@ -568,9 +572,35 @@ def test_new_addon_appears_in_add_a_meal_without_losing_typed_values(admin_page)
     expect(page.locator("#new-addon-details .addon-detail")).to_have_count(3)
     expect(_detail(page, "#new-addon-details", "a1").locator('[data-field="calories"]')).to_have_value("800")
     new_block = page.locator("#new-addon-details .addon-detail").filter(has_text="Extra Protein (1 oz)")
-    expect(new_block.locator('[data-field="description"]')).to_have_value(
-        "1 more ounce of protein."
-    )
+    expect(new_block.locator('[data-field="description"]')).to_have_value("")
+    expect(new_block.locator('[data-field="description"]')).to_have_attribute("placeholder", "1 more ounce of protein.")
+
+
+def test_addon_block_shows_offered_once_filled_in(admin_page):
+    page = admin_page
+    page.open("/admin.html")
+    large = _detail(page, "#new-addon-details", "a1")
+    expect(large.locator(".addon-offered")).to_have_text("Not offered on this meal")
+
+    large.locator('[data-field="calories"]').fill("700")
+    expect(large.locator(".addon-offered")).to_have_text("Offered")
+    expect(large).not_to_have_class(re.compile(r"\bis-not-offered\b"))
+    large.locator('[data-field="calories"]').fill("")
+    large.locator('[data-field="description"]').fill("Lettuce instead of tortillas")
+    expect(large.locator(".addon-offered")).to_have_text("Offered")
+    # The price alone doesn't offer it - every block has one.
+    large.locator('[data-field="description"]').fill("")
+    expect(large.locator(".addon-offered")).to_have_text("Not offered on this meal")
+
+
+def test_meals_table_leaves_out_addons_not_offered_on_the_meal(admin_page, mock_api):
+    del mock_api.state["meals"][0]["addOnDetails"]["a2"]
+    page = admin_page
+    page.open("/admin.html")
+
+    rows = _option_rows(page, "m1")
+    expect(rows).to_have_count(2)  # Regular + Large
+    expect(rows.nth(1)).to_contain_text("Large")
 
 
 def test_addon_names_in_meal_sections_are_escaped(admin_page, mock_api):
@@ -618,7 +648,7 @@ def test_options_row_sits_right_under_its_meal(admin_page):
     assert "Macros" not in headers
 
 
-def test_meals_table_updates_when_an_addon_is_added(admin_page):
+def test_new_addon_is_not_listed_under_meals_until_filled_in(admin_page):
     page = admin_page
     page.open("/admin.html")
     page.fill("#addon-name", "Extra Protein (1 oz)")
@@ -626,7 +656,8 @@ def test_meals_table_updates_when_an_addon_is_added(admin_page):
     page.press("#addon-price", "Enter")
 
     expect_toast(page, 'Added the "Extra Protein (1 oz)" add-on')
-    expect(_option_rows(page, "m1")).to_have_count(4)
+    expect(page.locator("#new-addon-details .addon-detail")).to_have_count(3)
+    expect(_option_rows(page, "m1")).to_have_count(3)  # Regular, Large, the combo
 
 
 def test_meals_table_addon_lines_are_escaped(admin_page, mock_api):
@@ -650,7 +681,7 @@ def test_addons_are_shown_alphabetically(admin_page, mock_api):
     expect(page.locator("#addons-body tr strong")).to_have_text(names)
     expect(page.locator("#new-addon-details .addon-detail legend")).to_contain_text(names)
     labels = page.locator('tr[data-options-for="m1"] .macro-label')
-    expect(labels).to_have_text(["Regular", *names])
+    expect(labels).to_have_text(["Regular", *names[1:]])  # the new one isn't on this meal yet
 
 
 def test_a_saved_date_matching_the_automatic_one_reads_as_automatic(admin_page, mock_api):
