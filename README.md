@@ -155,6 +155,16 @@ as **Manual**. After changing an admin page, refresh it from the repo root:
 then deploy. The PDF isn't secret (anyone with the URL can open it), so it
 holds no customer data - the screenshots use the mock API's sample data.
 
+## Recording payments
+
+Checkout takes no payment, so each order has a `payment` field the admin sets
+on the Orders page: `unpaid` (every new order), `venmo`, `cash` or `free`.
+It's separate from `status` and changed through the same admin route
+(`PUT /admin/orders/{sub}/{orderId}` with `{"payment": ...}` and/or
+`{"status": ...}`); customers can't set it, but see it on My Orders. An
+edited order keeps the payment recorded on the order it replaces. The Orders
+page can filter to unpaid orders, and the Excel export has a Payment column.
+
 ## Exporting orders to Excel
 
 **Export to Excel** on the Orders page (`admin-orders.html`) downloads the

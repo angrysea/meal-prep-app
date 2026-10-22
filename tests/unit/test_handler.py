@@ -3043,3 +3043,68 @@ def test_pickup_reminder_text_uses_the_stored_location(table, outbox, monkeypatc
     _at(monkeypatch, PICKUP_7AM)
     index.handler({"job": "pickup-reminder"}, None)
     assert texts == ["Good morning, Casey! Your Gym TX Meals are ready for pickup today at Elgin. See you soon!"]
+
+
+
+# ---------- payment (admin-recorded) ----------
+
+def test_new_orders_start_unpaid(table):
+    from backend.lambda_src import index
+
+    meal = _create_meal(index)
+    resp = index.handler(_event("POST", "/orders", {
+        "contactPhone": PHONE, "payment": "venmo",  # the customer can't set it
+        "items": [{"mealId": meal["mealId"], "quantity": 1}],
+    }, claims=CUSTOMER_CLAIMS), None)
+    assert json.loads(resp["body"])["payment"] == "unpaid"
+
+
+def test_admin_records_payment_without_changing_the_status(table, outbox):
+    from backend.lambda_src import index
+
+    order = _place_order(index, CUSTOMER_CLAIMS)
+    outbox.clear()
+    resp = _admin_set_payment(index, "user-1", order["orderId"], "cash")
+    body = json.loads(resp["body"])
+    assert (body["payment"], body["status"]) == ("cash", "placed")
+    assert outbox == []  # recording a payment emails nobody
+    mine = json.loads(index.handler(_event("GET", "/orders", claims=CUSTOMER_CLAIMS), None)["body"])["orders"]
+    assert mine[0]["payment"] == "cash"
+
+
+def _admin_set_payment(index, sub, order_id, payment):
+    return index.handler(_event("PUT", f"/admin/orders/{sub}/{order_id}", {"payment": payment},
+                                path_params={"sub": sub, "orderId": order_id}, claims=ADMIN_CLAIMS), None)
+
+
+def test_payment_must_be_a_known_choice(table):
+    from backend.lambda_src import index
+
+    order = _place_order(index, CUSTOMER_CLAIMS)
+    assert _admin_set_payment(index, "user-1", order["orderId"], "paypal")["statusCode"] == 400
+    empty = index.handler(_event("PUT", f"/admin/orders/user-1/{order['orderId']}", {},
+                                 path_params={"sub": "user-1", "orderId": order["orderId"]}, claims=ADMIN_CLAIMS), None)
+    assert empty["statusCode"] == 400
+
+
+def test_customers_cannot_record_payment(table):
+    from backend.lambda_src import index
+
+    order = _place_order(index, CUSTOMER_CLAIMS)
+    resp = index.handler(_event("PUT", f"/admin/orders/user-1/{order['orderId']}", {"payment": "cash"},
+                                path_params={"sub": "user-1", "orderId": order["orderId"]},
+                                claims=CUSTOMER_CLAIMS), None)
+    assert resp["statusCode"] == 403
+
+
+def test_a_recorded_payment_carries_over_when_the_order_is_edited(table):
+    from backend.lambda_src import index
+
+    order = _place_order(index, CUSTOMER_CLAIMS)
+    _admin_set_payment(index, "user-1", order["orderId"], "venmo")
+    _cancel_by_id(index, order["orderId"], {"status": "cancelled", "forEdit": True})
+    resp = index.handler(_event("POST", "/orders", {
+        "contactPhone": PHONE, "replacesOrderId": order["orderId"],
+        "items": [{"mealId": order["items"][0]["mealId"], "quantity": 2}],
+    }, claims=CUSTOMER_CLAIMS), None)
+    assert json.loads(resp["body"])["payment"] == "venmo"

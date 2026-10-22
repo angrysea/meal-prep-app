@@ -52,6 +52,14 @@ export function formatMacros(macros) {
   return parts.join(" &middot; ");
 }
 
+// Payment as the admin records it on the Orders page (checkout takes no
+// payment). Same values as PAYMENT_STATUSES in the API.
+export const PAYMENT_LABELS = { unpaid: "Unpaid", venmo: "Paid - Venmo", cash: "Paid - Cash", free: "Free" };
+
+export function paymentLabel(payment) {
+  return PAYMENT_LABELS[payment] || PAYMENT_LABELS.unpaid;
+}
+
 // Where a customer picks up when the admin hasn't set a location for them
 // on the Customers page (shown at checkout and in the Excel export).
 export const DEFAULT_PICKUP_LOCATION = "The Gym TX, Georgetown";

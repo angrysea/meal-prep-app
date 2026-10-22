@@ -67,7 +67,7 @@
     <li>Builder: meals<span>Adding, editing, hiding meals; staple vs. rotating</span></li>
     <li>Builder: add-ons (customizations)<span>Choosing which customizations each meal offers</span></li>
     <li>Builder: extras &amp; sauces</li>
-    <li>Orders<span>Order statuses, cancelling, Export to Excel</span></li>
+    <li>Orders<span>Order statuses, recording payments, cancelling, Export to Excel</span></li>
     <li>Prep list and labels<span>What to cook, and printing labels on R011 sheets</span></li>
     <li>Customers<span>Editing customers, pickup locations, reminders</span></li>
     <li>Menu flyers<span>Weekly and monthly menus, PDFs and sending them out</span></li>
@@ -113,7 +113,7 @@
     <tr><td>Thursday 6:00 PM</td><td>Reminder to customers who haven't ordered yet (and haven't unsubscribed). Skipped if you've closed ordering.</td><td>Automatic</td></tr>
     <tr><td>Friday 2:00 PM</td><td>The deadline customers are told. After it, they can't edit or cancel online.</td><td>&mdash;</td></tr>
     <tr><td>Friday 4:00 PM</td><td>Ordering actually closes (a quiet two-hour grace period).</td><td>Automatic</td></tr>
-    <tr><td>Saturday morning</td><td>Cancel unpaid orders without prior arrangements (Orders page). The customer is emailed.</td><td>You</td></tr>
+    <tr><td>Saturday morning</td><td>On the Orders page, set <b>Payment: Unpaid only</b>. Cancel unpaid orders without prior arrangements (the customer is emailed).</td><td>You</td></tr>
     <tr><td>Saturday/Sunday</td><td>Use the Prep List to shop and cook; print labels.</td><td>You</td></tr>
     <tr><td>Pickup day 7:00 AM</td><td>"Your meals are ready" reminder to everyone with an order for that day.</td><td>Automatic</td></tr>
     <tr><td>Pickup day</td><td>Mark orders <b>delivered</b> as they're picked up (optional, but keeps the Orders page tidy).</td><td>You</td></tr>
@@ -122,7 +122,8 @@
   <ol class="steps">
     <li><b>Before Monday 11 AM:</b> make sure next week's rotating meals are in the Builder with the right ready date, and their customizations are filled in.</li>
     <li><b>Monday:</b> optionally send the weekly menu flyer to customers (Menu flyers, chapter 10).</li>
-    <li><b>Saturday:</b> check payments; cancel unpaid orders.</li>
+    <li><b>As payments arrive:</b> record them in the Payment column on the Orders page.</li>
+    <li><b>Saturday:</b> filter to unpaid orders; follow up or cancel.</li>
     <li><b>Prep day:</b> Prep List &rarr; print labels &rarr; cook &rarr; label.</li>
     <li><b>Pickup day:</b> mark orders delivered.</li>
   </ol>
@@ -234,6 +235,7 @@
   <ul>
     <li><span class="ui">Ready date</span> &mdash; one pickup date, or all dates.</li>
     <li><span class="ui">Show</span> &mdash; Placed (default), Prepared, Delivered, Cancelled, or All.</li>
+    <li><span class="ui">Payment</span> &mdash; All, or <b>Unpaid only</b>.</li>
     <li>Each order shows the customer, the person picking up (if someone else), phone, items with customizations, notes and extras, and the total.</li>
   </ul>
 
@@ -246,11 +248,19 @@
     <tr><td>cancelled</td><td>Cancelled by the customer or by you. Not counted on the Prep List.</td></tr>
   </table>
   <p>Change the status with the drop-down on the right.</p>
+
+  <h2>Recording payments</h2>
+  <p>Checkout doesn't take payment, so every order starts as <b>Unpaid</b> (shown in red). When a customer pays, pick <b>Paid - Venmo</b>, <b>Paid - Cash</b> or <b>Free</b> in the order's <span class="ui">Payment</span> drop-down &mdash; it saves right away.</p>
+  <ul>
+    <li>Payment is separate from status: an order can be paid before or after it's prepared.</li>
+    <li>Customers see it on My Orders ("Payment received" or "Payment not received yet"), but only you can change it. No email is sent.</li>
+    <li>If a paid customer edits their order, the new order stays marked as paid. Check the total if their order grew.</li>
+  </ul>
   <div class="warn"><b>Cancelling emails the customer.</b> Setting an order to <b>cancelled</b> sends the customer the "Your Order Has Been Canceled" email (once). Other status changes send nothing.</div>
 
   <h2>Export to Excel</h2>
   <p>Click <span class="ui">Export to Excel</span> to download the orders currently shown (so set the filters first). The file opens in Excel, or use File &rarr; Import in Google Sheets.</p>
-  <p><b>Columns:</b> Placed &middot; Customer &middot; Email &middot; Phone &middot; Pickup Location &middot; Picked up by &middot; Ready date &middot; Status &middot; for each meal: its quantity and its customizations (e.g. "2 Regular, 1 Large") &middot; Extras &amp; Sauces &middot; Special Requests &middot; Meals &middot; Total ($) &middot; Meal Suggestions. A <b>Totals</b> row at the bottom adds up each meal, the meal count and the money (cancelled orders are left out).</p>
+  <p><b>Columns:</b> Placed &middot; Customer &middot; Email &middot; Phone &middot; Pickup Location &middot; Picked up by &middot; Ready date &middot; Status &middot; for each meal: its quantity and its customizations (e.g. "2 Regular, 1 Large") &middot; Extras &amp; Sauces &middot; Special Requests &middot; Meals &middot; Total ($) &middot; Payment &middot; Meal Suggestions. A <b>Totals</b> row at the bottom adds up each meal, the meal count and the money (cancelled orders are left out).</p>
 </section>
 
 <!-- 8 -->
@@ -281,10 +291,10 @@
 <!-- 9 -->
 <section class="chapter">
   <h1>9. Customers</h1>
-  <figure class="mid"><img src="img/customers.png" style="width:74%" /></figure>
+  <figure class="mid"><img src="img/customers.png" style="width:68%" /></figure>
   <h2>Editing a customer</h2>
   <p>Click <span class="ui">Edit</span> on a customer.</p>
-  <figure class="narrow" style="margin-top:0"><img src="img/edit-customer.png" style="width:46%" /></figure>
+  <figure class="narrow" style="margin-top:0"><img src="img/edit-customer.png" style="width:40%" /></figure>
   <ul>
     <li><b>Name, email, phone, address</b> &mdash; their contact details. Emails go to this address.</li>
     <li><b>Pickup location</b> &mdash; only you can set this (customers see it at checkout but can't change it). Leave it blank for the normal Georgetown pickup at The Gym TX. Enter something like <i>"Elgin"</i> &mdash; or more detail, e.g. <i>"Elgin &ndash; 123 Main St, 5&ndash;6 PM"</i> &mdash; and that text replaces the Georgetown address in their emails, at checkout and in the Excel export.</li>

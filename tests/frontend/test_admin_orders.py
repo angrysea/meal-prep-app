@@ -1,4 +1,6 @@
 """Orders page (admin-orders.html)."""
+import re
+
 from playwright.sync_api import expect
 
 from .helpers import assert_no_xss, expect_toast
@@ -25,7 +27,7 @@ def test_order_table_has_no_email_or_address(admin_page):
     page.open("/admin-orders.html")
 
     headers = page.locator("#orders-table th").all_inner_texts()
-    assert [h.title() for h in headers] == ["Placed", "Customer", "Phone", "Ready Date", "Items", "Total", "Status"]
+    assert [h.title() for h in headers] == ["Placed", "Customer", "Phone", "Ready Date", "Items", "Total", "Payment", "Status"]
     expect(page.locator("#orders-body")).not_to_contain_text("@example.com")
 
 
@@ -183,6 +185,7 @@ def test_export_to_excel_has_a_row_per_order_and_a_totals_row(admin_page, mock_a
     mock_api.state["orders"][0]["pickupName"] = "Terri"
     mock_api.state["orders"][0]["pickupLocation"] = "Elgin"
     mock_api.state["orders"][0]["mealSuggestions"] = "Bring back the honey garlic chicken"
+    mock_api.state["orders"][0]["payment"] = "venmo"
     page = admin_page
     page.open("/admin-orders.html")
     expect(page.locator("#orders-body tr")).to_have_count(2)
@@ -194,7 +197,7 @@ def test_export_to_excel_has_a_row_per_order_and_a_totals_row(admin_page, mock_a
         "Placed", "Customer", "Email", "Phone", "Pickup Location", "Picked up by", "Ready date", "Status",
         "Chicken Teriyaki Bowl", "Chicken Teriyaki Bowl Customizations",
         "Turkey Chili", "Turkey Chili Customizations",
-        "Extras & Sauces", "Special Requests", "Meals", "Total ($)", "Meal Suggestions",
+        "Extras & Sauces", "Special Requests", "Meals", "Total ($)", "Payment", "Meal Suggestions",
     ]
     row = dict(zip(header, jane))
     assert row["Customer"].startswith("Jane ")
@@ -209,6 +212,8 @@ def test_export_to_excel_has_a_row_per_order_and_a_totals_row(admin_page, mock_a
     assert row["Special Requests"].startswith("Chicken Teriyaki Bowl: hold the sauce")
     assert (row["Meals"], row["Total ($)"]) == ("2", "31.98")
     assert row["Meal Suggestions"] == "Bring back the honey garlic chicken"
+    assert row["Payment"] == "Paid - Venmo"
+    assert dict(zip(header, bob))["Payment"] == "Unpaid"  # none recorded
     assert dict(zip(header, bob))["Meal Suggestions"] == ""
     assert dict(zip(header, bob))["Picked up by"] == "Customer"
     assert blank == []
@@ -253,3 +258,41 @@ def test_export_is_disabled_with_no_orders_shown(admin_page, mock_api):
     page.open("/admin-orders.html")
     expect(page.locator("#orders-body")).to_contain_text("No orders")
     expect(page.locator("#export-orders")).to_be_disabled()
+
+
+def test_admin_records_a_payment(admin_page, mock_api):
+    page = admin_page
+    page.open("/admin-orders.html")
+    select = page.locator(f"{ROW.format('o2')} .payment-select")
+    expect(select).to_have_value("unpaid")
+    expect(select).to_have_class(re.compile(r"\bis-unpaid\b"))
+    select.select_option("cash")
+
+    expect_toast(page, "Order for Bob Smith marked paid - cash")
+    call = mock_api.writes()[-1]
+    assert (call["method"], call["path"], call["body"]) == ("PUT", "/admin/orders/u2/o2", {"payment": "cash"})
+    expect(page.locator(f"{ROW.format('o2')} .payment-select")).to_have_value("cash")
+    expect(page.locator(f"{ROW.format('o2')} .status-select")).to_have_value("placed")  # status untouched
+
+
+def test_payment_choices(admin_page):
+    page = admin_page
+    page.open("/admin-orders.html")
+    options = page.locator(f"{ROW.format('o1')} .payment-select option").all_text_contents()
+    assert options == ["Unpaid", "Paid - Venmo", "Paid - Cash", "Free"]
+
+
+def test_unpaid_only_filter(admin_page, mock_api):
+    mock_api.state["orders"][0]["payment"] = "venmo"
+    page = admin_page
+    page.open("/admin-orders.html")
+    expect(page.locator("#orders-body tr")).to_have_count(2)
+    page.select_option("#payment-filter", "unpaid")
+
+    expect(page.locator("#orders-body tr")).to_have_count(1)
+    expect(page.locator(ROW.format("o2"))).to_be_visible()
+    expect(page.locator("#orders-count")).to_have_text("1 order")
+
+    mock_api.state["orders"][1]["payment"] = "free"
+    page.select_option("#status-filter", "all")
+    expect(page.locator("#orders-body")).to_contain_text("No unpaid orders here.")

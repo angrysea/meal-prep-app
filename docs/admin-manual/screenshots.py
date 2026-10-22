@@ -70,12 +70,14 @@ def line(meal_id, name, qty, unit, addon=None, note=""):
 state["orders"] = [
     {"orderId": "o1", "customerSub": "u1", "createdAt": "2026-10-19T16:20:00Z", "status": "placed", "customerName": "Jordan Rivera",
      "contactPhone": "(512) 555-0142", "pickupName": "", "pickupLocation": "", "readyDate": READY_DATE, "mealSuggestions": "Lasagna soup!",
+     "payment": "venmo",
      "items": [line("m1", "Chicken Enchilada Bowl", 2, 1000), line("m1", "Chicken Enchilada Bowl", 1, 1100, ("a1", "Cauliflower Rice")),
                line("m3", "Smash Burger Tacos", 2, 1100, ("a6", "Lettuce & Tomato Swap"), "no pickles")],
      "extras": [{"extraId": "e2", "name": "Salsa Verde", "priceCents": 25, "quantity": 2, "description": "", "macros": Z}],
      "totalCents": 5350},
     {"orderId": "o2", "customerSub": "u2", "createdAt": "2026-10-20T13:05:00Z", "status": "placed", "customerName": "Sam Patel",
      "contactPhone": "(512) 555-0178", "pickupName": "Taylor Patel", "pickupLocation": "Elgin", "readyDate": READY_DATE, "mealSuggestions": "",
+     "payment": "unpaid",
      "items": [line("m2", "Cowboy Butter Chicken", 3, 1300, ("a4", "Large")), line("m1", "Chicken Enchilada Bowl", 1, 1000)],
      "extras": [], "totalCents": 4900},
 ]

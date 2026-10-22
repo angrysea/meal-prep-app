@@ -1410,3 +1410,16 @@ body.admin-page dialog {
 .addon-detail.is-not-offered .addon-offered {
   color: var(--color-muted);
 }
+
+/* Payment: the Orders page drop-down, and the line on My Orders. Unpaid
+   stands out so it's easy to spot before Saturday morning. */
+.payment-select.is-unpaid,
+.order-payment.is-unpaid {
+  color: var(--color-error);
+  font-weight: bold;
+}
+
+.order-payment.is-paid {
+  color: #1d7a35;
+  font-weight: bold;
+}

@@ -44,6 +44,10 @@ cognito_idp = boto3.client("cognito-idp")
 MACRO_FIELDS = ("calories", "proteinG", "carbsG", "fatG")
 CONTACT_METHODS = ("email", "text")
 ORDER_STATUSES = ("placed", "cancelled", "prepared", "delivered")
+# Recorded by the admin on the Orders page - checkout takes no payment, so
+# every order starts "unpaid". Separate from status: an order can be paid
+# before or after it's prepared.
+PAYMENT_STATUSES = ("unpaid", "venmo", "cash", "free")
 MEAL_SUGGESTIONS_MAX = 1000
 
 # A single global value: the next date meals will be ready for pickup. Stored
@@ -1207,13 +1211,16 @@ def create_order(event):
         "mealSuggestions": (body.get("mealSuggestions") or "").strip()[:MEAL_SUGGESTIONS_MAX],
         "readyDate": ready_date_str,
         "status": "placed",  # stub checkout - no real payment is taken
+        "payment": "unpaid",
     }
-    table.put_item(Item=item)
     # Edit on My Orders cancels the old order and places it again from the
     # menu with replacesOrderId - one "updated" email rather than a cancel
-    # and a new order.
+    # and a new order. A payment already recorded carries over to it.
     replaced = _find_order(user_id, str(body["replacesOrderId"])) if body.get("replacesOrderId") else None
     edited = bool(replaced) and replaced.get("status") == "cancelled"
+    if edited:
+        item["payment"] = replaced.get("payment", "unpaid")
+    table.put_item(Item=item)
     _notify_admin_of_order(item, "updated" if edited else "placed")
     _notify_customer_of_order(item, "updated" if edited else "placed", user_id, claims.get("email", ""))
     return _response(201, _order_out(item))
@@ -1703,16 +1710,25 @@ def list_admin_orders(event):
 
 
 def update_order_status(event, sub, order_id):
+    """The admin changing an order's status and/or payment - either or both
+    may be sent."""
     _require_admin(event)
     body = _body(event)
+    if "status" not in body and "payment" not in body:
+        raise BadRequest("send a status or a payment")
     status = body.get("status")
-    if status not in ORDER_STATUSES:
+    if "status" in body and status not in ORDER_STATUSES:
         raise BadRequest(f"status must be one of {ORDER_STATUSES}")
+    if "payment" in body and body["payment"] not in PAYMENT_STATUSES:
+        raise BadRequest(f"payment must be one of {PAYMENT_STATUSES}")
     item = _find_order(sub, order_id)
     if not item:
         raise BadRequest(f"no such order: {order_id}")
     was = item.get("status", "placed")
-    item["status"] = status
+    if "status" in body:
+        item["status"] = status
+    if "payment" in body:
+        item["payment"] = body["payment"]
     table.put_item(Item=item)
     # The admin cancelling (e.g. unpaid by Saturday): the customer gets the
     # same cancellation email as when they cancel it themselves.
@@ -1843,6 +1859,7 @@ def _order_out(item):
         "mealSuggestions": item.get("mealSuggestions", ""),
         "readyDate": item.get("readyDate", ""),
         "status": item.get("status", "placed"),
+        "payment": item.get("payment", "unpaid"),
     }
 
 

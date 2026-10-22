@@ -1,4 +1,4 @@
-import { pickupLocationText } from "/js/pricing.js";
+import { pickupLocationText, paymentLabel } from "/js/pricing.js";
 
 // "Export to Excel" on the Orders page: the orders on screen as a CSV file
 // Excel and Google Sheets open directly. Laid out like the old Google Form
@@ -34,7 +34,7 @@ export function ordersToCsv(orders, emailsBySub = new Map()) {
   const header = [
     "Placed", "Customer", "Email", "Phone", "Pickup Location", "Picked up by", "Ready date", "Status",
     ...mealNames.flatMap((name) => [name, `${name} Customizations`]),
-    "Extras & Sauces", "Special Requests", "Meals", "Total ($)", "Meal Suggestions",
+    "Extras & Sauces", "Special Requests", "Meals", "Total ($)", "Payment", "Meal Suggestions",
   ];
 
   const mealTotals = new Map(mealNames.map((name) => [name, 0]));
@@ -67,6 +67,7 @@ export function ordersToCsv(orders, emailsBySub = new Map()) {
       order.items.filter((i) => i.note).map((i) => `${i.name}: ${i.note}`).join("; "),
       meals,
       dollars(order.totalCents),
+      paymentLabel(order.payment),
       order.mealSuggestions || "",
     ];
   });
@@ -75,7 +76,7 @@ export function ordersToCsv(orders, emailsBySub = new Map()) {
   const totals = [
     "", "Totals", "", "", "", "", "", "",
     ...mealNames.flatMap((name) => [mealTotals.get(name), ""]),
-    "", "", mealCount, dollars(totalCents), "",
+    "", "", mealCount, dollars(totalCents), "", "",
   ];
 
   return [header, ...rows, [], totals].map((row) => row.map(cell).join(",")).join("\r\n");

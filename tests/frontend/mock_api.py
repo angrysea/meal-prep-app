@@ -198,7 +198,7 @@ class MockApi:
                 "items": items, "extras": extras, "customerName": s["profile"]["name"],
                 "contactPhone": body["contactPhone"], "pickupName": body.get("pickupName", ""),
                 "pickupLocation": s["profile"].get("pickupLocation", ""),
-                "orderId": uuid.uuid4().hex[:8], "status": "placed", "readyDate": READY_DATE,
+                "orderId": uuid.uuid4().hex[:8], "status": "placed", "payment": "unpaid", "readyDate": READY_DATE,
                 "createdAt": "2026-10-18T12:00:00Z",
                 "totalCents": sum(i["unitPriceCents"] * i["quantity"] for i in items)
                 + sum(e["priceCents"] * e["quantity"] for e in extras),
@@ -249,7 +249,7 @@ class MockApi:
         if parts[:2] == ["admin", "orders"]:
             if method == "PUT":
                 order = next(o for o in s["orders"] if o["orderId"] == parts[3])
-                order["status"] = body["status"]
+                order.update({k: body[k] for k in ("status", "payment") if k in body})
                 return 200, order
             status = query.get("status", ["all"])[0]
             orders = s["orders"] if status == "all" else [o for o in s["orders"] if o["status"] == status]

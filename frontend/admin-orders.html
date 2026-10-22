@@ -30,6 +30,11 @@
           <option value="delivered">Delivered</option>
           <option value="cancelled">Cancelled</option>
         </select>
+        <label for="payment-filter">Payment</label>
+        <select id="payment-filter">
+          <option value="all" selected>All</option>
+          <option value="unpaid">Unpaid only</option>
+        </select>
         <span class="toolbar-spacer"></span>
         <span class="muted" id="orders-count"></span>
         <button type="button" class="secondary" id="export-orders" disabled>Export to Excel</button>
@@ -40,7 +45,7 @@
           <thead>
             <tr>
               <th>Placed</th><th>Customer</th><th>Phone</th><th>Ready date</th>
-              <th>Items</th><th class="num">Total</th><th>Status</th>
+              <th>Items</th><th class="num">Total</th><th>Payment</th><th>Status</th>
             </tr>
           </thead>
           <tbody id="orders-body"></tbody>
@@ -55,7 +60,7 @@
     import { getValidSession, isAdmin } from "/js/cognito.js";
     import { renderNav } from "/js/nav.js";
     import { loginUrlWithReturnTo } from "/js/redirect.js";
-    import { formatMacros } from "/js/pricing.js";
+    import { formatMacros, PAYMENT_LABELS } from "/js/pricing.js";
     import { showToast } from "/js/toast.js";
     import { escapeHtml } from "/js/admin.js";
     import { ordersToCsv, downloadCsv } from "/js/ordersExport.js";
@@ -110,6 +115,7 @@
       const body = document.getElementById("orders-body");
       const countEl = document.getElementById("orders-count");
       const dateSelect = document.getElementById("ready-date-filter");
+      const paymentSelect = document.getElementById("payment-filter");
       const exportButton = document.getElementById("export-orders");
       // The orders on screen right now - what Export to Excel saves.
       let shownOrders = [];
@@ -151,13 +157,17 @@
         fetched.forEach((o) => o.readyDate && knownDates.add(o.readyDate));
         renderDateOptions();
         const date = dateSelect.value;
-        const orders = date === "all" ? fetched : fetched.filter((o) => o.readyDate === date);
+        const unpaidOnly = paymentSelect.value === "unpaid";
+        const orders = fetched
+          .filter((o) => date === "all" || o.readyDate === date)
+          .filter((o) => !unpaidOnly || (o.payment || "unpaid") === "unpaid");
         countEl.textContent = `${orders.length} order${orders.length === 1 ? "" : "s"}`;
         shownOrders = orders;
         exportButton.disabled = orders.length === 0;
 
         if (orders.length === 0) {
-          body.innerHTML = `<tr class="empty-row"><td colspan="7">${escapeHtml(emptyMessage(filter, date))}</td></tr>`;
+          const message = unpaidOnly && fetched.length ? "No unpaid orders here." : emptyMessage(filter, date);
+          body.innerHTML = `<tr class="empty-row"><td colspan="8">${escapeHtml(message)}</td></tr>`;
           return;
         }
 
@@ -176,6 +186,14 @@
             <td>${itemsHtml(order.items, order.extras || [])}</td>
             <td class="num"><strong>${formatPrice(order.totalCents)}</strong></td>
             <td>
+              <select class="payment-select${(order.payment || "unpaid") === "unpaid" ? " is-unpaid" : ""}"
+                      aria-label="Payment for ${escapeHtml(order.customerName)}'s order placed ${escapeHtml(createdAt)}">
+                ${Object.entries(PAYMENT_LABELS)
+                  .map(([value, label]) => `<option value="${value}" ${value === (order.payment || "unpaid") ? "selected" : ""}>${label}</option>`)
+                  .join("")}
+              </select>
+            </td>
+            <td>
               <select class="status-select" aria-label="Status for ${escapeHtml(order.customerName)}'s order placed ${escapeHtml(createdAt)}">
                 ${STATUSES.map((s) => `<option value="${s}" ${s === order.status ? "selected" : ""}>${s}</option>`).join("")}
               </select>
@@ -184,30 +202,36 @@
           })
           .join("");
 
-        body.querySelectorAll(".status-select").forEach((select) => {
-          const original = select.value;
-          select.addEventListener("change", async (e) => {
-            const row = e.target.closest("tr");
-            const { orderId, customerSub } = row.dataset;
-            const order = orders.find((o) => o.orderId === orderId);
-            const status = select.value;
-            select.disabled = true;
-            try {
-              await apiRequest(config.apiUrl, `/admin/orders/${customerSub}/${orderId}`, {
-                method: "PUT",
-                token,
-                body: { status },
-              });
-              showToast(`Order for ${order.customerName} marked ${status}`);
-              refresh();
-            } catch (err) {
-              // Put the dropdown back so it doesn't show a status that never saved.
-              select.value = original;
-              select.disabled = false;
-              showToast(err.message, { error: true });
-            }
+        // Status and payment drop-downs save the same way - one field each.
+        const wire = (selector, field, toastFor) =>
+          body.querySelectorAll(selector).forEach((select) => {
+            const original = select.value;
+            select.addEventListener("change", async (e) => {
+              const row = e.target.closest("tr");
+              const { orderId, customerSub } = row.dataset;
+              const order = orders.find((o) => o.orderId === orderId);
+              const value = select.value;
+              select.disabled = true;
+              try {
+                await apiRequest(config.apiUrl, `/admin/orders/${customerSub}/${orderId}`, {
+                  method: "PUT",
+                  token,
+                  body: { [field]: value },
+                });
+                showToast(toastFor(order, value));
+                refresh();
+              } catch (err) {
+                // Put the dropdown back so it doesn't show a value that never saved.
+                select.value = original;
+                select.disabled = false;
+                showToast(err.message, { error: true });
+              }
+            });
           });
-        });
+        wire(".status-select", "status", (order, status) => `Order for ${order.customerName} marked ${status}`);
+        wire(".payment-select", "payment", (order, payment) =>
+          `Order for ${order.customerName} marked ${PAYMENT_LABELS[payment].toLowerCase()}`
+        );
       }
 
       // Exports exactly what the filters show. Emails come from the customer
@@ -226,6 +250,7 @@
       });
 
       filterSelect.addEventListener("change", refresh);
+      paymentSelect.addEventListener("change", refresh);
       dateSelect.addEventListener("change", refresh);
       refresh();
     }

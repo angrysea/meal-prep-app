@@ -134,3 +134,23 @@ def test_cancel_is_not_marked_as_an_edit(customer_page, mock_api):
 
     expect_toast(page, "Your order was cancelled")
     assert mock_api.writes()[-1]["body"] == {"status": "cancelled"}
+
+
+def test_my_orders_shows_whether_payment_was_received(customer_page, mock_api):
+    page = customer_page
+    _place_order(page)
+    expect(page.locator(".order-card .order-payment")).to_have_text(
+        "Payment not received yet - Venmo @lgraffeo88, or cash."
+    )
+    mock_api.state["placed"][0]["payment"] = "venmo"
+    page.reload()
+    expect(page.locator(".order-card .order-payment")).to_have_text("Payment received (Venmo) - thank you!")
+
+
+def test_no_payment_line_on_a_cancelled_order(customer_page, mock_api):
+    page = customer_page
+    _place_order(page)
+    mock_api.state["placed"][0]["status"] = "cancelled"
+    page.reload()
+    expect(page.locator(".order-card")).to_be_visible()
+    expect(page.locator(".order-card .order-payment")).to_have_count(0)

@@ -30,6 +30,20 @@
     import { loginUrlWithReturnTo } from "/js/redirect.js";
     import { formatMacros } from "/js/pricing.js";
 
+    // Recorded by the admin when payment arrives - checkout takes none.
+    const PAYMENT_TEXT = {
+      venmo: "Payment received (Venmo) - thank you!",
+      cash: "Payment received (cash) - thank you!",
+      free: "No payment needed.",
+    };
+    function paymentLine(order) {
+      if (order.status === "cancelled") return "";
+      const text = PAYMENT_TEXT[order.payment];
+      return text
+        ? `<p class="order-payment is-paid">${text}</p>`
+        : `<p class="order-payment is-unpaid">Payment not received yet - Venmo @lgraffeo88, or cash.</p>`;
+    }
+
     renderNav();
 
     loadConfig().then(async (config) => {
@@ -114,8 +128,8 @@
                     return `${escapeHtml(a.name)}${macrosText ? ` [${macrosText}]` : ""}`;
                   });
                   const addOnText = addOnParts.length ? ` <span class="muted">(${addOnParts.join(", ")})</span>` : "";
-                  const noteText = i.note ? ` <span class="muted">- Note: ${i.note}</span>` : "";
-                  return `<li>${i.quantity} x ${i.name}${addOnText} - ${formatPrice(i.unitPriceCents * i.quantity)}${noteText}</li>`;
+                  const noteText = i.note ? ` <span class="muted">- Note: ${escapeHtml(i.note)}</span>` : "";
+                  return `<li>${i.quantity} x ${escapeHtml(i.name)}${addOnText} - ${formatPrice(i.unitPriceCents * i.quantity)}${noteText}</li>`;
                 })
                 .join("")}
               ${(order.extras || [])
@@ -129,6 +143,7 @@
                 .join("")}
             </ul>
             <p>Total: <strong>${formatPrice(order.totalCents)}</strong></p>
+            ${paymentLine(order)}
             <p class="muted">${escapeHtml(order.customerName)}${order.contactPhone ? ` - ${escapeHtml(order.contactPhone)}` : ""}</p>
             <p class="muted">Pickup: ${order.pickupName ? escapeHtml(order.pickupName) : "you"}</p>
             ${orderActions(order)}
