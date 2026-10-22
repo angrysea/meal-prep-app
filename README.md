@@ -104,6 +104,18 @@ no email - the order just shows as cancelled. Sending is best effort: a
 failure is logged as `ERROR` (so the log-errors alarm reports it) and never
 fails the order.
 
+## Exporting orders to Excel
+
+**Export to Excel** on the Orders page (`admin-orders.html`) downloads the
+orders the filters show as a CSV that Excel opens directly (or File > Import
+in Google Sheets). It's laid out like the old Google Form responses sheet:
+one row per order with the customer's name, email (from the customer list),
+phone, who's picking it up, ready date and status; then for each meal its
+quantity and customizations (e.g. "2 Regular, 1 Large"); then extras &
+sauces, special requests (each line's note), meal count and total; and a
+Totals row, which leaves cancelled orders out. Cells starting with `=`, `+`,
+`-` or `@` are prefixed with `'` so customer text can't run as a formula.
+
 ## Weekly reminders
 
 The "Send weekly reminders" button on `/admin`, and the "Send this menu to

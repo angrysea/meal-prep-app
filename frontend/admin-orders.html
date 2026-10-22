@@ -32,6 +32,7 @@
         </select>
         <span class="toolbar-spacer"></span>
         <span class="muted" id="orders-count"></span>
+        <button type="button" class="secondary" id="export-orders" disabled>Export to Excel</button>
       </div>
 
       <div class="table-card">
@@ -57,6 +58,7 @@
     import { formatMacros } from "/js/pricing.js";
     import { showToast } from "/js/toast.js";
     import { escapeHtml } from "/js/admin.js";
+    import { ordersToCsv, downloadCsv } from "/js/ordersExport.js";
 
     renderNav();
 
@@ -108,6 +110,9 @@
       const body = document.getElementById("orders-body");
       const countEl = document.getElementById("orders-count");
       const dateSelect = document.getElementById("ready-date-filter");
+      const exportButton = document.getElementById("export-orders");
+      // The orders on screen right now - what Export to Excel saves.
+      let shownOrders = [];
 
       // Every ready date seen so far (plus the current next ready date), so
       // a date doesn't drop out of the list just because the Show filter
@@ -148,6 +153,8 @@
         const date = dateSelect.value;
         const orders = date === "all" ? fetched : fetched.filter((o) => o.readyDate === date);
         countEl.textContent = `${orders.length} order${orders.length === 1 ? "" : "s"}`;
+        shownOrders = orders;
+        exportButton.disabled = orders.length === 0;
 
         if (orders.length === 0) {
           body.innerHTML = `<tr class="empty-row"><td colspan="7">${escapeHtml(emptyMessage(filter, date))}</td></tr>`;
@@ -202,6 +209,21 @@
           });
         });
       }
+
+      // Exports exactly what the filters show. Emails come from the customer
+      // list; if it can't load, the file still saves with that column blank.
+      exportButton.addEventListener("click", async () => {
+        exportButton.disabled = true;
+        try {
+          const { customers } = await apiRequest(config.apiUrl, "/customers", { token }).catch(() => ({ customers: [] }));
+          const emailsBySub = new Map(customers.map((c) => [c.username, c.email]));
+          const date = dateSelect.value === "all" ? "all dates" : dateSelect.value;
+          const status = filterSelect.value === "all" ? "" : ` ${filterSelect.value}`;
+          downloadCsv(`GTX Meals orders - ${date}${status}.csv`, ordersToCsv(shownOrders, emailsBySub));
+        } finally {
+          exportButton.disabled = shownOrders.length === 0;
+        }
+      });
 
       filterSelect.addEventListener("change", refresh);
       dateSelect.addEventListener("change", refresh);

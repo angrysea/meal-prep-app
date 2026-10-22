@@ -167,3 +167,83 @@ def test_item_without_an_addon_has_no_addon_line(admin_page):
     page.open("/admin-orders.html")
 
     expect(page.locator(f"{ROW.format('o2')} .item-addon")).to_have_count(0)
+
+
+def _export(page):
+    with page.expect_download() as info:
+        page.click("#export-orders")
+    download = info.value
+    text = open(download.path(), encoding="utf-8-sig").read()
+    import csv
+    import io
+    return download.suggested_filename, list(csv.reader(io.StringIO(text)))
+
+
+def test_export_to_excel_has_a_row_per_order_and_a_totals_row(admin_page, mock_api):
+    mock_api.state["orders"][0]["pickupName"] = "Terri"
+    page = admin_page
+    page.open("/admin-orders.html")
+    expect(page.locator("#orders-body tr")).to_have_count(2)
+
+    filename, rows = _export(page)
+    assert filename == "GTX Meals orders - all dates placed.csv"
+    header, jane, bob, blank, totals = rows
+    assert header == [
+        "Placed", "Customer", "Email", "Phone", "Picked up by", "Ready date", "Status",
+        "Chicken Teriyaki Bowl", "Chicken Teriyaki Bowl Customizations",
+        "Turkey Chili", "Turkey Chili Customizations",
+        "Extras & Sauces", "Special Requests", "Meals", "Total ($)",
+    ]
+    row = dict(zip(header, jane))
+    assert row["Customer"].startswith("Jane ")
+    assert row["Email"] == "jane@example.com"
+    assert row["Picked up by"] == "Terri"
+    assert row["Ready date"] == READY_DATE
+    assert (row["Chicken Teriyaki Bowl"], row["Chicken Teriyaki Bowl Customizations"]) == ("2", "2 Large")
+    assert (row["Turkey Chili"], row["Turkey Chili Customizations"]) == ("0", "")
+    assert row["Extras & Sauces"] == "2 x Salsa Verde"
+    assert row["Special Requests"].startswith("Chicken Teriyaki Bowl: hold the sauce")
+    assert (row["Meals"], row["Total ($)"]) == ("2", "31.98")
+    assert dict(zip(header, bob))["Picked up by"] == "Customer"
+    assert blank == []
+    t = dict(zip(header, totals))
+    assert (t["Customer"], t["Chicken Teriyaki Bowl"], t["Turkey Chili"], t["Meals"], t["Total ($)"]) == (
+        "Totals", "2", "1", "3", "43.48",
+    )
+
+
+def test_export_follows_the_filters_and_leaves_cancelled_out_of_totals(admin_page, mock_api):
+    mock_api.state["orders"][1]["status"] = "cancelled"
+    page = admin_page
+    page.open("/admin-orders.html")
+    page.select_option("#status-filter", "all")
+    page.select_option("#ready-date-filter", READY_DATE)
+    expect(page.locator("#orders-body tr")).to_have_count(2)
+
+    filename, rows = _export(page)
+    assert filename == f"GTX Meals orders - {READY_DATE}.csv"
+    header, totals = rows[0], rows[-1]
+    assert len(rows) == 5
+    assert dict(zip(header, totals))["Total ($)"] == "31.98"
+
+
+def test_export_cannot_run_a_formula_from_a_note(admin_page, mock_api):
+    mock_api.state["orders"][0]["items"][0]["note"] = "=HYPERLINK(\"http://evil\")"
+    mock_api.state["orders"][0]["customerName"] = "@Jane"
+    page = admin_page
+    page.open("/admin-orders.html")
+    expect(page.locator("#orders-body tr")).to_have_count(2)
+
+    _, rows = _export(page)
+    row = dict(zip(rows[0], rows[1]))
+    assert row["Customer"] == "'@Jane"
+    # Inside the cell the note doesn't start with "=", so it's plain text.
+    assert row["Special Requests"].startswith("Chicken Teriyaki Bowl: =HYPERLINK")
+
+
+def test_export_is_disabled_with_no_orders_shown(admin_page, mock_api):
+    mock_api.state["orders"] = []
+    page = admin_page
+    page.open("/admin-orders.html")
+    expect(page.locator("#orders-body")).to_contain_text("No orders")
+    expect(page.locator("#export-orders")).to_be_disabled()
