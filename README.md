@@ -138,7 +138,8 @@ in Google Sheets). It's laid out like the old Google Form responses sheet:
 one row per order with the customer's name, email (from the customer list),
 phone, who's picking it up, ready date and status; then for each meal its
 quantity and customizations (e.g. "2 Regular, 1 Large"); then extras &
-sauces, special requests (each line's note), meal count and total; and a
+sauces, special requests (each line's note), meal count, total and the
+meal suggestions from the order form; and a
 Totals row, which leaves cancelled orders out. Cells starting with `=`, `+`,
 `-` or `@` are prefixed with `'` so customer text can't run as a formula.
 

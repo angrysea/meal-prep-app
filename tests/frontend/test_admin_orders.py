@@ -181,6 +181,7 @@ def _export(page):
 
 def test_export_to_excel_has_a_row_per_order_and_a_totals_row(admin_page, mock_api):
     mock_api.state["orders"][0]["pickupName"] = "Terri"
+    mock_api.state["orders"][0]["mealSuggestions"] = "Bring back the honey garlic chicken"
     page = admin_page
     page.open("/admin-orders.html")
     expect(page.locator("#orders-body tr")).to_have_count(2)
@@ -192,7 +193,7 @@ def test_export_to_excel_has_a_row_per_order_and_a_totals_row(admin_page, mock_a
         "Placed", "Customer", "Email", "Phone", "Picked up by", "Ready date", "Status",
         "Chicken Teriyaki Bowl", "Chicken Teriyaki Bowl Customizations",
         "Turkey Chili", "Turkey Chili Customizations",
-        "Extras & Sauces", "Special Requests", "Meals", "Total ($)",
+        "Extras & Sauces", "Special Requests", "Meals", "Total ($)", "Meal Suggestions",
     ]
     row = dict(zip(header, jane))
     assert row["Customer"].startswith("Jane ")
@@ -204,6 +205,8 @@ def test_export_to_excel_has_a_row_per_order_and_a_totals_row(admin_page, mock_a
     assert row["Extras & Sauces"] == "2 x Salsa Verde"
     assert row["Special Requests"].startswith("Chicken Teriyaki Bowl: hold the sauce")
     assert (row["Meals"], row["Total ($)"]) == ("2", "31.98")
+    assert row["Meal Suggestions"] == "Bring back the honey garlic chicken"
+    assert dict(zip(header, bob))["Meal Suggestions"] == ""
     assert dict(zip(header, bob))["Picked up by"] == "Customer"
     assert blank == []
     t = dict(zip(header, totals))

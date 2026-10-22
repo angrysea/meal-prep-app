@@ -2859,3 +2859,24 @@ def test_no_pickup_reminder_on_a_day_without_pickups(table, outbox, monkeypatch)
     _at(monkeypatch, "2026-10-27T12:00:00+00:00")  # Tuesday 7 AM
     assert index.handler({"job": "pickup-reminder"}, None)["sent"] == 0
     assert _to(outbox, "customer@example.com")[-1]["Message"]["Subject"]["Data"].startswith("Thank You")
+
+
+def test_order_stores_meal_suggestions(table):
+    from backend.lambda_src import index
+
+    meal = _create_meal(index)
+    resp = index.handler(_event("POST", "/orders", {
+        "contactPhone": PHONE, "mealSuggestions": "  Beef enchiladas & lasagna!  " + "x" * 2000,
+        "items": [{"mealId": meal["mealId"], "quantity": 1}],
+    }, claims=CUSTOMER_CLAIMS), None)
+    suggestions = json.loads(resp["body"])["mealSuggestions"]
+    assert suggestions.startswith("Beef enchiladas & lasagna!")
+    assert len(suggestions) == index.MEAL_SUGGESTIONS_MAX
+    admin = json.loads(index.handler(_event("GET", "/admin/orders", claims=ADMIN_CLAIMS), None)["body"])
+    assert admin["orders"][0]["mealSuggestions"] == suggestions
+
+
+def test_meal_suggestions_are_optional(table):
+    from backend.lambda_src import index
+
+    assert _place_order(index, CUSTOMER_CLAIMS)["mealSuggestions"] == ""

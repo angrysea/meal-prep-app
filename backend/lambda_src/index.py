@@ -44,6 +44,7 @@ cognito_idp = boto3.client("cognito-idp")
 MACRO_FIELDS = ("calories", "proteinG", "carbsG", "fatG")
 CONTACT_METHODS = ("email", "text")
 ORDER_STATUSES = ("placed", "cancelled", "prepared", "delivered")
+MEAL_SUGGESTIONS_MAX = 1000
 
 # A single global value: the next date meals will be ready for pickup. Stored
 # as one DynamoDB item rather than per-meal/per-order, since it's set once by
@@ -1185,6 +1186,8 @@ def create_order(event):
         # Optional: someone other than the customer collecting the order.
         # Blank means the customer is picking it up themselves.
         "pickupName": (body.get("pickupName") or "").strip(),
+        # Optional feedback for future menus - shown in the Excel export.
+        "mealSuggestions": (body.get("mealSuggestions") or "").strip()[:MEAL_SUGGESTIONS_MAX],
         "readyDate": ready_date_str,
         "status": "placed",  # stub checkout - no real payment is taken
     }
@@ -1622,6 +1625,8 @@ def _order_email_text(order, action):
         lines.append(f"Phone: {order['contactPhone']}")
     if order.get("pickupName"):
         lines.append(f"Picked up by: {order['pickupName']}")
+    if order.get("mealSuggestions"):
+        lines.append(f"Meal suggestions: {order['mealSuggestions']}")
     if SITE_URL:
         lines += ["", f"All orders: {SITE_URL.rstrip('/')}/admin-orders.html"]
     return "\n".join(lines)
@@ -1790,6 +1795,7 @@ def _order_out(item):
         "customerName": item.get("customerName") or item.get("deliveryName", ""),
         "contactPhone": item.get("contactPhone") or item.get("deliveryPhone", ""),
         "pickupName": item.get("pickupName", ""),
+        "mealSuggestions": item.get("mealSuggestions", ""),
         "readyDate": item.get("readyDate", ""),
         "status": item.get("status", "placed"),
     }

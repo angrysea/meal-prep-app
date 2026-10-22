@@ -32,7 +32,7 @@ export function ordersToCsv(orders, emailsBySub = new Map()) {
   const header = [
     "Placed", "Customer", "Email", "Phone", "Picked up by", "Ready date", "Status",
     ...mealNames.flatMap((name) => [name, `${name} Customizations`]),
-    "Extras & Sauces", "Special Requests", "Meals", "Total ($)",
+    "Extras & Sauces", "Special Requests", "Meals", "Total ($)", "Meal Suggestions",
   ];
 
   const mealTotals = new Map(mealNames.map((name) => [name, 0]));
@@ -64,6 +64,7 @@ export function ordersToCsv(orders, emailsBySub = new Map()) {
       order.items.filter((i) => i.note).map((i) => `${i.name}: ${i.note}`).join("; "),
       meals,
       dollars(order.totalCents),
+      order.mealSuggestions || "",
     ];
   });
 
@@ -71,7 +72,7 @@ export function ordersToCsv(orders, emailsBySub = new Map()) {
   const totals = [
     "", "Totals", "", "", "", "", "",
     ...mealNames.flatMap((name) => [mealTotals.get(name), ""]),
-    "", "", mealCount, dollars(totalCents),
+    "", "", mealCount, dollars(totalCents), "",
   ];
 
   return [header, ...rows, [], totals].map((row) => row.map(cell).join(",")).join("\r\n");

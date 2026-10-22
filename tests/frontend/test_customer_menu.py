@@ -116,10 +116,22 @@ def test_place_order_sends_phone_and_pickup_but_not_name(customer_page, mock_api
         "extras": [],
         "contactPhone": "(555) 999-8888",
         "pickupName": "Sam Lee",
+        "mealSuggestions": "",
     }
     card = page.locator(".order-card")
     expect(card).to_contain_text("Test Customer - (555) 999-8888")
     expect(card).to_contain_text("Pickup: Sam Lee")
+
+
+def test_place_order_sends_meal_suggestions(customer_page, mock_api):
+    page = customer_page
+    _start_checkout(page)
+    expect(page.get_by_label("Meal suggestions (optional)")).to_be_visible()
+    page.fill("#meal-suggestions", "  Lasagna soup!  ")
+    page.click("#checkout-button")
+
+    page.wait_for_url("**/orders.html")
+    assert _placed_order(mock_api)["body"]["mealSuggestions"] == "Lasagna soup!"
 
 
 def test_blank_pickup_means_the_customer_picks_up(customer_page, mock_api):

@@ -117,6 +117,10 @@
         <input id="pickup-name" type="text" placeholder="Their name" />
         <p class="muted field-note">Leave blank if you're picking it up yourself.</p>
 
+        <label for="meal-suggestions">Meal suggestions <span class="muted">(optional)</span></label>
+        <textarea id="meal-suggestions" rows="3" maxlength="1000"
+                  placeholder="Meals you'd like to see on a future menu, or see again"></textarea>
+
         <p class="error" id="checkout-error" style="display:none;"></p>
         <div style="display:flex; gap:0.5rem;">
           <button id="checkout-button">Place order</button>
@@ -382,6 +386,7 @@
       // person rather than the profile's.
       if (delivery.phone) contactPhoneInput.value = formatPhone(delivery.phone);
       if (delivery.pickupName) document.getElementById("pickup-name").value = delivery.pickupName;
+      if (delivery.mealSuggestions) document.getElementById("meal-suggestions").value = delivery.mealSuggestions;
 
       document.getElementById("edit-notice").style.display = "block";
     }
@@ -610,6 +615,7 @@
 
       const contactPhone = contactPhoneInput.value;
       const pickupName = document.getElementById("pickup-name").value.trim();
+      const mealSuggestions = document.getElementById("meal-suggestions").value.trim();
       const phoneDigits = contactPhone.replace(/\D/g, "").length;
       if (phoneDigits > 0 && phoneDigits !== 10) {
         errorEl.textContent = "Please enter a 10-digit contact phone number, or leave it blank.";
@@ -625,7 +631,7 @@
         await apiRequest(config.apiUrl, "/orders", {
           method: "POST",
           token: session.idToken,
-          body: { items, extras, contactPhone, pickupName, ...(replacesOrderId ? { replacesOrderId } : {}) },
+          body: { items, extras, contactPhone, pickupName, mealSuggestions, ...(replacesOrderId ? { replacesOrderId } : {}) },
         });
         window.location.href = "/orders.html";
       } catch (err) {
