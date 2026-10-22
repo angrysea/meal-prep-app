@@ -2477,15 +2477,36 @@ def test_order_saves_each_extras_description_and_macros(table):
 # ---------- order emails to the admin ----------
 
 @pytest.fixture
-def admin_inbox(monkeypatch):
+def outbox(monkeypatch):
+    """Every email sent, to anyone."""
     from backend.lambda_src import index
 
     sent = []
     monkeypatch.setattr(index, "FROM_EMAIL", "GTX Meals <menu@example.com>")
     monkeypatch.setattr(index, "SITE_URL", "https://example.com")
     monkeypatch.setattr(index, "_admin_emails", lambda: ["admin@example.com"])
+    monkeypatch.setattr(index, "_admin_usernames", lambda: {"admin-1"})
     monkeypatch.setattr(index.ses, "send_email", lambda **kwargs: sent.append(kwargs))
     return sent
+
+
+@pytest.fixture
+def admin_inbox(outbox):
+    """The emails sent to the admin - a live view of the outbox."""
+    class Inbox:
+        def _items(self):
+            return [e for e in outbox if e["Destination"]["ToAddresses"] == ["admin@example.com"]]
+
+        def __iter__(self):
+            return iter(self._items())
+
+        def __getitem__(self, i):
+            return self._items()[i]
+
+        def __len__(self):
+            return len(self._items())
+
+    return Inbox()
 
 
 def _cancel_by_id(index, order_id, body=None):
@@ -2562,3 +2583,279 @@ def test_a_failed_admin_email_does_not_fail_the_order(table, monkeypatch, capsys
     order = _place_order(index, CUSTOMER_CLAIMS)
     assert order["status"] == "placed"
     assert "ERROR emailing the admin about order" in capsys.readouterr().out
+
+
+# ---------- messages to customers ----------
+
+def _to(outbox, address):
+    return [e for e in outbox if e["Destination"]["ToAddresses"] == [address]]
+
+
+def _text(email):
+    return email["Message"]["Body"]["Text"]["Data"]
+
+
+def _subject(email):
+    return email["Message"]["Subject"]["Data"]
+
+
+def _put_profile(index, user_id, **fields):
+    index.table.put_item(Item={"PK": f"USER#{user_id}", "SK": "PROFILE", "preferredContact": "email",
+                               "unsubscribed": False, **fields})
+
+
+def test_customer_gets_an_order_confirmation(table, outbox):
+    from backend.lambda_src import index
+
+    meal = _create_meal(index, name="Chicken Enchilada Bowl", price_cents=1000)
+    large = _create_addon(index, name="Large", price_cents=300)
+    _offer_addons(index, meal["mealId"], large["addOnId"])
+    index.handler(_event("POST", "/orders", {"contactPhone": PHONE, "items": [
+        {"mealId": meal["mealId"], "quantity": 2, "selectedAddOnIds": [large["addOnId"]], "note": "no onions"},
+    ]}, claims=CUSTOMER_CLAIMS), None)
+
+    [email] = _to(outbox, "customer@example.com")  # the login email - no profile email saved
+    assert _subject(email) == "Thank You for Your Order! | The Gym TX Meals"
+    assert email["ReplyToAddresses"] == ["admin@example.com"]
+    text = _text(email)
+    assert text.startswith("Hi Casey!\n\nThank you for ordering from The Gym TX Meals!")
+    assert "Your Order:\n2 x Chicken Enchilada Bowl (Large) - $26.00\n    Note: no onions\n" in text
+    assert "Order Total: $26.00\nPickup Date: Monday, October 26\n" in text
+    assert "The Gym TX\n4112 Williams Drive, Suite 105\nGeorgetown, TX 78628\n8:00 AM–1:00 PM or 3:30–6:30 PM" in text
+    assert "Venmo to @lgraffeo88" in text
+    assert text.endswith("Christian & Liz\nThe Gym TX Meals")
+    assert "nsubscribe" not in text  # about their own order, not a marketing email
+
+
+def test_order_confirmation_goes_to_the_profile_email(table, outbox):
+    from backend.lambda_src import index
+
+    _put_profile(index, "user-1", name="Casey Customer", email="casey@home.example")
+    _place_order(index, CUSTOMER_CLAIMS)
+    assert len(_to(outbox, "casey@home.example")) == 1
+    assert _to(outbox, "customer@example.com") == []
+
+
+def test_customer_gets_an_updated_confirmation_after_an_edit(table, outbox):
+    from backend.lambda_src import index
+
+    order = _place_order(index, CUSTOMER_CLAIMS)
+    _cancel_by_id(index, order["orderId"], {"status": "cancelled", "forEdit": True})
+    # Cancelled to be edited: no cancellation email.
+    assert [_subject(e) for e in _to(outbox, "customer@example.com")] == [
+        "Thank You for Your Order! | The Gym TX Meals",
+    ]
+    index.handler(_event("POST", "/orders", {
+        "contactPhone": PHONE, "replacesOrderId": order["orderId"],
+        "items": [{"mealId": order["items"][0]["mealId"], "quantity": 3}],
+    }, claims=CUSTOMER_CLAIMS), None)
+
+    updated = _to(outbox, "customer@example.com")[-1]
+    assert _subject(updated) == "Your Order Has Been Updated! | The Gym TX Meals"
+    assert "Your Updated Order:\n3 x Chicken Bowl - $36.00\n\nUpdated Total: $36.00\n" in _text(updated)
+
+
+def test_customer_gets_a_cancellation_email(table, outbox):
+    from backend.lambda_src import index
+
+    order = _place_order(index, CUSTOMER_CLAIMS, quantity=2)
+    _cancel_by_id(index, order["orderId"])
+
+    cancelled = _to(outbox, "customer@example.com")[-1]
+    assert _subject(cancelled) == "Your Order Has Been Canceled | The Gym TX Meals"
+    text = _text(cancelled)
+    assert "Canceled Order:\n2 x Chicken Bowl\n\nOrder Total: $24.00\n" in text
+    assert "contact us at gtxmeals@gmail.com" in text
+
+
+def test_no_customer_email_when_the_change_is_refused(table, outbox, monkeypatch):
+    from backend.lambda_src import index
+
+    order = _order_for_monday(index)
+    sent_before = len(outbox)
+    _at(monkeypatch, "2026-10-23T21:00:00+00:00")  # past the Friday deadline
+    assert _cancel_by_id(index, order["orderId"])["statusCode"] == 400
+    assert len(outbox) == sent_before
+
+
+def test_text_preferring_customer_also_gets_the_short_text(table, outbox, monkeypatch):
+    from backend.lambda_src import index
+
+    texts = []
+    monkeypatch.setattr(index, "_send_text_via_twilio", lambda phone, message: texts.append((phone, message)))
+    _put_profile(index, "user-1", name="Casey Customer", phone="(555) 555-1234", preferredContact="text")
+    index.table.put_item(Item={**index.SETTINGS_KEY, "smsEnabled": True})
+    _place_order(index, CUSTOMER_CLAIMS)
+
+    assert len(_to(outbox, "customer@example.com")) == 1  # the full confirmation still goes by email
+    [(phone, message)] = texts
+    assert phone == "(555) 555-1234"
+    assert message == (
+        "Hi Casey! Thanks for ordering from The Gym TX Meals! Your order total is $12.00. Payment is due "
+        "when ordering (Venmo: @lgraffeo88 or cash by arrangement). Pickup is Monday, October 26. "
+        "See your confirmation email for details!"
+    )
+
+
+def test_no_text_while_texting_is_switched_off(table, outbox, monkeypatch):
+    from backend.lambda_src import index
+
+    texts = []
+    monkeypatch.setattr(index, "_send_text_via_twilio", lambda phone, message: texts.append(message))
+    _put_profile(index, "user-1", name="Casey", phone="(555) 555-1234", preferredContact="text")
+    _place_order(index, CUSTOMER_CLAIMS)
+    assert texts == []
+    assert len(_to(outbox, "customer@example.com")) == 1
+
+
+def test_a_failed_customer_email_does_not_fail_the_order(table, monkeypatch, capsys):
+    from backend.lambda_src import index
+
+    def boom(**kwargs):
+        raise RuntimeError("SES is down")
+
+    monkeypatch.setattr(index, "FROM_EMAIL", "GTX Meals <menu@example.com>")
+    monkeypatch.setattr(index, "_admin_emails", lambda: ["admin@example.com"])
+    monkeypatch.setattr(index.ses, "send_email", boom)
+    assert _place_order(index, CUSTOMER_CLAIMS)["status"] == "placed"
+    assert "ERROR sending the placed message for order" in capsys.readouterr().out
+
+
+# ---------- scheduled reminders ----------
+
+THURSDAY_6PM = "2026-10-22T23:00:00+00:00"  # 6 PM CDT
+PICKUP_7AM = "2026-10-26T12:00:00+00:00"  # Monday 7 AM CDT
+
+
+def _customers_for_reminders(index):
+    _put_profile(index, "user-1", name="Casey Customer", email="casey@example.com")  # orders below
+    _put_profile(index, "u-dana", name="Dana Diaz", email="dana@example.com")
+    _put_profile(index, "u-ellis", name="Ellis", email="ellis@example.com", unsubscribed=True)
+    _put_profile(index, "u-flo", name="Flo", email="flo@example.com", phone="5555550000", preferredContact="text")
+    _put_profile(index, "admin-1", name="Admin", email="admin@example.com")
+
+
+def test_thursday_reminder_goes_to_opted_in_customers_who_have_not_ordered(table, outbox, monkeypatch):
+    from backend.lambda_src import index
+
+    _customers_for_reminders(index)
+    _place_order(index, CUSTOMER_CLAIMS)
+    outbox.clear()
+    _at(monkeypatch, THURSDAY_6PM)
+    result = index.handler({"job": "ordering-reminder"}, None)
+
+    # Flo prefers text, but texting is off - so email instead.
+    assert sorted(e["Destination"]["ToAddresses"][0] for e in outbox) == ["dana@example.com", "flo@example.com"]
+    dana = _to(outbox, "dana@example.com")[0]
+    assert _subject(dana) == "Don't Forget to Order Your Meals! | The Gym TX Meals"
+    assert _text(dana).startswith("Hi Dana!\n\nJust a friendly reminder that our weekly meal prep orders close "
+                                  "tomorrow (Friday) at 2:00 PM")
+    assert result == {"sent": 2, "alreadySent": 0, "failed": 0}
+
+
+def test_thursday_reminder_has_an_unsubscribe_link(table, outbox, monkeypatch):
+    from backend.lambda_src import index
+
+    monkeypatch.setattr(index, "_with_unsubscribe_footer", lambda message, email: f"{message}\n[unsubscribe {email}]")
+    _put_profile(index, "u-dana", name="Dana", email="dana@example.com")
+    _at(monkeypatch, THURSDAY_6PM)
+    index.handler({"job": "ordering-reminder"}, None)
+    assert _text(outbox[0]).endswith("[unsubscribe dana@example.com]")
+
+
+def test_thursday_reminder_by_text_when_texting_is_on(table, outbox, monkeypatch):
+    from backend.lambda_src import index
+
+    texts = []
+    monkeypatch.setattr(index, "_send_text_via_twilio", lambda phone, message: texts.append((phone, message)))
+    index.table.put_item(Item={**index.SETTINGS_KEY, "smsEnabled": True})
+    _put_profile(index, "u-flo", name="Flo Fern", email="flo@example.com", phone="5555550000", preferredContact="text")
+    _at(monkeypatch, THURSDAY_6PM)
+    index.handler({"job": "ordering-reminder"}, None)
+
+    assert outbox == []
+    assert texts == [("5555550000", "Hi Flo! Don't forget to order your meals for next week! Orders close tomorrow "
+                                    "at 2 PM or when spots fill. Order at www.gtxmeals.com")]
+
+
+def test_a_retried_run_does_not_send_twice(table, outbox, monkeypatch):
+    from backend.lambda_src import index
+
+    _put_profile(index, "u-dana", name="Dana", email="dana@example.com")
+    _at(monkeypatch, THURSDAY_6PM)
+    index.handler({"job": "ordering-reminder"}, None)
+    again = index.handler({"job": "ordering-reminder"}, None)
+    assert len(outbox) == 1
+    assert again == {"sent": 0, "alreadySent": 1, "failed": 0}
+
+
+def test_a_failed_send_is_retried_next_run(table, outbox, monkeypatch):
+    from backend.lambda_src import index
+
+    _put_profile(index, "u-dana", name="Dana", email="dana@example.com")
+    _at(monkeypatch, THURSDAY_6PM)
+    real_send = index.ses.send_email
+    monkeypatch.setattr(index.ses, "send_email", lambda **kwargs: (_ for _ in ()).throw(RuntimeError("blip")))
+    assert index.handler({"job": "ordering-reminder"}, None)["failed"] == 1
+    monkeypatch.setattr(index.ses, "send_email", real_send)
+    assert index.handler({"job": "ordering-reminder"}, None)["sent"] == 1
+
+
+def test_reminders_only_run_in_their_central_hour(table, outbox, monkeypatch):
+    from backend.lambda_src import index
+
+    _put_profile(index, "u-dana", name="Dana", email="dana@example.com")
+    _at(monkeypatch, "2026-10-23T00:00:00+00:00")  # the other UTC firing: 7 PM CDT
+    assert index.handler({"job": "ordering-reminder"}, None) == {"skipped": "not Thursday 6 PM Central"}
+    _at(monkeypatch, "2026-10-26T13:00:00+00:00")  # 8 AM CDT
+    assert index.handler({"job": "pickup-reminder"}, None) == {"skipped": "not 7 AM Central"}
+    assert outbox == []
+
+
+def test_reminder_hours_follow_standard_time_too(table, outbox, monkeypatch):
+    from backend.lambda_src import index
+
+    _put_profile(index, "u-dana", name="Dana", email="dana@example.com")
+    _at(monkeypatch, "2026-11-13T00:00:00+00:00")  # Thursday Nov 12, 6 PM CST
+    assert index.handler({"job": "ordering-reminder"}, None)["sent"] == 1
+
+
+def test_no_thursday_reminder_when_ordering_is_closed(table, outbox, monkeypatch):
+    from backend.lambda_src import index
+
+    index.table.put_item(Item={**index.SETTINGS_KEY, "orderingMode": "closed"})
+    _put_profile(index, "u-dana", name="Dana", email="dana@example.com")
+    _at(monkeypatch, THURSDAY_6PM)
+    assert index.handler({"job": "ordering-reminder"}, None) == {"skipped": "ordering is closed"}
+    assert outbox == []
+
+
+def test_pickup_reminder_goes_once_to_each_customer_with_an_order_today(table, outbox, monkeypatch):
+    from backend.lambda_src import index
+
+    _customers_for_reminders(index)
+    _place_order(index, CUSTOMER_CLAIMS)
+    _place_order(index, CUSTOMER_CLAIMS)  # two orders - still one reminder
+    dana = {"sub": "u-dana", "email": "dana@example.com", "name": "Dana Diaz"}
+    cancelled = _place_order(index, dana)
+    index.handler(_event("PUT", f"/orders/{cancelled['orderId']}", {"status": "cancelled"},
+                         path_params={"orderId": cancelled["orderId"]}, claims=dana), None)
+    outbox.clear()
+    _at(monkeypatch, PICKUP_7AM)
+    result = index.handler({"job": "pickup-reminder"}, None)
+
+    [email] = outbox
+    assert email["Destination"]["ToAddresses"] == ["casey@example.com"]
+    assert _subject(email) == "Your Meals Are Ready for Pickup! | The Gym TX Meals"
+    assert _text(email).startswith("Good morning, Casey!\n\nYour meals are ready for pickup today! 🎉")
+    assert "Pickup Hours:\n8:00 AM–1:00 PM or 3:30–6:30 PM" in _text(email)
+    assert result["sent"] == 1
+
+
+def test_no_pickup_reminder_on_a_day_without_pickups(table, outbox, monkeypatch):
+    from backend.lambda_src import index
+
+    _place_order(index, CUSTOMER_CLAIMS)  # for Monday the 26th
+    _at(monkeypatch, "2026-10-27T12:00:00+00:00")  # Tuesday 7 AM
+    assert index.handler({"job": "pickup-reminder"}, None)["sent"] == 0
+    assert _to(outbox, "customer@example.com")[-1]["Message"]["Subject"]["Data"].startswith("Thank You")

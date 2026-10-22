@@ -97,3 +97,20 @@ def test_customer_emails_are_sent_from_the_site_domain():
             "FROM_EMAIL": "GTX Meals <menu@example.com>",
         })},
     })
+
+
+def test_customer_reminders_are_scheduled_on_the_api_lambda():
+    app = core.App()
+    stack = MealPrepAppStack(app, "meal-prep-app")
+    template = assertions.Template.from_stack(stack)
+
+    for schedule, job in [
+        ("cron(0 0,23 ? * THU,FRI *)", "ordering-reminder"),
+        ("cron(0 12,13 * * ? *)", "pickup-reminder"),
+    ]:
+        template.has_resource_properties("AWS::Events::Rule", {
+            "ScheduleExpression": schedule,
+            "Targets": assertions.Match.array_with([assertions.Match.object_like({
+                "Input": f'{{"job":"{job}"}}',
+            })]),
+        })

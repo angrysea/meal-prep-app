@@ -104,6 +104,32 @@ no email - the order just shows as cancelled. Sending is best effort: a
 failure is logged as `ERROR` (so the log-errors alarm reports it) and never
 fails the order.
 
+## Automatic messages to customers
+
+The wording lives in `backend/lambda_src/index.py` under "messages to
+customers" (pickup address, hours, Venmo handle and signature are constants
+at the top of that section).
+
+| Message | When | Who | How |
+|---|---|---|---|
+| Order confirmation | right after an order is placed | the customer | email, plus a short text if they prefer text |
+| Order updated | when an edited order is placed again | the customer | same |
+| Order canceled | right after a cancel is saved | the customer | same |
+| Ordering reminder | Thursday 6:00 PM Central | opted-in customers (not unsubscribed) with no order for this week's pickup; skipped when ordering is closed | their preferred channel |
+| Pickup reminder | 7:00 AM Central on the pickup day | customers with a placed or prepared order for today | their preferred channel |
+
+Order messages are about the customer's own order, so they ignore the
+unsubscribe flag; the reminders include an unsubscribe link. While texting
+is switched off (Settings > SMS, plus Twilio credentials), customers who
+prefer text get the email version of the reminders instead.
+
+The reminders are EventBridge schedules that invoke the API Lambda with
+`{"job": "ordering-reminder" | "pickup-reminder"}` (`run_job`). Cron is in
+UTC, so each fires at both possible UTC hours and the job only sends in the
+right Central hour. Each send is recorded as `SENT#<job>#<date>` / `<sub>`
+before it goes out, so a retried run never messages anyone twice; a failed
+send is un-recorded so the retry tries again.
+
 ## Exporting orders to Excel
 
 **Export to Excel** on the Orders page (`admin-orders.html`) downloads the

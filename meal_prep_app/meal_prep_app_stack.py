@@ -16,6 +16,8 @@ from aws_cdk import (
     aws_s3_deployment as s3_deployment,
     aws_certificatemanager as acm,
     aws_secretsmanager as secretsmanager,
+    aws_events as events,
+    aws_events_targets as targets,
 )
 from constructs import Construct
 
@@ -392,6 +394,30 @@ class MealPrepAppStack(Stack):
         # ---------- Monitoring ----------
         # Alarms for each service, a dashboard, and alert emails to
         # alert_email - see monitoring.py.
+        # ---------- Scheduled customer reminders ----------
+        # EventBridge invokes the API Lambda directly with {"job": ...} (see
+        # run_job in index.py), so its existing alarms cover these too. Cron
+        # runs in UTC and Central time shifts with daylight saving, so each
+        # rule fires at both possible UTC hours and the job only sends in the
+        # right Central hour. A failed run is retried by Lambda; each send is
+        # recorded, so a retry never messages anyone twice.
+        events.Rule(
+            self, "OrderingReminderSchedule",
+            description="Thursday 6 PM Central: remind customers who haven't ordered yet",
+            schedule=events.Schedule.cron(minute="0", hour="0,23", week_day="THU,FRI"),
+            targets=[targets.LambdaFunction(
+                api_fn, event=events.RuleTargetInput.from_object({"job": "ordering-reminder"}),
+            )],
+        )
+        events.Rule(
+            self, "PickupReminderSchedule",
+            description="7 AM Central on the pickup day: remind customers with an order",
+            schedule=events.Schedule.cron(minute="0", hour="12,13"),
+            targets=[targets.LambdaFunction(
+                api_fn, event=events.RuleTargetInput.from_object({"job": "pickup-reminder"}),
+            )],
+        )
+
         Monitoring(
             self, "Monitoring",
             api_fn=api_fn,

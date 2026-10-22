@@ -68,6 +68,9 @@ READY_DATE_OVERRIDE_DAYS = 3
 
 
 def handler(event, context):
+    # Scheduled by EventBridge, not an API request (see run_job).
+    if "job" in event:
+        return run_job(event["job"], context)
     method = event.get("requestContext", {}).get("http", {}).get("method", "GET")
     path = event.get("rawPath", "/")
     path_params = event.get("pathParameters") or {}
@@ -1192,6 +1195,7 @@ def create_order(event):
     replaced = _find_order(user_id, str(body["replacesOrderId"])) if body.get("replacesOrderId") else None
     edited = bool(replaced) and replaced.get("status") == "cancelled"
     _notify_admin_of_order(item, "updated" if edited else "placed")
+    _notify_customer_of_order(item, "updated" if edited else "placed", user_id, claims.get("email", ""))
     return _response(201, _order_out(item))
 
 
@@ -1219,7 +1223,344 @@ def cancel_order(event, order_id):
     # Edit cancels too, then places the order again ("updated" email then).
     if not _body(event).get("forEdit"):
         _notify_admin_of_order(item, "cancelled")
+        _notify_customer_of_order(item, "cancelled", user_id, _claims(event).get("email", ""))
     return _response(200, _order_out(item))
+
+
+# ---------- messages to customers ----------
+# Order messages (confirmation, updated, cancelled) go out as soon as the
+# change is saved - always by email, plus the short text version for
+# customers who prefer text (once texting is switched on). They're about the
+# customer's own order, so they ignore the unsubscribe flag and carry no
+# unsubscribe link. The two scheduled reminders (see run_job) go by each
+# customer's preferred channel, falling back to email while texting is off.
+# The wording is the business's own - edit it here.
+
+SIGNATURE = "Christian & Liz\nThe Gym TX Meals"
+PICKUP_PLACE = "The Gym TX\n4112 Williams Drive, Suite 105\nGeorgetown, TX 78628"
+PICKUP_HOURS = "8:00 AM–1:00 PM or 3:30–6:30 PM"
+ELGIN_NOTE = "If you arranged an Elgin pickup, please follow your confirmed pickup instructions instead."
+VENMO = "@lgraffeo88"
+CONTACT_EMAIL = "gtxmeals@gmail.com"
+WEBSITE = "www.gtxmeals.com"
+
+ORDER_CONFIRMATION_SUBJECT = "Thank You for Your Order! | The Gym TX Meals"
+ORDER_UPDATED_SUBJECT = "Your Order Has Been Updated! | The Gym TX Meals"
+ORDER_CANCELLED_SUBJECT = "Your Order Has Been Canceled | The Gym TX Meals"
+ORDERING_REMINDER_SUBJECT = "Don't Forget to Order Your Meals! | The Gym TX Meals"
+PICKUP_REMINDER_SUBJECT = "Your Meals Are Ready for Pickup! | The Gym TX Meals"
+
+
+def _first_name(name):
+    return (name or "").split()[0] if (name or "").strip() else "there"
+
+
+def _pickup_day(ready_date):
+    """"Monday, October 26" - the weekday comes from the date itself, so an
+    unusual week's Tuesday pickup reads as Tuesday."""
+    if not ready_date:
+        return "Monday"
+    day = datetime.strptime(ready_date, "%Y-%m-%d")
+    return f"{day.strftime('%A, %B')} {day.day}"
+
+
+def _order_lines(order, with_prices=True):
+    def money(cents):
+        return f"${int(cents) / 100:.2f}"
+
+    lines = []
+    for line in order.get("items") or []:
+        quantity = int(line["quantity"])
+        addons = ", ".join(a.get("name") or a.get("description", "") for a in line.get("selectedAddOns") or [])
+        text = f"{quantity} x {line['name']}" + (f" ({addons})" if addons else "")
+        if with_prices:
+            text += f" - {money(int(line['unitPriceCents']) * quantity)}"
+        lines.append(text)
+        if line.get("note"):
+            lines.append(f"    Note: {line['note']}")
+    for extra in order.get("extras") or []:
+        quantity = int(extra["quantity"])
+        text = f"{quantity} x {extra['name']}"
+        if with_prices:
+            text += f" - {money(int(extra['priceCents']) * quantity)}"
+        lines.append(text)
+    return "\n".join(lines)
+
+
+def _total(order):
+    return f"${int(order.get('totalCents', 0)) / 100:.2f}"
+
+
+def _order_message(order, action):
+    """(subject, email body, text body) for an order that was just placed,
+    updated (re-placed through Edit) or cancelled."""
+    hi = f"Hi {_first_name(order.get('customerName'))}!"
+    day = _pickup_day(order.get("readyDate", ""))
+    if action == "placed":
+        email = (
+            f"{hi}\n\n"
+            "Thank you for ordering from The Gym TX Meals! We're excited to prepare your meals for the week.\n\n"
+            f"Your Order:\n{_order_lines(order)}\n\n"
+            f"Order Total: {_total(order)}\n"
+            f"Pickup Date: {day}\n\n"
+            f"Georgetown Pickup:\n{PICKUP_PLACE}\n{PICKUP_HOURS}\n\n"
+            f"{ELGIN_NOTE}\n\n"
+            "Payment Reminder:\n"
+            f"Payment is due when ordering. Cash is preferred, or you can send payment through Venmo to {VENMO}.\n"
+            "Please note that orders aren't confirmed until payment is received. Unpaid orders without prior "
+            "arrangements may be canceled Saturday morning.\n\n"
+            "Thank you for supporting our small business!\n"
+            f"{SIGNATURE}"
+        )
+        text = (
+            f"{hi} Thanks for ordering from The Gym TX Meals! Your order total is {_total(order)}. "
+            f"Payment is due when ordering (Venmo: {VENMO} or cash by arrangement). Pickup is {day}. "
+            "See your confirmation email for details!"
+        )
+        return ORDER_CONFIRMATION_SUBJECT, email, text
+    if action == "updated":
+        email = (
+            f"{hi}\n\n"
+            "Your order with The Gym TX Meals has been successfully updated!\n\n"
+            f"Your Updated Order:\n{_order_lines(order)}\n\n"
+            f"Updated Total: {_total(order)}\n"
+            f"Pickup Date: {day}\n\n"
+            "If your changes affected your order total, please make sure your payment reflects the updated amount.\n\n"
+            "Thank you for ordering from The Gym TX Meals!\n"
+            f"Christian & Liz\n{WEBSITE}"
+        )
+        text = (
+            f"{hi} Your Gym TX Meals order has been successfully updated! Your new total is {_total(order)}. "
+            "Check your email for your updated order details. Thank you!"
+        )
+        return ORDER_UPDATED_SUBJECT, email, text
+    email = (
+        f"{hi}\n\n"
+        "Your order with The Gym TX Meals has been successfully canceled.\n\n"
+        f"Canceled Order:\n{_order_lines(order, with_prices=False)}\n\n"
+        f"Order Total: {_total(order)}\n\n"
+        f"If you've already submitted payment, please contact us at {CONTACT_EMAIL} so we can review it.\n\n"
+        "We're sorry we won't be preparing meals for you this week, but we hope to see you again soon!\n"
+        f"{SIGNATURE}\n{WEBSITE}"
+    )
+    text = (
+        f"{hi} Your Gym TX Meals order for {day}, has been canceled. If you've already paid, please email "
+        f"{CONTACT_EMAIL}. We hope to see you again soon!"
+    )
+    return ORDER_CANCELLED_SUBJECT, email, text
+
+
+def _ordering_reminder_message(name):
+    hi = f"Hi {_first_name(name)}!"
+    email = (
+        f"{hi}\n\n"
+        "Just a friendly reminder that our weekly meal prep orders close tomorrow (Friday) at 2:00 PM, "
+        "or sooner if we reach capacity!\n\n"
+        "Take a look at this week's menu and place your order before it's too late.\n\n"
+        f"Order here: {WEBSITE}\n\n"
+        "Thank you for supporting The Gym TX Meals!\n"
+        "Christian & Liz"
+    )
+    text = (
+        f"{hi} Don't forget to order your meals for next week! Orders close tomorrow at 2 PM or when spots "
+        f"fill. Order at {WEBSITE}"
+    )
+    return ORDERING_REMINDER_SUBJECT, email, text
+
+
+def _pickup_reminder_message(name):
+    first = _first_name(name)
+    email = (
+        f"Good morning, {first}!\n\n"
+        "Your meals are ready for pickup today! 🎉\n\n"
+        f"Pickup Location:\n{PICKUP_PLACE}\n\n"
+        f"Pickup Hours:\n{PICKUP_HOURS}\n\n"
+        f"{ELGIN_NOTE}\n\n"
+        "Thank you for ordering! We hope you enjoy your meals this week.\n"
+        f"{SIGNATURE}"
+    )
+    text = (
+        f"Good morning, {first}! Your Gym TX Meals are ready for pickup today! Georgetown pickup: "
+        "8 AM–1 PM or 3:30–6:30 PM at The Gym TX. See you soon!"
+    )
+    return PICKUP_REMINDER_SUBJECT, email, text
+
+
+def _sms_enabled():
+    return bool((table.get_item(Key=SETTINGS_KEY).get("Item") or {}).get("smsEnabled", False))
+
+
+def _customer_contact(user_id, fallback_email=""):
+    """The customer's profile, with their login email if the profile has none."""
+    profile = table.get_item(Key={"PK": f"USER#{user_id}", "SK": "PROFILE"}).get("Item") or {}
+    email = profile.get("email") or fallback_email
+    if not email:
+        try:
+            user = cognito_idp.admin_get_user(UserPoolId=USER_POOL_ID, Username=user_id)
+            email = {a["Name"]: a["Value"] for a in user.get("UserAttributes", [])}.get("email", "")
+        except Exception as e:  # noqa: BLE001 - no email just means no email message
+            print(f"ERROR looking up the email for {user_id}: {e!r}")
+    return {**profile, "email": email}
+
+
+def _send_email(to, subject, body):
+    ses.send_email(
+        Source=_from_email(),
+        Destination={"ToAddresses": [to]},
+        ReplyToAddresses=_reply_to(),
+        Message={"Subject": {"Data": subject}, "Body": {"Text": {"Data": body}}},
+    )
+
+
+def _wants_text(contact, sms_enabled):
+    return contact.get("preferredContact") == "text" and sms_enabled and bool(contact.get("phone"))
+
+
+def _notify_customer_of_order(order, action, user_id, fallback_email=""):
+    """Best effort, after the order change is saved: a failure is logged as
+    an ERROR (the log-errors alarm reports it) and never undoes the change."""
+    if not FROM_EMAIL:
+        return  # no sending domain configured (e.g. local runs)
+    try:
+        contact = _customer_contact(user_id, fallback_email)
+        subject, email_body, text_body = _order_message(order, action)
+        if contact.get("email"):
+            _send_email(contact["email"], subject, email_body)
+        if _wants_text(contact, _sms_enabled()):
+            _send_text_via_twilio(contact["phone"], text_body)
+    except Exception as e:  # noqa: BLE001
+        print(f"ERROR sending the {action} message for order {order.get('orderId')}: {e!r}")
+
+
+def _send_reminder(contact, message, sms_enabled):
+    """A scheduled reminder by the customer's preferred channel - email
+    (with an unsubscribe link) when they prefer it, or while texting is off."""
+    subject, email_body, text_body = message
+    if _wants_text(contact, sms_enabled):
+        _send_text_via_twilio(contact["phone"], text_body)
+    elif contact.get("email"):
+        _send_email(contact["email"], subject, _with_unsubscribe_footer(email_body, contact["email"]))
+    else:
+        raise ValueError("no email on file")
+
+
+# ---------- scheduled jobs ----------
+# EventBridge invokes this Lambda directly with {"job": ...} (see the stack).
+# Each rule fires at both possible UTC hours, since Central time shifts
+# with daylight saving; the job only runs in the right Central hour.
+#   ordering-reminder: Thursday 6 PM - customers who haven't ordered yet.
+#   pickup-reminder:   7 AM on the pickup day - customers with an order.
+# Every send is recorded first (SENT#<job>#<date>, one item per customer),
+# so a retried run never messages anyone twice.
+
+ORDERING_REMINDER_AT = (3, 18)  # Thursday, 6 PM Central
+PICKUP_REMINDER_HOUR = 7  # 7 AM Central on the ready date
+ACTIVE_ORDER_STATUSES = ("placed", "prepared", "delivered")
+
+
+def run_job(job, context=None):
+    local = _central(_utcnow())
+    if job == "ordering-reminder":
+        if (local.weekday(), local.hour) != ORDERING_REMINDER_AT:
+            return {"skipped": "not Thursday 6 PM Central"}
+        result = send_ordering_reminders(local, context)
+    elif job == "pickup-reminder":
+        if local.hour != PICKUP_REMINDER_HOUR:
+            return {"skipped": "not 7 AM Central"}
+        result = send_pickup_reminders(local, context)
+    else:
+        raise ValueError(f"unknown job: {job}")
+    print(f"{job}: {json.dumps(result)}")
+    return result
+
+
+def _orders_for_ready_date(ready_date):
+    items = []
+    scan_kwargs = {
+        "FilterExpression": "begins_with(SK, :sk) AND readyDate = :d",
+        "ExpressionAttributeValues": {":sk": "ORDER#", ":d": ready_date},
+    }
+    while True:
+        page = table.scan(**scan_kwargs)
+        items.extend(page.get("Items", []))
+        if not page.get("LastEvaluatedKey"):
+            return items
+        scan_kwargs["ExclusiveStartKey"] = page["LastEvaluatedKey"]
+
+
+def _claim_send(job_key, user_id):
+    """Records that this customer is being sent this job's message - False
+    if they already were (a retried run)."""
+    try:
+        table.put_item(
+            Item={"PK": f"SENT#{job_key}", "SK": user_id, "sentAt": _utcnow().isoformat()},
+            ConditionExpression="attribute_not_exists(PK)",
+        )
+        return True
+    except table.meta.client.exceptions.ConditionalCheckFailedException:
+        return False
+
+
+def _send_job_messages(job_key, recipients, context):
+    """recipients: [(user_id, contact, message)]. A failed send is logged and
+    un-recorded, so a retry tries that customer again."""
+    sms_enabled = _sms_enabled()
+    sent = skipped = failed = 0
+    for user_id, contact, message in recipients:
+        # Stop short of the Lambda timeout; raising makes Lambda retry the
+        # run, which picks up with whoever hasn't been sent yet.
+        if context is not None and context.get_remaining_time_in_millis() < 2000:
+            raise RuntimeError(f"{job_key}: ran out of time after {sent} sent; the retry continues")
+        if not _claim_send(job_key, user_id):
+            skipped += 1
+            continue
+        try:
+            _send_reminder(contact, message, sms_enabled)
+            sent += 1
+        except Exception as e:  # noqa: BLE001 - one bad recipient shouldn't stop the rest
+            table.delete_item(Key={"PK": f"SENT#{job_key}", "SK": user_id})
+            failed += 1
+            print(f"ERROR sending {job_key} to USER#{user_id}: {e!r}")
+    return {"sent": sent, "alreadySent": skipped, "failed": failed}
+
+
+def send_ordering_reminders(local, context=None):
+    """Thursday evening: every opted-in customer (not unsubscribed) who
+    hasn't ordered for this week's pickup yet. Skipped when ordering is
+    closed, e.g. a holiday week."""
+    settings = table.get_item(Key=SETTINGS_KEY).get("Item") or {}
+    if not _ordering_status(settings)["open"]:
+        return {"skipped": "ordering is closed"}
+    ready_date = _ready_dates(settings)[0]
+    ordered = {
+        o["PK"].split("#", 1)[1]
+        for o in _orders_for_ready_date(ready_date)
+        if o.get("status", "placed") in ACTIVE_ORDER_STATUSES
+    }
+    admins = _admin_usernames()
+    recipients = []
+    for profile in _scan_all_profiles():
+        user_id = profile["PK"].split("#", 1)[1]
+        if profile.get("unsubscribed") or user_id in ordered or user_id in admins:
+            continue
+        contact = _customer_contact(user_id)
+        recipients.append((user_id, contact, _ordering_reminder_message(contact.get("name"))))
+    return _send_job_messages(f"ordering-reminder#{ready_date}", recipients, context)
+
+
+def send_pickup_reminders(local, context=None):
+    """Pickup morning: one message to each customer with an order (placed
+    or prepared) for today. Nothing is sent on a day with no pickups."""
+    today = local.date().isoformat()
+    names = {}
+    for order in _orders_for_ready_date(today):
+        if order.get("status", "placed") in ("placed", "prepared"):
+            names.setdefault(order["PK"].split("#", 1)[1], order.get("customerName", ""))
+    recipients = []
+    for user_id, name in names.items():
+        contact = _customer_contact(user_id)
+        recipients.append((user_id, contact, _pickup_reminder_message(contact.get("name") or name)))
+    return _send_job_messages(f"pickup-reminder#{today}", recipients, context)
 
 
 # ---------- order notifications to the admin ----------
