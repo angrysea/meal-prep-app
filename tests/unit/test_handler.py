@@ -3108,3 +3108,148 @@ def test_a_recorded_payment_carries_over_when_the_order_is_edited(table):
         "items": [{"mealId": order["items"][0]["mealId"], "quantity": 2}],
     }, claims=CUSTOMER_CLAIMS), None)
     assert json.loads(resp["body"])["payment"] == "venmo"
+
+
+
+# ---------- amount paid, balance due and refunds ----------
+
+def _admin_put_order(index, order_id, body, sub="user-1"):
+    return index.handler(_event("PUT", f"/admin/orders/{sub}/{order_id}", body,
+                                path_params={"sub": sub, "orderId": order_id}, claims=ADMIN_CLAIMS), None)
+
+
+def _edit_to(index, order, quantity):
+    _cancel_by_id(index, order["orderId"], {"status": "cancelled", "forEdit": True})
+    return json.loads(index.handler(_event("POST", "/orders", {
+        "contactPhone": PHONE, "replacesOrderId": order["orderId"],
+        "items": [{"mealId": order["items"][0]["mealId"], "quantity": quantity}],
+    }, claims=CUSTOMER_CLAIMS), None)["body"])
+
+
+def _refund_emails(outbox):
+    return [e for e in outbox if _subject(e).startswith("Refund Needed")]
+
+
+def test_marking_paid_starts_the_amount_at_the_total(table):
+    from backend.lambda_src import index
+
+    order = _place_order(index, CUSTOMER_CLAIMS, quantity=2)  # $24.00
+    body = json.loads(_admin_put_order(index, order["orderId"], {"payment": "venmo"})["body"])
+    assert body["amountPaidCents"] == 2400
+    body = json.loads(_admin_put_order(index, order["orderId"], {"amountPaidCents": 2000})["body"])
+    assert (body["payment"], body["amountPaidCents"]) == ("venmo", 2000)
+    body = json.loads(_admin_put_order(index, order["orderId"], {"payment": "cash"})["body"])
+    assert body["amountPaidCents"] == 2000  # an amount already recorded is kept
+    body = json.loads(_admin_put_order(index, order["orderId"], {"payment": "unpaid"})["body"])
+    assert body["amountPaidCents"] == 0
+
+
+def test_amount_paid_must_be_sensible(table):
+    from backend.lambda_src import index
+
+    order = _place_order(index, CUSTOMER_CLAIMS)
+    for bad in (-1, "lots", 100_000_01):
+        assert _admin_put_order(index, order["orderId"], {"amountPaidCents": bad})["statusCode"] == 400
+
+
+def test_edit_that_costs_more_asks_for_the_difference(table, outbox):
+    from backend.lambda_src import index
+
+    order = _place_order(index, CUSTOMER_CLAIMS, quantity=1)  # $12.00
+    _admin_put_order(index, order["orderId"], {"payment": "venmo"})
+    outbox.clear()
+    updated = _edit_to(index, order, 2)  # $24.00
+
+    assert (updated["payment"], updated["amountPaidCents"]) == ("venmo", 1200)
+    text = _text(_to(outbox, "customer@example.com")[-1])
+    assert "You've paid $12.00, so please send the remaining $12.00 - cash, or Venmo to @lgraffeo88." in text
+    assert "Paid: $12.00 - balance due $12.00" in _text(_to(outbox, "admin@example.com")[0])
+    assert _refund_emails(outbox) == []
+
+
+def test_edit_that_costs_less_promises_a_refund_and_tells_the_admin(table, outbox):
+    from backend.lambda_src import index
+
+    order = _place_order(index, CUSTOMER_CLAIMS, quantity=3)  # $36.00
+    _admin_put_order(index, order["orderId"], {"payment": "cash"})
+    outbox.clear()
+    _edit_to(index, order, 1)  # $12.00
+
+    customer = _text(_to(outbox, "customer@example.com")[-1])
+    assert "You've paid $36.00, so we'll refund the $24.00 difference." in customer
+    [refund] = _refund_emails(outbox)
+    assert refund["Destination"]["ToAddresses"] == ["admin@example.com"]
+    assert _subject(refund) == "Refund Needed: $24.00 for Casey Customer"
+    assert _text(refund).startswith("Please refund Casey Customer $24.00: they changed their order.")
+    assert "Paid: $36.00 (cash)\nOrder total now: $12.00\nRefund: $24.00" in _text(refund)
+
+
+def test_edit_that_still_matches_the_payment(table, outbox):
+    from backend.lambda_src import index
+
+    order = _place_order(index, CUSTOMER_CLAIMS, quantity=2)
+    _admin_put_order(index, order["orderId"], {"payment": "venmo"})
+    outbox.clear()
+    _edit_to(index, order, 2)
+    assert "You've paid $24.00, which covers your updated order." in _text(_to(outbox, "customer@example.com")[-1])
+    assert _refund_emails(outbox) == []
+
+
+def test_unpaid_edit_just_says_payment_is_due(table, outbox):
+    from backend.lambda_src import index
+
+    order = _place_order(index, CUSTOMER_CLAIMS)
+    outbox.clear()
+    _edit_to(index, order, 2)
+    assert "Payment is due when ordering." in _text(_to(outbox, "customer@example.com")[-1])
+    assert _refund_emails(outbox) == []
+
+
+def test_updated_text_asks_for_the_difference(table, outbox, monkeypatch):
+    from backend.lambda_src import index
+
+    texts = []
+    monkeypatch.setattr(index, "_send_text_via_twilio", lambda phone, message: texts.append(message))
+    index.table.put_item(Item={**index.SETTINGS_KEY, "smsEnabled": True})
+    _put_profile(index, "user-1", name="Casey", phone="5555550000", preferredContact="text")
+    order = _place_order(index, CUSTOMER_CLAIMS, quantity=1)
+    _admin_put_order(index, order["orderId"], {"payment": "venmo"})
+    texts.clear()
+    _edit_to(index, order, 2)
+    assert "Please send the remaining $12.00 (Venmo @lgraffeo88 or cash)." in texts[-1]
+
+
+def test_cancelling_a_paid_order_promises_a_refund(table, outbox):
+    from backend.lambda_src import index
+
+    order = _place_order(index, CUSTOMER_CLAIMS, quantity=2)
+    _admin_put_order(index, order["orderId"], {"payment": "venmo"})
+    outbox.clear()
+    _cancel_by_id(index, order["orderId"])
+
+    assert "We'll refund your $24.00 payment." in _text(_to(outbox, "customer@example.com")[-1])
+    [refund] = _refund_emails(outbox)
+    assert _text(refund).startswith("Please refund Casey Customer $24.00: their order was cancelled.")
+    assert "Order total now: $0.00" in _text(refund)
+
+
+def test_admin_cancelling_a_paid_order_sends_the_refund_reminder(table, outbox):
+    from backend.lambda_src import index
+
+    order = _place_order(index, CUSTOMER_CLAIMS)
+    _admin_put_order(index, order["orderId"], {"payment": "cash"})
+    outbox.clear()
+    _admin_put_order(index, order["orderId"], {"status": "cancelled"})
+    assert len(_refund_emails(outbox)) == 1
+
+
+def test_no_refund_for_unpaid_or_free_orders(table, outbox):
+    from backend.lambda_src import index
+
+    unpaid = _place_order(index, CUSTOMER_CLAIMS)
+    free = _place_order(index, CUSTOMER_CLAIMS)
+    _admin_put_order(index, free["orderId"], {"payment": "free"})
+    _cancel_by_id(index, unpaid["orderId"])
+    _cancel_by_id(index, free["orderId"])
+    assert _refund_emails(outbox) == []
+    assert "If you've already submitted payment" in _text(_to(outbox, "customer@example.com")[-1])

@@ -1423,3 +1423,31 @@ body.admin-page dialog {
   color: #1d7a35;
   font-weight: bold;
 }
+
+/* Orders page: amount paid under the payment drop-down, and what's left. */
+.amount-paid {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.35rem;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.amount-paid-input {
+  width: 6rem;
+}
+
+.payment-balance {
+  font-size: 0.85rem;
+  font-weight: bold;
+  margin-top: 0.2rem;
+}
+
+.payment-balance.is-due {
+  color: var(--color-error);
+}
+
+.payment-balance.is-refund {
+  color: #a15c00;
+}

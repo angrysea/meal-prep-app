@@ -162,8 +162,16 @@ on the Orders page: `unpaid` (every new order), `venmo`, `cash` or `free`.
 It's separate from `status` and changed through the same admin route
 (`PUT /admin/orders/{sub}/{orderId}` with `{"payment": ...}` and/or
 `{"status": ...}`); customers can't set it, but see it on My Orders. An
-edited order keeps the payment recorded on the order it replaces. The Orders
-page can filter to unpaid orders, and the Excel export has a Payment column.
+edited order keeps the payment recorded on the order it replaces.
+
+`amountPaidCents` is what the admin recorded as received (it starts at the
+order total when Venmo or cash is picked, and only counts for those two).
+The balance is the total minus that - positive is still owed, negative is a
+refund (a cancelled order's whole payment is refunded). When a paid
+customer edits or cancels, their email asks for the difference or says it'll
+be refunded, and a refund also emails the admin "Refund Needed: $X for
+<name>". The Orders page shows each order's balance and can filter to unpaid
+orders; the Excel export has Payment, Amount Paid and Balance columns.
 
 ## Exporting orders to Excel
 

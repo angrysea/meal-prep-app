@@ -252,15 +252,22 @@
   <h2>Recording payments</h2>
   <p>Checkout doesn't take payment, so every order starts as <b>Unpaid</b> (shown in red). When a customer pays, pick <b>Paid - Venmo</b>, <b>Paid - Cash</b> or <b>Free</b> in the order's <span class="ui">Payment</span> drop-down &mdash; it saves right away.</p>
   <ul>
-    <li>Payment is separate from status: an order can be paid before or after it's prepared.</li>
-    <li>Customers see it on My Orders ("Payment received" or "Payment not received yet"), but only you can change it. No email is sent.</li>
-    <li>If a paid customer edits their order, the new order stays marked as paid. Check the total if their order grew.</li>
+    <li><b>Paid $</b> starts at the order total when you pick Venmo or cash. If they paid a different amount, type it and press Enter.</li>
+    <li>Under it, <b>Due $&hellip;</b> (red) is what's still owed; <b>Refund $&hellip;</b> is what to give back.</li>
+    <li>Payment is separate from status, and only you can change it. Customers see it on My Orders (e.g. "Paid $20.00 (Venmo) - $5.00 still due").</li>
+  </ul>
+  <h3>When a paid customer edits or cancels</h3>
+  <ul>
+    <li><b>Edit, new total higher:</b> their "Updated" email asks them to send the difference.</li>
+    <li><b>Edit, new total lower:</b> their email says the difference will be refunded, and you get a separate <b>"Refund Needed: $&hellip; for &lt;name&gt;"</b> email.</li>
+    <li><b>Cancelled</b> (by them or by you): their email says their payment will be refunded, and you get the Refund Needed email.</li>
+    <li>After you refund, change <b>Paid $</b> to match, so the balance clears.</li>
   </ul>
   <div class="warn"><b>Cancelling emails the customer.</b> Setting an order to <b>cancelled</b> sends the customer the "Your Order Has Been Canceled" email (once). Other status changes send nothing.</div>
 
   <h2>Export to Excel</h2>
   <p>Click <span class="ui">Export to Excel</span> to download the orders currently shown (so set the filters first). The file opens in Excel, or use File &rarr; Import in Google Sheets.</p>
-  <p><b>Columns:</b> Placed &middot; Customer &middot; Email &middot; Phone &middot; Pickup Location &middot; Picked up by &middot; Ready date &middot; Status &middot; for each meal: its quantity and its customizations (e.g. "2 Regular, 1 Large") &middot; Extras &amp; Sauces &middot; Special Requests &middot; Meals &middot; Total ($) &middot; Payment &middot; Meal Suggestions. A <b>Totals</b> row at the bottom adds up each meal, the meal count and the money (cancelled orders are left out).</p>
+  <p><b>Columns:</b> Placed &middot; Customer &middot; Email &middot; Phone &middot; Pickup Location &middot; Picked up by &middot; Ready date &middot; Status &middot; for each meal: its quantity and its customizations (e.g. "2 Regular, 1 Large") &middot; Extras &amp; Sauces &middot; Special Requests &middot; Meals &middot; Total ($) &middot; Payment &middot; Amount Paid ($) &middot; Balance ($) (positive = still owed, negative = to refund) &middot; Meal Suggestions. A <b>Totals</b> row at the bottom adds up each meal, the meal count and the money. Cancelled orders are left out of the meal counts and Total, but their refunds still count in Balance.</p>
 </section>
 
 <!-- 8 -->
@@ -342,7 +349,8 @@
 
   <h2>To you (gtxmeals@gmail.com)</h2>
   <ul>
-    <li><b>New Meal Order Received!</b>, <b>Meal Order Updated</b>, <b>Meal Order Cancelled</b> &mdash; when a customer places, edits or cancels. Includes the customer, items, total, phone, pickup location, who's picking up and any meal suggestions.</li>
+    <li><b>New Meal Order Received!</b>, <b>Meal Order Updated</b>, <b>Meal Order Cancelled</b> &mdash; when a customer places, edits or cancels. Includes the customer, items, total, amount paid and balance, phone, pickup location, who's picking up and any meal suggestions.</li>
+    <li><b>Refund Needed: $&hellip; for &lt;name&gt;</b> &mdash; when a paid order is cancelled or edited to cost less.</li>
     <li>You aren't emailed for changes you make yourself.</li>
   </ul>
   <div class="tip"><b>Changing the wording:</b> the address, hours, Venmo handle and sign-off are kept in one place in the app &mdash; ask your developer to update them.</div>

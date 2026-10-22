@@ -186,6 +186,7 @@ def test_export_to_excel_has_a_row_per_order_and_a_totals_row(admin_page, mock_a
     mock_api.state["orders"][0]["pickupLocation"] = "Elgin"
     mock_api.state["orders"][0]["mealSuggestions"] = "Bring back the honey garlic chicken"
     mock_api.state["orders"][0]["payment"] = "venmo"
+    mock_api.state["orders"][0]["amountPaidCents"] = 4000  # total is $31.98 - $8.02 to refund
     page = admin_page
     page.open("/admin-orders.html")
     expect(page.locator("#orders-body tr")).to_have_count(2)
@@ -197,7 +198,7 @@ def test_export_to_excel_has_a_row_per_order_and_a_totals_row(admin_page, mock_a
         "Placed", "Customer", "Email", "Phone", "Pickup Location", "Picked up by", "Ready date", "Status",
         "Chicken Teriyaki Bowl", "Chicken Teriyaki Bowl Customizations",
         "Turkey Chili", "Turkey Chili Customizations",
-        "Extras & Sauces", "Special Requests", "Meals", "Total ($)", "Payment", "Meal Suggestions",
+        "Extras & Sauces", "Special Requests", "Meals", "Total ($)", "Payment", "Amount Paid ($)", "Balance ($)", "Meal Suggestions",
     ]
     row = dict(zip(header, jane))
     assert row["Customer"].startswith("Jane ")
@@ -213,6 +214,8 @@ def test_export_to_excel_has_a_row_per_order_and_a_totals_row(admin_page, mock_a
     assert (row["Meals"], row["Total ($)"]) == ("2", "31.98")
     assert row["Meal Suggestions"] == "Bring back the honey garlic chicken"
     assert row["Payment"] == "Paid - Venmo"
+    assert (row["Amount Paid ($)"], row["Balance ($)"]) == ("40.00", "-8.02")  # a number, not text
+    assert (dict(zip(header, bob))["Amount Paid ($)"], dict(zip(header, bob))["Balance ($)"]) == ("0.00", "0.00")
     assert dict(zip(header, bob))["Payment"] == "Unpaid"  # none recorded
     assert dict(zip(header, bob))["Meal Suggestions"] == ""
     assert dict(zip(header, bob))["Picked up by"] == "Customer"
@@ -221,6 +224,7 @@ def test_export_to_excel_has_a_row_per_order_and_a_totals_row(admin_page, mock_a
     assert (t["Customer"], t["Chicken Teriyaki Bowl"], t["Turkey Chili"], t["Meals"], t["Total ($)"]) == (
         "Totals", "2", "1", "3", "43.48",
     )
+    assert (t["Amount Paid ($)"], t["Balance ($)"]) == ("40.00", "-8.02")
 
 
 def test_export_follows_the_filters_and_leaves_cancelled_out_of_totals(admin_page, mock_api):
@@ -296,3 +300,24 @@ def test_unpaid_only_filter(admin_page, mock_api):
     mock_api.state["orders"][1]["payment"] = "free"
     page.select_option("#status-filter", "all")
     expect(page.locator("#orders-body")).to_contain_text("No unpaid orders here.")
+
+
+def test_amount_paid_is_recorded_and_shows_the_balance(admin_page, mock_api):
+    mock_api.state["orders"][1].update(payment="cash", amountPaidCents=500)  # total $11.50
+    page = admin_page
+    page.open("/admin-orders.html")
+    row = page.locator(ROW.format("o2"))
+    expect(row.locator(".payment-balance")).to_have_text("Due $6.50")
+
+    row.locator(".amount-paid-input").fill("15")
+    row.locator(".amount-paid-input").press("Enter")
+    expect_toast(page, "Recorded $15.00 paid for Bob Smith's order")
+    assert mock_api.writes()[-1]["body"] == {"amountPaidCents": 1500}
+    expect(page.locator(ROW.format("o2")).locator(".payment-balance")).to_have_text("Refund $3.50")
+
+
+def test_amount_paid_only_applies_to_venmo_or_cash(admin_page, mock_api):
+    page = admin_page
+    page.open("/admin-orders.html")
+    expect(page.locator(f"{ROW.format('o2')} .amount-paid-input")).to_be_disabled()  # unpaid
+    expect(page.locator(f"{ROW.format('o2')} .payment-balance")).to_have_count(0)

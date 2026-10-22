@@ -249,7 +249,7 @@ class MockApi:
         if parts[:2] == ["admin", "orders"]:
             if method == "PUT":
                 order = next(o for o in s["orders"] if o["orderId"] == parts[3])
-                order.update({k: body[k] for k in ("status", "payment") if k in body})
+                order.update({k: body[k] for k in ("status", "payment", "amountPaidCents") if k in body})
                 return 200, order
             status = query.get("status", ["all"])[0]
             orders = s["orders"] if status == "all" else [o for o in s["orders"] if o["status"] == status]

@@ -28,20 +28,25 @@
     import { confirmAction, escapeHtml } from "/js/admin.js";
     import { showToast } from "/js/toast.js";
     import { loginUrlWithReturnTo } from "/js/redirect.js";
-    import { formatMacros } from "/js/pricing.js";
+    import { formatMacros, amountPaidCents, balanceCents } from "/js/pricing.js";
 
     // Recorded by the admin when payment arrives - checkout takes none.
-    const PAYMENT_TEXT = {
-      venmo: "Payment received (Venmo) - thank you!",
-      cash: "Payment received (cash) - thank you!",
-      free: "No payment needed.",
-    };
     function paymentLine(order) {
       if (order.status === "cancelled") return "";
-      const text = PAYMENT_TEXT[order.payment];
-      return text
-        ? `<p class="order-payment is-paid">${text}</p>`
-        : `<p class="order-payment is-unpaid">Payment not received yet - Venmo @lgraffeo88, or cash.</p>`;
+      if (order.payment === "free") return `<p class="order-payment is-paid">No payment needed.</p>`;
+      const paid = amountPaidCents(order);
+      if (!paid) {
+        return `<p class="order-payment is-unpaid">Payment not received yet - Venmo @lgraffeo88, or cash.</p>`;
+      }
+      const how = order.payment === "venmo" ? "Venmo" : "cash";
+      const balance = balanceCents(order);
+      if (balance > 0) {
+        return `<p class="order-payment is-unpaid">Paid ${formatPrice(paid)} (${how}) - ${formatPrice(balance)} still due.</p>`;
+      }
+      if (balance < 0) {
+        return `<p class="order-payment is-paid">Paid ${formatPrice(paid)} (${how}) - we'll refund ${formatPrice(-balance)}.</p>`;
+      }
+      return `<p class="order-payment is-paid">Payment received (${how}) - thank you!</p>`;
     }
 
     renderNav();

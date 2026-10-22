@@ -60,6 +60,18 @@ export function paymentLabel(payment) {
   return PAYMENT_LABELS[payment] || PAYMENT_LABELS.unpaid;
 }
 
+// Mirrors _amount_paid/_balance_cents in the API: the amount recorded only
+// counts for Venmo or cash. Balance > 0 is still owed, < 0 is to refund.
+const PAID_METHODS = ["venmo", "cash"];
+export function amountPaidCents(order) {
+  return PAID_METHODS.includes(order.payment) ? order.amountPaidCents || 0 : 0;
+}
+export function balanceCents(order) {
+  if (!PAID_METHODS.includes(order.payment)) return 0;
+  if (order.status === "cancelled") return -amountPaidCents(order);
+  return order.totalCents - amountPaidCents(order);
+}
+
 // Where a customer picks up when the admin hasn't set a location for them
 // on the Customers page (shown at checkout and in the Excel export).
 export const DEFAULT_PICKUP_LOCATION = "The Gym TX, Georgetown";

@@ -60,7 +60,15 @@
     import { getValidSession, isAdmin } from "/js/cognito.js";
     import { renderNav } from "/js/nav.js";
     import { loginUrlWithReturnTo } from "/js/redirect.js";
-    import { formatMacros, PAYMENT_LABELS } from "/js/pricing.js";
+    import { formatMacros, PAYMENT_LABELS, amountPaidCents, balanceCents } from "/js/pricing.js";
+
+    // Under the amount paid: what's still owed, or to refund.
+    function balanceHtml(order) {
+      const balance = balanceCents(order);
+      if (balance > 0) return `<div class="payment-balance is-due">Due ${formatPrice(balance)}</div>`;
+      if (balance < 0) return `<div class="payment-balance is-refund">Refund ${formatPrice(-balance)}</div>`;
+      return "";
+    }
     import { showToast } from "/js/toast.js";
     import { escapeHtml } from "/js/admin.js";
     import { ordersToCsv, downloadCsv } from "/js/ordersExport.js";
@@ -192,6 +200,13 @@
                   .map(([value, label]) => `<option value="${value}" ${value === (order.payment || "unpaid") ? "selected" : ""}>${label}</option>`)
                   .join("")}
               </select>
+              <label class="amount-paid">Paid $
+                <input type="number" class="amount-paid-input" min="0" step="0.01"
+                       value="${(amountPaidCents(order) / 100).toFixed(2)}"
+                       ${["venmo", "cash"].includes(order.payment) ? "" : "disabled"}
+                       aria-label="Amount paid for ${escapeHtml(order.customerName)}'s order placed ${escapeHtml(createdAt)}" />
+              </label>
+              ${balanceHtml(order)}
             </td>
             <td>
               <select class="status-select" aria-label="Status for ${escapeHtml(order.customerName)}'s order placed ${escapeHtml(createdAt)}">
@@ -232,6 +247,36 @@
         wire(".payment-select", "payment", (order, payment) =>
           `Order for ${order.customerName} marked ${PAYMENT_LABELS[payment].toLowerCase()}`
         );
+        // Amount paid saves when the field is left or Enter is pressed.
+        body.querySelectorAll(".amount-paid-input").forEach((input) => {
+          const original = input.value;
+          input.addEventListener("keydown", (e) => e.key === "Enter" && input.blur());
+          input.addEventListener("change", async (e) => {
+            const row = e.target.closest("tr");
+            const { orderId, customerSub } = row.dataset;
+            const order = orders.find((o) => o.orderId === orderId);
+            const cents = Math.round(parseFloat(input.value || "0") * 100);
+            if (!Number.isFinite(cents) || cents < 0) {
+              input.value = original;
+              showToast("Enter the amount paid in dollars, e.g. 25.00", { error: true });
+              return;
+            }
+            input.disabled = true;
+            try {
+              await apiRequest(config.apiUrl, `/admin/orders/${customerSub}/${orderId}`, {
+                method: "PUT",
+                token,
+                body: { amountPaidCents: cents },
+              });
+              showToast(`Recorded ${formatPrice(cents)} paid for ${order.customerName}'s order`);
+              refresh();
+            } catch (err) {
+              input.value = original;
+              input.disabled = false;
+              showToast(err.message, { error: true });
+            }
+          });
+        });
       }
 
       // Exports exactly what the filters show. Emails come from the customer

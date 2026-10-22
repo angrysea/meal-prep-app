@@ -142,9 +142,16 @@ def test_my_orders_shows_whether_payment_was_received(customer_page, mock_api):
     expect(page.locator(".order-card .order-payment")).to_have_text(
         "Payment not received yet - Venmo @lgraffeo88, or cash."
     )
-    mock_api.state["placed"][0]["payment"] = "venmo"
+    order = mock_api.state["placed"][0]
+    order.update(payment="venmo", amountPaidCents=order["totalCents"])
     page.reload()
     expect(page.locator(".order-card .order-payment")).to_have_text("Payment received (Venmo) - thank you!")
+    order["amountPaidCents"] = 500
+    page.reload()
+    expect(page.locator(".order-card .order-payment")).to_have_text("Paid $5.00 (Venmo) - $7.99 still due.")
+    order["amountPaidCents"] = 2000
+    page.reload()
+    expect(page.locator(".order-card .order-payment")).to_have_text("Paid $20.00 (Venmo) - we'll refund $7.01.")
 
 
 def test_no_payment_line_on_a_cancelled_order(customer_page, mock_api):

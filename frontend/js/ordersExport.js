@@ -1,4 +1,4 @@
-import { pickupLocationText, paymentLabel } from "/js/pricing.js";
+import { pickupLocationText, paymentLabel, amountPaidCents, balanceCents } from "/js/pricing.js";
 
 // "Export to Excel" on the Orders page: the orders on screen as a CSV file
 // Excel and Google Sheets open directly. Laid out like the old Google Form
@@ -9,7 +9,8 @@ import { pickupLocationText, paymentLabel } from "/js/pricing.js";
 // customer's note can't run as one.
 function cell(value) {
   let text = value == null ? "" : String(value);
-  if (typeof value !== "number" && /^[=+\-@]/.test(text)) text = `'${text}`;
+  // Plain numbers (a refund's "-5.00") stay numbers.
+  if (typeof value !== "number" && !/^-?\d+(\.\d+)?$/.test(text) && /^[=+\-@]/.test(text)) text = `'${text}`;
   return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
@@ -34,12 +35,14 @@ export function ordersToCsv(orders, emailsBySub = new Map()) {
   const header = [
     "Placed", "Customer", "Email", "Phone", "Pickup Location", "Picked up by", "Ready date", "Status",
     ...mealNames.flatMap((name) => [name, `${name} Customizations`]),
-    "Extras & Sauces", "Special Requests", "Meals", "Total ($)", "Payment", "Meal Suggestions",
+    "Extras & Sauces", "Special Requests", "Meals", "Total ($)", "Payment", "Amount Paid ($)", "Balance ($)", "Meal Suggestions",
   ];
 
   const mealTotals = new Map(mealNames.map((name) => [name, 0]));
   let mealCount = 0;
   let totalCents = 0;
+  let paidCents = 0;
+  let balanceTotalCents = 0;
   const rows = orders.map((order) => {
     const counted = order.status !== "cancelled";
     const perMeal = mealNames.flatMap((name) => {
@@ -53,6 +56,10 @@ export function ordersToCsv(orders, emailsBySub = new Map()) {
       mealCount += meals;
       totalCents += order.totalCents;
     }
+    // Money is totalled for every order shown - a cancelled order's refund
+    // still counts toward the balance.
+    paidCents += amountPaidCents(order);
+    balanceTotalCents += balanceCents(order);
     return [
       new Date(order.createdAt).toLocaleString(),
       order.customerName,
@@ -68,6 +75,8 @@ export function ordersToCsv(orders, emailsBySub = new Map()) {
       meals,
       dollars(order.totalCents),
       paymentLabel(order.payment),
+      dollars(amountPaidCents(order)),
+      dollars(balanceCents(order)),
       order.mealSuggestions || "",
     ];
   });
@@ -76,7 +85,7 @@ export function ordersToCsv(orders, emailsBySub = new Map()) {
   const totals = [
     "", "Totals", "", "", "", "", "", "",
     ...mealNames.flatMap((name) => [mealTotals.get(name), ""]),
-    "", "", mealCount, dollars(totalCents), "", "",
+    "", "", mealCount, dollars(totalCents), "", dollars(paidCents), dollars(balanceTotalCents), "",
   ];
 
   return [header, ...rows, [], totals].map((row) => row.map(cell).join(",")).join("\r\n");

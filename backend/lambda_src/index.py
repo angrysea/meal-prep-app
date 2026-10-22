@@ -48,6 +48,25 @@ ORDER_STATUSES = ("placed", "cancelled", "prepared", "delivered")
 # every order starts "unpaid". Separate from status: an order can be paid
 # before or after it's prepared.
 PAYMENT_STATUSES = ("unpaid", "venmo", "cash", "free")
+PAID_METHODS = ("venmo", "cash")
+# How much the admin recorded as received (amountPaidCents). Only counts for
+# a paid method; "free" owes nothing and "unpaid" has paid nothing.
+MAX_AMOUNT_PAID_CENTS = 100_000_00
+
+
+def _amount_paid(order):
+    return int(order.get("amountPaidCents", 0) or 0) if order.get("payment") in PAID_METHODS else 0
+
+
+def _balance_cents(order):
+    """What the customer still owes (positive) or should get back
+    (negative). Zero for free orders and for unpaid ones (the whole total is
+    simply due)."""
+    if order.get("payment") not in PAID_METHODS:
+        return 0
+    if order.get("status") == "cancelled":
+        return -_amount_paid(order)
+    return int(order.get("totalCents", 0)) - _amount_paid(order)
 MEAL_SUGGESTIONS_MAX = 1000
 
 # A single global value: the next date meals will be ready for pickup. Stored
@@ -1212,6 +1231,7 @@ def create_order(event):
         "readyDate": ready_date_str,
         "status": "placed",  # stub checkout - no real payment is taken
         "payment": "unpaid",
+        "amountPaidCents": 0,
     }
     # Edit on My Orders cancels the old order and places it again from the
     # menu with replacesOrderId - one "updated" email rather than a cancel
@@ -1220,9 +1240,12 @@ def create_order(event):
     edited = bool(replaced) and replaced.get("status") == "cancelled"
     if edited:
         item["payment"] = replaced.get("payment", "unpaid")
+        item["amountPaidCents"] = int(replaced.get("amountPaidCents", 0) or 0)
     table.put_item(Item=item)
     _notify_admin_of_order(item, "updated" if edited else "placed")
     _notify_customer_of_order(item, "updated" if edited else "placed", user_id, claims.get("email", ""))
+    if edited:
+        _notify_admin_of_refund(item, "updated")
     return _response(201, _order_out(item))
 
 
@@ -1251,6 +1274,7 @@ def cancel_order(event, order_id):
     if not _body(event).get("forEdit"):
         _notify_admin_of_order(item, "cancelled")
         _notify_customer_of_order(item, "cancelled", user_id, _claims(event).get("email", ""))
+        _notify_admin_of_refund(item, "cancelled")
     return _response(200, _order_out(item))
 
 
@@ -1368,13 +1392,13 @@ def _order_message(order, action):
             f"Updated Total: {_total(order)}\n"
             f"Pickup Date: {day}\n"
             f"Pickup Location: {_pickup_location_name(order.get('pickupLocation'))}\n\n"
-            "If your changes affected your order total, please make sure your payment reflects the updated amount.\n\n"
+            f"{_updated_payment_note(order)}\n\n"
             "Thank you for ordering from The Gym TX Meals!\n"
             f"Christian & Liz\n{WEBSITE}"
         )
         text = (
             f"{hi} Your Gym TX Meals order has been successfully updated! Your new total is {_total(order)}. "
-            "Check your email for your updated order details. Thank you!"
+            f"{_updated_payment_text(order)}Check your email for your updated order details. Thank you!"
         )
         return ORDER_UPDATED_SUBJECT, email, text
     email = (
@@ -1382,15 +1406,54 @@ def _order_message(order, action):
         "Your order with The Gym TX Meals has been successfully canceled.\n\n"
         f"Canceled Order:\n{_order_lines(order, with_prices=False)}\n\n"
         f"Order Total: {_total(order)}\n\n"
-        f"If you've already submitted payment, please contact us at {CONTACT_EMAIL} so we can review it.\n\n"
+        f"{_cancelled_payment_note(order)}\n\n"
         "We're sorry we won't be preparing meals for you this week, but we hope to see you again soon!\n"
         f"{SIGNATURE}\n{WEBSITE}"
     )
     text = (
-        f"{hi} Your Gym TX Meals order for {day}, has been canceled. If you've already paid, please email "
-        f"{CONTACT_EMAIL}. We hope to see you again soon!"
+        f"{hi} Your Gym TX Meals order for {day}, has been canceled. "
+        + (f"We'll refund your {_money(_amount_paid(order))} payment. " if _amount_paid(order)
+           else f"If you've already paid, please email {CONTACT_EMAIL}. ")
+        + "We hope to see you again soon!"
     )
     return ORDER_CANCELLED_SUBJECT, email, text
+
+
+def _money(cents):
+    return f"${int(cents) / 100:.2f}"
+
+
+def _updated_payment_note(order):
+    """After an edit: what's still owed or will be refunded, from what the
+    admin recorded as paid on the order it replaced."""
+    paid, balance = _amount_paid(order), _balance_cents(order)
+    if order.get("payment") == "free":
+        return "There's nothing to pay for this order."
+    if not paid:
+        return (f"Payment is due when ordering. Cash is preferred, or you can send payment through Venmo to "
+                f"{VENMO}.")
+    if balance > 0:
+        return (f"You've paid {_money(paid)}, so please send the remaining {_money(balance)} - cash, or Venmo "
+                f"to {VENMO}.")
+    if balance < 0:
+        return f"You've paid {_money(paid)}, so we'll refund the {_money(-balance)} difference."
+    return f"You've paid {_money(paid)}, which covers your updated order."
+
+
+def _updated_payment_text(order):
+    paid, balance = _amount_paid(order), _balance_cents(order)
+    if paid and balance > 0:
+        return f"Please send the remaining {_money(balance)} (Venmo {VENMO} or cash). "
+    if paid and balance < 0:
+        return f"We'll refund the {_money(-balance)} difference. "
+    return ""
+
+
+def _cancelled_payment_note(order):
+    paid = _amount_paid(order)
+    if paid:
+        return f"We'll refund your {_money(paid)} payment. Questions? Email us at {CONTACT_EMAIL}."
+    return f"If you've already submitted payment, please contact us at {CONTACT_EMAIL} so we can review it."
 
 
 def _ordering_reminder_message(name):
@@ -1644,6 +1707,44 @@ def _notify_admin_of_order(order, action):
         print(f"ERROR emailing the admin about order {order.get('orderId')} ({action}): {e!r}")
 
 
+def _notify_admin_of_refund(order, action):
+    """A separate "Refund Needed" email to the admin when an edit lowered a
+    paid order's total, or a paid order was cancelled - so it isn't missed
+    in the usual order email. Best effort, like the others."""
+    refund = -_balance_cents(order)
+    if refund <= 0 or not FROM_EMAIL:
+        return
+    name = order.get("customerName") or "A customer"
+    why = "their order was cancelled" if action == "cancelled" else "they changed their order"
+    method = "Venmo" if order.get("payment") == "venmo" else "cash"
+    lines = [
+        f"Please refund {name} {_money(refund)}: {why}.",
+        "",
+        f"Paid: {_money(_amount_paid(order))} ({method})",
+        f"Order total now: {_money(0 if order.get('status') == 'cancelled' else order.get('totalCents', 0))}",
+        f"Refund: {_money(refund)}",
+    ]
+    if order.get("contactPhone"):
+        lines.append(f"Phone: {order['contactPhone']}")
+    lines += ["", "After refunding, update the amount paid on the Orders page."]
+    if SITE_URL:
+        lines.append(f"{SITE_URL.rstrip('/')}/admin-orders.html")
+    try:
+        to = _admin_emails()
+        if not to:
+            return
+        ses.send_email(
+            Source=FROM_EMAIL,
+            Destination={"ToAddresses": to},
+            Message={
+                "Subject": {"Data": f"Refund Needed: {_money(refund)} for {name}"},
+                "Body": {"Text": {"Data": "\n".join(lines)}},
+            },
+        )
+    except Exception as e:  # noqa: BLE001
+        print(f"ERROR emailing the admin about a refund for order {order.get('orderId')}: {e!r}")
+
+
 def _order_email_text(order, action):
     def money(cents):
         return f"${int(cents) / 100:.2f}"
@@ -1666,6 +1767,11 @@ def _order_email_text(order, action):
     for extra in order.get("extras") or []:
         lines.append(f"{int(extra['quantity'])} x {extra['name']}")
     lines += ["", f"Total: {money(order.get('totalCents', 0))}"]
+    if _amount_paid(order):
+        balance = _balance_cents(order)
+        lines.append(f"Paid: {money(_amount_paid(order))}"
+                     + (f" - balance due {money(balance)}" if balance > 0 else "")
+                     + (f" - refund {money(-balance)}" if balance < 0 else ""))
     if order.get("contactPhone"):
         lines.append(f"Phone: {order['contactPhone']}")
     lines.append(f"Pickup location: {_pickup_location_name(order.get('pickupLocation'))}")
@@ -1714,8 +1820,8 @@ def update_order_status(event, sub, order_id):
     may be sent."""
     _require_admin(event)
     body = _body(event)
-    if "status" not in body and "payment" not in body:
-        raise BadRequest("send a status or a payment")
+    if not {"status", "payment", "amountPaidCents"} & set(body):
+        raise BadRequest("send a status, payment or amountPaidCents")
     status = body.get("status")
     if "status" in body and status not in ORDER_STATUSES:
         raise BadRequest(f"status must be one of {ORDER_STATUSES}")
@@ -1729,11 +1835,28 @@ def update_order_status(event, sub, order_id):
         item["status"] = status
     if "payment" in body:
         item["payment"] = body["payment"]
+        if "amountPaidCents" not in body:
+            # Picking Venmo or cash starts the amount at the order total (the
+            # usual case); unpaid or free clears it.
+            if body["payment"] in PAID_METHODS:
+                if not int(item.get("amountPaidCents", 0) or 0):
+                    item["amountPaidCents"] = int(item["totalCents"])
+            else:
+                item["amountPaidCents"] = 0
+    if "amountPaidCents" in body:
+        try:
+            amount = int(body["amountPaidCents"])
+        except (TypeError, ValueError):
+            raise BadRequest("amountPaidCents must be a whole number of cents")
+        if not 0 <= amount <= MAX_AMOUNT_PAID_CENTS:
+            raise BadRequest("amount paid must be between $0 and $100,000")
+        item["amountPaidCents"] = amount
     table.put_item(Item=item)
     # The admin cancelling (e.g. unpaid by Saturday): the customer gets the
     # same cancellation email as when they cancel it themselves.
     if status == "cancelled" and was != "cancelled":
         _notify_customer_of_order(item, "cancelled", sub)
+        _notify_admin_of_refund(item, "cancelled")
     return _response(200, {**_order_out(item), "customerSub": sub})
 
 
@@ -1860,6 +1983,7 @@ def _order_out(item):
         "readyDate": item.get("readyDate", ""),
         "status": item.get("status", "placed"),
         "payment": item.get("payment", "unpaid"),
+        "amountPaidCents": int(item.get("amountPaidCents", 0) or 0),
     }
 
 
