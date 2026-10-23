@@ -93,7 +93,7 @@
       </form>
 
       <form id="confirm-form" style="display:none;">
-        <p class="muted">We emailed a confirmation code to your address.</p>
+        <p class="muted" id="confirm-message">We emailed a confirmation code to your address.</p>
         <label for="confirm-code">Confirmation code</label>
         <input id="confirm-code" type="text" autocomplete="one-time-code" />
         <p class="error" id="confirm-error" style="display:none;"></p>
@@ -270,9 +270,34 @@
           }
           window.location.href = getSafeRedirectTarget();
         } catch (err) {
+          if (err.code === "UserNotConfirmedException") {
+            await confirmAtLogin(email, document.getElementById("login-password").value);
+            return;
+          }
           showError("login-error", err.message);
         }
       });
+
+      // Signed up but never entered the emailed code (it expires after a
+      // day, and the code box was only on the sign-up screen). Cognito only
+      // says "not confirmed" once the password is right, so send a fresh
+      // code and confirm here, then sign in as after a sign-up.
+      async function confirmAtLogin(email, password) {
+        pendingEmail = email;
+        pendingPassword = password;
+        pendingProfile = takePendingProfile(email);
+        showTab("signup");
+        document.getElementById("signup-form").style.display = "none";
+        document.getElementById("confirm-form").style.display = "block";
+        document.getElementById("confirm-message").textContent =
+          "Your email isn't verified yet. We just emailed you a new confirmation code.";
+        document.getElementById("confirm-code").focus();
+        try {
+          await resendConfirmationCode({ region: config.region, clientId: config.userPoolClientId, email });
+        } catch (err) {
+          showError("confirm-error", err.message);
+        }
+      }
 
       const signupButton = document.getElementById("signup-button");
       document.getElementById("signup-form").addEventListener("submit", async (e) => {
@@ -354,6 +379,12 @@
           pendingPassword = null;
         }
 
+        // Confirmed from the login form in another browser session: the
+        // sign-up details are gone, so send them to fill those in.
+        if (!pendingProfile) {
+          window.location.href = "/account.html";
+          return;
+        }
         try {
           await saveProfile(config, auth.IdToken, pendingProfile);
         } catch (err) {

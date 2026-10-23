@@ -18,7 +18,10 @@ async function cognitoRequest(region, action, body) {
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(data.message || data.__type || `${action} failed`);
+    const err = new Error(data.message || data.__type || `${action} failed`);
+    // Cognito's error type, e.g. "UserNotConfirmedException".
+    err.code = data.__type;
+    throw err;
   }
   return data;
 }

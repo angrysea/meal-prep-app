@@ -26,6 +26,8 @@ class FakeCognito:
     def __init__(self):
         self.calls = []
         self.registered = {}
+        # Signed up but never confirmed - login is refused until they are.
+        self.unconfirmed = set()
 
     def actions(self):
         return [action for action, _ in self.calls]
@@ -45,11 +47,14 @@ class FakeCognito:
             if body["ConfirmationCode"] != GOOD_CODE:
                 return respond(400, {"__type": "CodeMismatchException",
                                      "message": "Invalid verification code provided, please try again."})
+            self.unconfirmed.discard(body["Username"])
             return respond(200, {})
         if action == "InitiateAuth":
             email = body["AuthParameters"]["USERNAME"]
             if self.registered.get(email) != body["AuthParameters"]["PASSWORD"]:
                 return respond(400, {"__type": "NotAuthorizedException", "message": "Incorrect username or password."})
+            if email in self.unconfirmed:
+                return respond(400, {"__type": "UserNotConfirmedException", "message": "User is not confirmed."})
             return respond(200, {"AuthenticationResult": {
                 "IdToken": _fake_id_token("new-sub", email), "RefreshToken": "refresh", "ExpiresIn": 3600,
             }})
@@ -392,3 +397,69 @@ def test_every_password_box_gets_an_eye_button(signup_page):
     for target in ("login-password", "signup-password", "signup-password-confirm"):
         toggle = page.locator(f'button.password-toggle[aria-controls="{target}"]')
         expect(toggle.locator("svg")).to_have_count(2)
+
+
+# ---------- Never confirmed: verify at login ----------
+
+
+def _log_in(page, email="late@example.com", password="pw-12345678"):
+    page.click("#tab-login")
+    page.fill("#login-email", email)
+    page.fill("#login-password", password)
+    page.click("#login-button")
+
+
+def test_unconfirmed_login_sends_a_new_code_and_confirms(signup_page, mock_api):
+    # Their code expired and they came back another day: logging in sends a
+    # fresh code and shows the code box, then signs them in.
+    page = signup_page
+    page.cognito.registered["late@example.com"] = "pw-12345678"
+    page.cognito.unconfirmed.add("late@example.com")
+    _log_in(page)
+
+    expect(page.locator("#confirm-form")).to_be_visible()
+    expect(page.locator("#confirm-message")).to_have_text(
+        "Your email isn't verified yet. We just emailed you a new confirmation code."
+    )
+    expect(page.locator("#login-error")).to_be_hidden()
+    expect(page.locator("#signup-form")).to_be_hidden()
+    assert ("ResendConfirmationCode", {"ClientId": page.cognito.calls[-1][1]["ClientId"],
+                                       "Username": "late@example.com"}) == page.cognito.calls[-1]
+
+    page.fill("#confirm-code", GOOD_CODE)
+    page.click("#confirm-button")
+
+    # No sign-up details in this browser - off to My Account to add them.
+    page.wait_for_url("**/account.html")
+    assert page.cognito.actions() == [
+        "InitiateAuth", "ResendConfirmationCode", "ConfirmSignUp", "InitiateAuth",
+    ]
+    assert _profile_writes(mock_api) == []
+
+
+def test_unconfirmed_login_in_the_same_session_saves_sign_up_details(signup_page, mock_api):
+    page = signup_page
+    _fill_signup(page, text=True)
+    page.click("#signup-button")
+    expect(page.locator("#confirm-form")).to_be_visible()
+    page.cognito.unconfirmed.add("pat@example.com")
+
+    page.reload()
+    _log_in(page, "pat@example.com", "s3cret-pass")
+    page.fill("#confirm-code", GOOD_CODE)
+    page.click("#confirm-button")
+
+    page.wait_for_url("**/index.html")
+    [write] = _profile_writes(mock_api)
+    assert write["body"]["phone"] == "(555) 123-4567"
+
+
+def test_wrong_password_for_unconfirmed_account_is_just_an_error(signup_page):
+    page = signup_page
+    page.cognito.registered["late@example.com"] = "pw-12345678"
+    page.cognito.unconfirmed.add("late@example.com")
+    _log_in(page, password="wrong-password")
+
+    expect(page.locator("#login-error")).to_have_text("Incorrect username or password.")
+    expect(page.locator("#confirm-form")).to_be_hidden()
+    assert "ResendConfirmationCode" not in page.cognito.actions()
